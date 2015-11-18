@@ -1,0 +1,13 @@
+[package]
+name = "howl"
+version = "0.1.0"
+authors = ["Tad Hardesty <tad@platymuus.com>"]
+
+[lib]
+name = "discord"
+path = "src/discord.rs"
+
+[dependencies]
+hyper = "0.6.16"
+serde = "0.6"
+serde_json = "0.6"
