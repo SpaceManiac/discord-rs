@@ -1,24 +1,33 @@
-use {hyper, serde_json};
+use hyper::Error as HyError;
+use serde_json::Error as SjError;
+use websocket::result::WebSocketError as WsError;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 /// Discord API error type.
 #[derive(Debug)]
 pub enum Error {
-	Hyper(hyper::Error),
-	Json(serde_json::Error),
-	Status(hyper::status::StatusCode),
+	Hyper(HyError),
+	Json(SjError),
+	WebSocket(WsError),
+	Status(::hyper::status::StatusCode),
 	Other(&'static str),
 }
 
-impl From<hyper::Error> for Error {
-	fn from(err: hyper::Error) -> Error {
+impl From<HyError> for Error {
+	fn from(err: HyError) -> Error {
 		Error::Hyper(err)
 	}
 }
 
-impl From<serde_json::Error> for Error {
-	fn from(err: serde_json::Error) -> Error {
+impl From<SjError> for Error {
+	fn from(err: SjError) -> Error {
 		Error::Json(err)
+	}
+}
+
+impl From<WsError> for Error {
+	fn from(err: WsError) -> Error {
+		Error::WebSocket(err)
 	}
 }

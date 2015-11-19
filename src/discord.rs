@@ -1,17 +1,21 @@
 extern crate hyper;
 extern crate serde_json;
+extern crate websocket;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
 
 mod error;
 mod model;
+mod polling;
+
 pub use error::{Result, Error};
 pub use model::*;
+pub use polling::*;
 
 const API_BASE: &'static str = "https://discordapp.com/api";
 
-/// Discord client interface.
+/// Client for the Discord REST API.
 pub struct Discord {
 	client: hyper::Client,
 	token: String,
@@ -122,16 +126,50 @@ impl Discord {
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
-	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> {
-		unimplemented!()
-	}
+	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> { unimplemented!() }
+	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
+	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
 
-	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		unimplemented!()
-	}
+	//pub fn create_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
+	//pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
 
-	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		unimplemented!()
+	pub fn create_server(&self, name: &str) -> Result<Server> { unimplemented!() }
+	pub fn edit_server(&self, server: &ServerId, name: &str) -> Result<Server> { unimplemented!() }
+	/// For owners, deletes the server
+	pub fn leave_server(&self, server: &ServerId) -> Result<Server> { unimplemented!() }
+
+	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> { unimplemented!() }
+	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: Option<u32>) { unimplemented!() }
+	pub fn remove_ban(&self, server: &ServerId, user: &UserId) { unimplemented!() }
+
+	// Get and accept invite
+	// Create invite
+	// Delete invite
+	
+	// Get members
+	// Edit member
+	// Kick member
+	
+	// Create role
+	// Edit role
+	// Reorder roles
+	// Delete roles
+
+	// Create private channel with user
+	// Get avatar of user
+	// Edit profile
+	
+	// Get active maintenances
+	// Get upcoming maintenances
+
+	pub fn connect(&self) -> Result<Connection> {
+		let response = try!(self.make_request(
+			self.client.get(&format!("{}/gateway", API_BASE))));
+		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+		let url = match value.get("url") {
+			Some(url) => url,
+			None => return Err(Error::Other("url missing in connect()"))
+		};
+		Connection::new(&url, &self.token)
 	}
 }
-

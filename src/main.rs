@@ -7,7 +7,9 @@ fn main() {
 	
 	let test_zone = discord::ChannelId("".into());
 	//println!("{:#?}", discord.send_message(&test_zone, "Hello from Rust", &[], "", false));
-	println!("{:#?}", discord.broadcast_typing(&test_zone));
+	discord.broadcast_typing(&test_zone).expect("broadcast typing failed");
+	
+	let conn = discord.connect().expect("connect failed");
 	
 	discord.logout().expect("logout failed");
 }
