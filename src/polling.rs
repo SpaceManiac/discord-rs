@@ -43,29 +43,23 @@ impl Connection {
 			.unwrap();
 		try!(client.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 		
-		println!("Waiting on messages...");
-		loop {
-			use websocket::ws::receiver::Receiver;
-			let message: WsMessage = try!(client.get_mut_reciever().recv_message());
-			if message.opcode == MessageType::Close {
-				println!("Got closed on with status {:?}", message.cd_status_code);
-				break
-			} else if message.opcode != MessageType::Text {
-				println!("Got weird message: {:?}", message.opcode);
-				break
-			}
-			
-			let json: ::std::collections::BTreeMap<String, serde_json::Value> =
-				try!(serde_json::from_reader(&message.payload[..]));
-			println!("-- {:#?}", Event::decode(json));
-			
-			//let heartbeat = into_map(json).unwrap().remove("d").and_then(into_map).unwrap().remove("heartbeat_interval");
-			//println!("heartbeat = {:?}", heartbeat);
-		}
-		
 		Ok(Connection {
 			client: client
 		})
+	}
+
+	pub fn recv_message(&mut self) -> Result<Event> {
+		use websocket::ws::receiver::Receiver;
+		let message: WsMessage = try!(self.client.get_mut_reciever().recv_message());
+		if message.opcode == MessageType::Close {
+			Ok(Event::Closed(message.cd_status_code.unwrap_or(0xffff)))
+		} else if message.opcode != MessageType::Text {
+			println!("Unexpected message: {:?}", message);
+			Ok(Event::Closed(0xfffe))
+		} else {
+			let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));
+			Event::decode(json)
+		}
 	}
 
 	#[allow(dead_code)]

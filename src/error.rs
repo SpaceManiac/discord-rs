@@ -12,6 +12,7 @@ pub enum Error {
 	Json(SjError),
 	WebSocket(WsError),
 	Io(IoError),
+	Decode(&'static str, ::serde_json::Value),
 	Status(::hyper::status::StatusCode),
 	Other(&'static str),
 }
