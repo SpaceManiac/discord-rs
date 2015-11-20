@@ -74,10 +74,10 @@ impl Connection {
 		self.client.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))).map_err(From::from)
 	}
 
-	pub fn shutdown(self) -> Result<()> {
-		let (mut s, mut r) = self.client.split();
-		try!(s.get_mut().shutdown(::std::net::Shutdown::Both));
-		try!(r.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
+	pub fn shutdown(&mut self) -> Result<()> {
+		//let (mut s, mut r) = self.client.split();
+		try!(self.client.get_mut_sender().get_mut().shutdown(::std::net::Shutdown::Both));
+		try!(self.client.get_mut_reciever().get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 		Ok(())
 	}
 }

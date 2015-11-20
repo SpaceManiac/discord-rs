@@ -385,8 +385,20 @@ pub enum Event {
 		private_channels: Vec<PrivateChannel>,
 		servers: Vec<ServerInfo>,
 	},
+	VoiceStateUpdate(ServerId, VoiceState),
+	TypingStart {
+		channel_id: ChannelId,
+		user_id: UserId,
+		timestamp: u64,
+	},
+	PresenceUpdate {
+		server_id: ServerId,
+		presence: Presence,
+		//roles: Vec<()>,
+	},
+	MessageCreate(Message),
 	Closed(u16),
-	Unknown
+	Unknown(String, BTreeMap<String, Value>),
 }
 
 impl Event {
@@ -409,8 +421,19 @@ impl Event {
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), ServerInfo::decode)),
 			})
+		} else if kind == "VOICE_STATE_UPDATE" {
+			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
+			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
+		} else if kind == "TYPING_START" {
+			Ok(Event::TypingStart {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
+				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
+			})
+		} else if kind == "MESSAGE_CREATE" {
+			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else {
-			Ok(Event::Unknown)
+			Ok(Event::Unknown(kind, value))
 		}
 	}
 }
