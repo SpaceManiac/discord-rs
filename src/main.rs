@@ -9,7 +9,10 @@ fn main() {
 	//println!("{:#?}", discord.send_message(&test_zone, "Hello from Rust", &[], "", false));
 	discord.broadcast_typing(&test_zone).expect("broadcast typing failed");
 	
-	discord.connect().expect("connect failed");
+	let mut connection = discord.connect().expect("connect failed");
+	loop {
+		println!("    {:?}", connection.recv_message());
+	}
 	
 	//discord.logout().expect("logout failed");
 }

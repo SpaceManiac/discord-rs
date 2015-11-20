@@ -7,11 +7,11 @@ use serde_json::builder::ObjectBuilder;
 
 mod error;
 mod model;
-//mod polling;
+mod polling;
 
 pub use error::{Result, Error};
 pub use model::*;
-//pub use polling::Connection;
+pub use polling::Connection;
 
 const API_BASE: &'static str = "https://discordapp.com/api";
 
@@ -162,7 +162,7 @@ impl Discord {
 	// Get active maintenances
 	// Get upcoming maintenances
 
-	/*pub fn connect(&self) -> Result<Connection> {
+	pub fn connect(&self) -> Result<Connection> {
 		let response = try!(self.make_request(
 			self.client.get(&format!("{}/gateway", API_BASE))));
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
@@ -171,5 +171,5 @@ impl Discord {
 			None => return Err(Error::Other("url missing in connect()"))
 		};
 		Connection::new(&url, &self.token)
-	}*/
+	}
 }

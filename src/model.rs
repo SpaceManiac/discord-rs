@@ -19,6 +19,15 @@ pub struct MessageId(pub String);
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct RoleId(pub String);
 
+macro_rules! req {
+	($opt:expr) => {
+		try!($opt.ok_or(Error::Other(concat!(file!(), ":", line!(), ": ", stringify!($opt)))))
+	}
+}
+
+//=================
+// Rest model
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
 	Text,
@@ -40,12 +49,6 @@ impl ChannelType {
 			ChannelType::Text => "text",
 			ChannelType::Voice => "voice",
 		}
-	}
-}
-
-macro_rules! req {
-	($opt:expr) => {
-		try!($opt.ok_or(Error::Other(concat!(file!(), ":", line!(), ": ", stringify!($opt)))))
 	}
 }
 
@@ -83,29 +86,6 @@ pub struct User {
 	pub avatar: Option<String>,
 }
 
-fn remove(map: &mut BTreeMap<String, Value>, key: &'static str) -> Result<Value> {
-	map.remove(key).ok_or(Error::Other(key))
-}
-
-fn decode_discriminator(value: Value) -> Result<String> {
-	match into_string(value) {
-		Ok(text) => Ok(text),
-		Err(Error::Decode(_, value)) => match value.as_u64() {
-			Some(num) => Ok(format!("{}", num)),
-			None => Err(Error::Decode("string or u64", value))
-		},
-		Err(other) => Err(other),
-	}
-}
-
-fn optional<T>(x: Option<Result<T>>) -> Result<Option<T>> {
-	match x {
-		Some(Ok(val)) => Ok(Some(val)),
-		Some(Err(err)) => Err(err),
-		None => Ok(None),
-	}
-}
-
 impl User {
 	pub fn decode(value: Value) -> Result<User> {
 		let mut value = try!(into_map(value));
@@ -113,7 +93,7 @@ impl User {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(UserId)),
 			name: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
-			avatar: try!(optional(value.remove("avatar").map(into_string))),
+			avatar: remove(&mut value, "avatar").and_then(into_string).ok()
 		})
 	}
 }
@@ -170,7 +150,7 @@ impl PrivateChannel {
 		Ok(PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
 			recipient: try!(remove(&mut value, "recipient").and_then(User::decode)),
-			last_message_id: try!(optional(value.remove("last_message_id").map(|v| into_string(v).map(MessageId)))),
+			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 		})
 	}
 }
@@ -200,10 +180,10 @@ impl PublicChannel {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			server_id: server_id,
-			topic: try!(optional(value.remove("topic").map(into_string))),
+			topic: remove(&mut value, "topic").and_then(into_string).ok(),
 			position: req!(try!(remove(&mut value, "position")).as_u64()),
-			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(|s| ChannelType::from_name(&s).ok_or(Error::Other("")))),
-			last_message_id: try!(optional(value.remove("last_message_id").map(|v| into_string(v).map(MessageId)))),
+			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(|s| ChannelType::from_name(&s).ok_or(Error::Other("channel type")))),
+			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 		})
 	}
 }
@@ -228,15 +208,16 @@ pub struct Message {
 }
 
 impl Message {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<Message> {
+	pub fn decode(value: Value) -> Result<Message> {
+		let mut value = try!(into_map(value));
 		Ok(Message {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
 			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
-			nonce: try!(optional(value.remove("nonce").map(into_string))),
+			nonce: remove(&mut value, "nonce").and_then(into_string).ok(),
 			content: try!(remove(&mut value, "content").and_then(into_string)),
 			tts: req!(try!(remove(&mut value, "tts")).as_boolean()),
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
-			edited_timestamp: try!(optional(value.remove("edited_timestamp").map(into_string))),
+			edited_timestamp: remove(&mut value, "edited_timestamp").and_then(into_string).ok(),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), |v| into_string(v).map(UserId))),
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
@@ -245,8 +226,8 @@ impl Message {
 }
 
 //=================
-// Event stuff
-/*
+// Event model
+
 #[derive(Debug)]
 pub struct ReadState {
 	pub id: ChannelId,
@@ -255,11 +236,12 @@ pub struct ReadState {
 }
 
 impl ReadState {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<ReadState> {
+	pub fn decode(value: Value) -> Result<ReadState> {
+		let mut value = try!(into_map(value));
 		Ok(ReadState {
-			id: req!(value.remove("id").and_then(into_string).map(ChannelId)),
-			last_message_id: req!(value.remove("last_message_id").and_then(into_string).map(MessageId)),
-			mention_count: req!(req!(value.remove("mention_count")).as_u64()),
+			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
+			last_message_id: try!(remove(&mut value, "last_message_id").and_then(into_string).map(MessageId)),
+			mention_count: req!(try!(remove(&mut value, "mention_count")).as_u64()),
 		})
 	}
 }
@@ -272,12 +254,13 @@ pub struct Presence {
 }
 
 impl Presence {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<Presence> {
+	pub fn decode(value: Value) -> Result<Presence> {
+		let mut value = try!(into_map(value));
 		Ok(Presence {
-			user_id: req!(req!(value.remove("user").and_then(into_map))
-				.remove("id").and_then(into_string).map(UserId)),
-			status: req!(value.remove("status").and_then(into_string)),
-			game_id: value.remove("game_id").and_then(|x| x.as_u64()),
+			user_id: try!(remove(&mut try!(remove(&mut value, "user").and_then(into_map)),
+				"id").and_then(into_string).map(UserId)),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
+			game_id: remove(&mut value, "game_id").ok().and_then(|x| x.as_u64()),
 		})
 	}
 }
@@ -296,12 +279,13 @@ pub struct VoiceState {
 }
 
 impl VoiceState {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<VoiceState> {
+	pub fn decode(value: Value) -> Result<VoiceState> {
+		let mut value = try!(into_map(value));
 		Ok(VoiceState {
-			user_id: req!(value.remove("user_id").and_then(into_string).map(UserId)),
-			channel_id: req!(value.remove("channel_id").and_then(into_string).map(ChannelId)),
-			session_id: req!(value.remove("session_id").and_then(into_string)),
-			token: value.remove("token").and_then(into_string),
+			user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
+			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
+			token: remove(&mut value, "token").and_then(into_string).ok(),
 			suppress: req!(req!(value.remove("suppress")).as_boolean()),
 			self_mute: req!(req!(value.remove("self_mute")).as_boolean()),
 			self_deaf: req!(req!(value.remove("self_deaf")).as_boolean()),
@@ -319,11 +303,12 @@ pub struct RoleInfo {
 }
 
 impl RoleInfo {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<RoleInfo> {
+	pub fn decode(value: Value) -> Result<RoleInfo> {
+		let mut value = try!(into_map(value));
 		Ok(RoleInfo {
-			id: req!(value.remove("id").and_then(into_string).map(RoleId)),
-			name: req!(value.remove("name").and_then(into_string)),
-			permissions: req!(req!(value.remove("permissions")).as_u64()),
+			id: try!(remove(&mut value, "id").and_then(into_string).map(RoleId)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			permissions: req!(try!(remove(&mut value, "permissions")).as_u64()),
 		})
 	}
 }
@@ -346,20 +331,21 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<ServerInfo> {
-		let id = req!(value.remove("id").and_then(into_string).map(ServerId));
+	pub fn decode(value: Value) -> Result<ServerInfo> {
+		let mut value = try!(into_map(value));
+		let id = try!(remove(&mut value, "id").and_then(into_string).map(ServerId));
 		Ok(ServerInfo {
-			name: req!(value.remove("name").and_then(into_string)),
-			owner_id: req!(value.remove("owner_id").and_then(into_string).map(UserId)),
-			voice_states: try!(decode_array(value.remove("voice_states"), VoiceState::decode)),
-			roles: try!(decode_array(value.remove("roles"), RoleInfo::decode)),
-			region: req!(value.remove("region").and_then(into_string)),
-			presences: try!(decode_array(value.remove("presences"), Presence::decode)),
-			members: try!(decode_array(value.remove("members"), Member::decode)),
-			joined_at: req!(value.remove("joined_at").and_then(into_string)),
-			afk_timeout: req!(req!(value.remove("afk_timeout")).as_u64()),
-			afk_channel_id: value.remove("afk_channel_id").and_then(into_string).map(ChannelId),
-			channels: try!(decode_array(value.remove("channels"), |v| PublicChannel::decode_server(v, id.clone()))),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			owner_id: try!(remove(&mut value, "owner_id").and_then(into_string).map(UserId)),
+			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
+			roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleInfo::decode)),
+			region: try!(remove(&mut value, "region").and_then(into_string)),
+			presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
+			members: try!(decode_array(try!(remove(&mut value, "members")), Member::decode)),
+			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
+			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
+			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(into_string).map(ChannelId).ok(),
+			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id.clone()))),
 			id: id,
 		})
 	}
@@ -376,14 +362,15 @@ pub struct SelfInfo {
 }
 
 impl SelfInfo {
-	pub fn decode(mut value: BTreeMap<String, Value>) -> Result<SelfInfo> {
+	pub fn decode(value: Value) -> Result<SelfInfo> {
+		let mut value = try!(into_map(value));
 		Ok(SelfInfo {
-			id: req!(value.remove("id").and_then(into_string).map(UserId)),
-			username: req!(value.remove("username").and_then(into_string)),
-			discriminator: req!(value.remove("discriminator").and_then(into_string)),
-			email: req!(value.remove("email").and_then(into_string)),
-			avatar: value.remove("avatar").and_then(into_string),
-			verified: req!(req!(value.remove("verified")).as_boolean()),
+			id: try!(remove(&mut value, "id").and_then(into_string).map(UserId)),
+			username: try!(remove(&mut value, "username").and_then(into_string)),
+			discriminator: try!(remove(&mut value, "discriminator").and_then(into_string)),
+			email: try!(remove(&mut value, "email").and_then(into_string)),
+			avatar: remove(&mut value, "avatar").and_then(into_string).ok(),
+			verified: req!(try!(remove(&mut value, "verified")).as_boolean()),
 		})
 	}
 }
@@ -405,27 +392,47 @@ pub enum Event {
 impl Event {
 	pub fn decode(value: Value) -> Result<Event> {
 		let mut value = try!(into_map(value));
-		/*let op = req!(req!(value.remove("op")).as_u64());
+
+		let op = req!(req!(value.remove("op")).as_u64());
 		if op != 0 {
-			Err(Error::Other("Nonzero opcode, TODO"))
-		}*/
-		let kind = req!(value.remove("t").and_then(into_string));
-		let mut inner = req!(value.remove("d").and_then(into_map));
+			return Err(Error::Other("Nonzero opcode, TODO"))
+		}
+
+		let kind = try!(remove(&mut value, "t").and_then(into_string));
+		let mut value = try!(remove(&mut value, "d").and_then(into_map));
 		if kind == "READY" {
 			Ok(Event::Ready {
-				user: try!(SelfInfo::decode(req!(inner.remove("user").and_then(into_map)))),
-				session_id: req!(inner.remove("session_id").and_then(into_string)),
-				heartbeat_interval: req!(req!(inner.remove("heartbeat_interval")).as_u64()),
-				read_state: try!(decode_array(inner.remove("read_state"), ReadState::decode)),
-				private_channels: try!(decode_array(inner.remove("private_channels"), PrivateChannel::decode)),
-				servers: try!(decode_array(inner.remove("guilds"), ServerInfo::decode)),
+				user: try!(remove(&mut value, "user").and_then(SelfInfo::decode)),
+				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
+				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
+				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
+				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
+				servers: try!(decode_array(try!(remove(&mut value, "guilds")), ServerInfo::decode)),
 			})
 		} else {
 			Ok(Event::Unknown)
 		}
 	}
 }
-*/
+
+//=================
+// Decode helpers
+
+fn remove(map: &mut BTreeMap<String, Value>, key: &'static str) -> Result<Value> {
+	map.remove(key).ok_or(Error::Other(key))
+}
+
+fn decode_discriminator(value: Value) -> Result<String> {
+	match into_string(value) {
+		Ok(text) => Ok(text),
+		Err(Error::Decode(_, value)) => match value.as_u64() {
+			Some(num) => Ok(format!("{}", num)),
+			None => Err(Error::Decode("string or u64", value))
+		},
+		Err(other) => Err(other),
+	}
+}
+
 fn into_string(value: Value) -> Result<String> {
 	match value {
 		Value::String(s) => Ok(s),
