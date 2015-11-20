@@ -397,6 +397,10 @@ pub enum Event {
 		//roles: Vec<()>,
 	},
 	MessageCreate(Message),
+	MessageAck {
+		channel_id: ChannelId,
+		message_id: MessageId,
+	},
 	Closed(u16),
 	Unknown(String, BTreeMap<String, Value>),
 }
@@ -432,6 +436,11 @@ impl Event {
 			})
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
+		} else if kind == "MESSAGE_ACK" {
+			Ok(Event::MessageAck {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				message_id: try!(remove(&mut value, "message_id").and_then(into_string).map(MessageId)),
+			})
 		} else {
 			Ok(Event::Unknown(kind, value))
 		}

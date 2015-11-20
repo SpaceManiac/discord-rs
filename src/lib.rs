@@ -7,11 +7,11 @@ use serde_json::builder::ObjectBuilder;
 
 mod error;
 mod model;
-mod polling;
+mod connection;
 
 pub use error::{Result, Error};
 pub use model::*;
-pub use polling::Connection;
+pub use connection::{Connection, State};
 
 const API_BASE: &'static str = "https://discordapp.com/api";
 
