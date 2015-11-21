@@ -52,7 +52,7 @@ impl ChannelType {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Server {
 	pub id: ServerId,
 	pub name: String,
@@ -67,7 +67,7 @@ pub struct Server {
 	pub owner_id: UserId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Role {
 	pub id: RoleId,
 	pub name: String,
@@ -78,7 +78,7 @@ pub struct Role {
 	pub permissions: u64, // bitflags?
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct User {
 	pub id: UserId,
 	pub name: String,
@@ -98,7 +98,7 @@ impl User {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Member {
 	pub user: User,
 	pub roles: Vec<RoleId>,
@@ -120,7 +120,7 @@ impl Member {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Channel {
 	Private(PrivateChannel),
 	Public(PublicChannel),
@@ -137,7 +137,7 @@ impl Channel {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
 	pub recipient: User,
@@ -155,7 +155,7 @@ impl PrivateChannel {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PublicChannel {
 	pub id: ChannelId,
 	pub name: String,
@@ -188,7 +188,7 @@ impl PublicChannel {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Message {
 	pub id: MessageId,
 	pub channel_id: ChannelId,
@@ -228,7 +228,7 @@ impl Message {
 //=================
 // Event model
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReadState {
 	pub id: ChannelId,
 	pub last_message_id: MessageId,
@@ -246,7 +246,7 @@ impl ReadState {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Presence {
 	pub user_id: UserId,
 	pub status: String, // enum?
@@ -265,10 +265,10 @@ impl Presence {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VoiceState {
 	pub user_id: UserId,
-	pub channel_id: ChannelId,
+	pub channel_id: Option<ChannelId>,
 	pub session_id: String,
 	pub token: Option<String>,
 	pub suppress: bool,
@@ -283,7 +283,7 @@ impl VoiceState {
 		let mut value = try!(into_map(value));
 		Ok(VoiceState {
 			user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
-			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+			channel_id: remove(&mut value, "channel_id").and_then(into_string).map(ChannelId).ok(),
 			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
 			token: remove(&mut value, "token").and_then(into_string).ok(),
 			suppress: req!(req!(value.remove("suppress")).as_boolean()),
@@ -295,7 +295,7 @@ impl VoiceState {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RoleInfo {
 	pub id: RoleId,
 	pub name: String,
@@ -313,7 +313,7 @@ impl RoleInfo {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerInfo {
 	pub id: ServerId,
 	pub name: String,
@@ -351,7 +351,7 @@ impl ServerInfo {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SelfInfo {
 	pub id: UserId,
 	pub username: String,
@@ -375,7 +375,7 @@ impl SelfInfo {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
 	Ready {
 		user: SelfInfo,
