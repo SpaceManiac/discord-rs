@@ -8,11 +8,7 @@ fn main() {
 		&env::var("DISCORD_EMAIL").expect("DISCORD_EMAIL"),
 		&env::var("DISCORD_PASSWORD").expect("DISCORD_PASSWORD")
 	).expect("login failed");
-	
-	let test_zone = discord::ChannelId("".into());
-	//println!("{:#?}", discord.send_message(&test_zone, "Hello from Rust", &[], "", false));
-	discord.broadcast_typing(&test_zone).expect("broadcast typing failed");
-	
+
 	let mut connection = discord.connect().expect("connect failed");
 	let closed;
 	loop {
