@@ -397,6 +397,11 @@ pub enum Event {
 		//roles: Vec<()>,
 	},
 	MessageCreate(Message),
+	MessageUpdate {
+		channel_id: ChannelId,
+		message_id: MessageId,
+		// TODO: more fields like embeds & attachments
+	},
 	MessageAck {
 		channel_id: ChannelId,
 		message_id: MessageId,
@@ -434,12 +439,24 @@ impl Event {
 				user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
 				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
 			})
+		} else if kind == "PRESENCE_UPDATE" {
+			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
+			Ok(Event::PresenceUpdate {
+				server_id: server_id,
+				presence: try!(Presence::decode(Value::Object(value))),
+			})
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_ACK" {
 			Ok(Event::MessageAck {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
 				message_id: try!(remove(&mut value, "message_id").and_then(into_string).map(MessageId)),
+			})
+		} else if kind == "MESSAGE_UPDATE" {
+			Ok(Event::MessageUpdate {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				message_id: try!(remove(&mut value, "message_id").and_then(into_string).map(MessageId)),
+				// TODO: more fields...
 			})
 		} else {
 			Ok(Event::Unknown(kind, value))

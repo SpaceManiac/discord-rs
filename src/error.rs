@@ -3,6 +3,7 @@ use hyper::Error as HyError;
 use serde_json::Error as SjError;
 use websocket::result::WebSocketError as WsError;
 
+/// Discord API `Result` alias type.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 /// Discord API error type.

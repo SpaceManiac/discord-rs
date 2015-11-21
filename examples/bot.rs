@@ -27,15 +27,19 @@ fn main() {
 				println!("[{} #{}] {}: {}", server.name, channel.name, message.author.name, message.content);
 				if message.content == "/test" || message.content.starts_with("/test ") {
 					warn(discord.send_message(&message.channel_id, "This is a reply to the test.", &[], "", false));
+				} else if message.content == "/quit" {
+					closed = 200;
+					break
 				}
 			}
-			Ok(other) => println!("--- {:?}", other),
+			Ok(discord::Event::Unknown(name, data)) => println!("--- {}: {:?}", name, data),
+			Ok(_) => {}, // println!("--- {:?}", other),
 			Err(err) => println!("Recv error: {:?}", err),
 		}
 	}
 	println!("Closed upon with status '{}'", closed);
 	
-	//discord.logout().expect("logout failed");
+	discord.logout().expect("logout failed");
 }
 
 fn warn<T, E: ::std::fmt::Debug>(result: Result<T, E>) {
