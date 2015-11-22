@@ -11,7 +11,7 @@ mod connection;
 
 pub use error::{Result, Error};
 pub use model::*;
-pub use connection::{Connection, State};
+pub use connection::{Connection, State, ChannelRef};
 
 const API_BASE: &'static str = "https://discordapp.com/api";
 

@@ -199,7 +199,7 @@ pub struct Message {
 	pub edited_timestamp: Option<String>,
 
 	pub mention_everyone: bool,
-	pub mentions: Vec<UserId>,
+	pub mentions: Vec<User>,
 	
 	pub author: User,
 
@@ -219,7 +219,7 @@ impl Message {
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: remove(&mut value, "edited_timestamp").and_then(into_string).ok(),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
-			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), |v| into_string(v).map(UserId))),
+			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
 		})
 	}
@@ -231,7 +231,7 @@ impl Message {
 #[derive(Debug, Clone)]
 pub struct ReadState {
 	pub id: ChannelId,
-	pub last_message_id: MessageId,
+	pub last_message_id: Option<MessageId>,
 	pub mention_count: u64,
 }
 
@@ -240,7 +240,7 @@ impl ReadState {
 		let mut value = try!(into_map(value));
 		Ok(ReadState {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
-			last_message_id: try!(remove(&mut value, "last_message_id").and_then(into_string).map(MessageId)),
+			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			mention_count: req!(try!(remove(&mut value, "mention_count")).as_u64()),
 		})
 	}

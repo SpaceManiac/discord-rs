@@ -219,14 +219,24 @@ impl State {
 	#[inline]
 	pub fn servers(&self) -> &[ServerInfo] { &self.servers }
 
-	pub fn find_public_channel(&self, id: &ChannelId) -> Option<(&ServerInfo, &PublicChannel)> {
+	pub fn find_channel(&self, id: &ChannelId) -> Option<ChannelRef> {
 		for server in &self.servers {
 			for channel in &server.channels {
 				if channel.id == *id {
-					return Some((server, channel))
+					return Some(ChannelRef::Public(server, channel))
 				}
+			}
+		}
+		for channel in &self.private_channels {
+			if channel.id == *id {
+				return Some(ChannelRef::Private(channel))
 			}
 		}
 		None
 	}
+}
+
+pub enum ChannelRef<'a> {
+	Public(&'a ServerInfo, &'a PublicChannel),
+	Private(&'a PrivateChannel),
 }
