@@ -406,6 +406,18 @@ pub enum Event {
 		channel_id: ChannelId,
 		message_id: MessageId,
 	},
+	MessageDelete {
+		channel_id: ChannelId,
+		message_id: MessageId,
+	},
+	UserUpdate(SelfInfo),
+	ServerCreate, // ...
+	ServerUpdate, // ...
+	ServerMemberRemove, // ...
+	ServerDelete, // ...
+	ChannelCreate, // ...
+	ChannelUpdate, // ...
+	ChannelDelete, // ...
 	Closed(u16),
 	Unknown(String, BTreeMap<String, Value>),
 }
@@ -455,9 +467,16 @@ impl Event {
 		} else if kind == "MESSAGE_UPDATE" {
 			Ok(Event::MessageUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
-				message_id: try!(remove(&mut value, "message_id").and_then(into_string).map(MessageId)),
+				message_id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
 				// TODO: more fields...
 			})
+		} else if kind == "MESSAGE_DELETE" {
+			Ok(Event::MessageDelete {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				message_id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
+			})
+		} else if kind == "USER_UPDATE" {
+			SelfInfo::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else {
 			Ok(Event::Unknown(kind, value))
 		}
