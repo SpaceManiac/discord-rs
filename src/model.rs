@@ -224,6 +224,36 @@ impl PublicChannel {
 }
 
 #[derive(Debug, Clone)]
+pub struct Attachment {
+	pub id: String,
+	pub filename: String,
+	/// Shorter URL with message and attachment id
+	pub url: String,
+	/// Longer URL with large hash
+	pub proxy_url: String,
+	/// Size of the file in bytes
+	pub size: u64,
+	/// Dimensions if the file is an image
+	pub dimensions: Option<(u64, u64)>,
+}
+
+impl Attachment {
+	pub fn decode(value: Value) -> Result<Attachment> {
+		let mut value = try!(into_map(value));
+		let width = remove(&mut value, "width").ok().and_then(|x| x.as_u64());
+		let height = remove(&mut value, "height").ok().and_then(|x| x.as_u64());
+		warn_json!(value, Attachment {
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			filename: try!(remove(&mut value, "filename").and_then(into_string)),
+			url: try!(remove(&mut value, "url").and_then(into_string)),
+			proxy_url: try!(remove(&mut value, "proxy_url").and_then(into_string)),
+			size: req!(try!(remove(&mut value, "size")).as_u64()),
+			dimensions: width.and_then(|w| height.map(|h| (w, h))),
+		})
+	}
+}
+
+#[derive(Debug, Clone)]
 pub struct Message {
 	pub id: MessageId,
 	pub channel_id: ChannelId,
@@ -233,13 +263,13 @@ pub struct Message {
 	pub timestamp: String,
 	pub edited_timestamp: Option<String>,
 
+	pub author: User,
 	pub mention_everyone: bool,
 	pub mentions: Vec<User>,
-	
-	pub author: User,
 
-	//pub attachments: Vec<()>,
-	//pub embeds: Vec<()>,
+	pub attachments: Vec<Attachment>,
+	/// Follows OEmbed standard
+	pub embeds: Vec<Value>,
 }
 
 impl Message {
@@ -256,6 +286,8 @@ impl Message {
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
+			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
+			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
 		})
 	}
 }
@@ -335,7 +367,8 @@ pub struct RoleInfo {
 	pub id: RoleId,
 	pub name: String,
 	pub permissions: u64,
-	pub color: u64, // 0x00RRGGBB
+	/// `0xRRGGBB`
+	pub color: u64,
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
@@ -442,9 +475,18 @@ pub enum Event {
 	},
 	MessageCreate(Message),
 	MessageUpdate {
+		id: MessageId,
 		channel_id: ChannelId,
-		message_id: MessageId,
-		// TODO: more fields like embeds & attachments
+		/*content: Option<String>,
+		tts: Option<bool>,
+		timestamp: Option<String>,
+		edited_timestamp: Option<String>,
+		author: Option<User>,
+		embeds: Option<Vec<Value>>,
+		mention_everyone: Option<bool>,
+		mentions: Option<Vec<User>>,
+		attachments: Option<Vec<Attachment>>,
+		embeds: Option<Vec<Value>>,*/
 	},
 	MessageAck {
 		channel_id: ChannelId,
@@ -513,8 +555,8 @@ impl Event {
 			})
 		} else if kind == "MESSAGE_UPDATE" {
 			warn_json!(value, Event::MessageUpdate {
+				id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
-				message_id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
 				// TODO: more fields...
 			})
 		} else if kind == "MESSAGE_DELETE" {
