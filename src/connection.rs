@@ -12,6 +12,9 @@ use serde_json::builder::ObjectBuilder;
 
 use super::model::*;
 
+/// The websocket protocol version expected.
+const VERSION: u64 = 3;
+
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
@@ -170,7 +173,11 @@ pub struct State {
 impl State {
 	fn new(ready: Event) -> Result<State> {
 		match ready {
-			Event::Ready { user, session_id, heartbeat_interval, private_channels, servers, .. } => {
+			Event::Ready { version, user, session_id, heartbeat_interval, private_channels, servers, read_state: _ } => {
+				if version != VERSION {
+					println!("[Warning] Got version {} instead of {}", version, VERSION);
+					return Err(Error::Other("Wrong version specified"))
+				}
 				Ok(State {
 					user: user,
 					session_id: session_id,
