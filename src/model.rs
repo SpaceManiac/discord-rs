@@ -501,7 +501,7 @@ impl Event {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::PresenceUpdate {
 				server_id: server_id,
-				roles: try!(decode_array(try!(remove(&mut value, "")), |x| into_string(x).map(RoleId))),
+				roles: try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId))),
 				presence: try!(Presence::decode(Value::Object(value))),
 			})
 		} else if kind == "MESSAGE_CREATE" {
@@ -534,7 +534,7 @@ impl Event {
 // Decode helpers
 
 fn remove(map: &mut BTreeMap<String, Value>, key: &'static str) -> Result<Value> {
-	map.remove(key).ok_or(Error::Other(key))
+	map.remove(key).ok_or(Error::Decode(key, Value::Null))
 }
 
 fn decode_discriminator(value: Value) -> Result<String> {
