@@ -4,18 +4,23 @@ use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+/// An identifier for a User
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct UserId(pub String);
 
+/// An identifier for a Server
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct ServerId(pub String);
 
+/// An identifier for a Channel
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct ChannelId(pub String);
 
+/// An identifier for a Message
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct MessageId(pub String);
 
+/// An identifier for a Role
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct RoleId(pub String);
 
@@ -37,13 +42,17 @@ macro_rules! warn_json {
 //=================
 // Rest model
 
+/// The type of a channel
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
+	/// A text channel, through which `Message`s are transmitted
 	Text,
+	/// A voice channel
 	Voice,
 }
 
 impl ChannelType {
+	/// Attempt to parse a ChannelType from a name
 	pub fn from_name(name: &str) -> Option<ChannelType> {
 		if name == "text" {
 			Some(ChannelType::Text)
@@ -53,6 +62,8 @@ impl ChannelType {
 			None
 		}
 	}
+
+	/// Get the name of this ChannelType
 	pub fn name(&self) -> &'static str {
 		match *self {
 			ChannelType::Text => "text",
@@ -61,6 +72,7 @@ impl ChannelType {
 	}
 }
 
+/// Static information about a server
 #[derive(Debug, Clone)]
 pub struct Server {
 	pub id: ServerId,
@@ -76,6 +88,7 @@ pub struct Server {
 	pub owner_id: UserId,
 }
 
+/// Information about a role
 #[derive(Debug, Clone)]
 pub struct Role {
 	pub id: RoleId,
@@ -87,6 +100,7 @@ pub struct Role {
 	pub permissions: u64, // bitflags?
 }
 
+/// Broadly-applicable user information
 #[derive(Debug, Clone)]
 pub struct User {
 	pub id: UserId,
@@ -107,6 +121,7 @@ impl User {
 	}
 }
 
+/// Information about a member of a server
 #[derive(Debug, Clone)]
 pub struct Member {
 	pub user: User,
@@ -129,9 +144,12 @@ impl Member {
 	}
 }
 
+/// A private or public channel
 #[derive(Debug, Clone)]
 pub enum Channel {
+	/// Text channel to another user
 	Private(PrivateChannel),
+	/// Voice or text channel within a server
 	Public(PublicChannel),
 }
 
@@ -146,6 +164,7 @@ impl Channel {
 	}
 }
 
+/// Private text channel to another user
 #[derive(Debug, Clone)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
@@ -156,7 +175,7 @@ pub struct PrivateChannel {
 impl PrivateChannel {
 	pub fn decode(value: Value) -> Result<PrivateChannel> {
 		let mut value = try!(into_map(value));
-		value.remove("is_private"); // always discard is_private
+		value.remove("is_private"); // discard is_private
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
 			recipient: try!(remove(&mut value, "recipient").and_then(User::decode)),
@@ -165,6 +184,7 @@ impl PrivateChannel {
 	}
 }
 
+/// A channel-specific permission overwrite for a role or member
 #[derive(Debug, Clone)]
 pub enum PermissionOverwrite {
 	Role { id: RoleId, allow: u64, deny: u64 },
@@ -188,6 +208,7 @@ impl PermissionOverwrite {
 	}
 }
 
+/// Public voice or text channel within a server
 #[derive(Debug, Clone)]
 pub struct PublicChannel {
 	pub id: ChannelId,
@@ -203,7 +224,7 @@ pub struct PublicChannel {
 impl PublicChannel {
 	pub fn decode(value: Value) -> Result<PublicChannel> {
 		let mut value = try!(into_map(value));
-		value.remove("is_private"); // always discard is_private
+		value.remove("is_private"); // discard is_private
 		let id = try!(remove(&mut value, "server_id").and_then(into_string).map(ServerId));
 		PublicChannel::decode_server(Value::Object(value), id)
 	}
@@ -223,9 +244,11 @@ impl PublicChannel {
 	}
 }
 
+/// File upload attached to a message
 #[derive(Debug, Clone)]
 pub struct Attachment {
 	pub id: String,
+	/// Short filename for the attachment
 	pub filename: String,
 	/// Shorter URL with message and attachment id
 	pub url: String,
@@ -253,6 +276,7 @@ impl Attachment {
 	}
 }
 
+/// Message transmitted over a text channel
 #[derive(Debug, Clone)]
 pub struct Message {
 	pub id: MessageId,
@@ -295,10 +319,14 @@ impl Message {
 //=================
 // Event model
 
+/// Summary of messages since last login
 #[derive(Debug, Clone)]
 pub struct ReadState {
+	/// Id of the relevant channel
 	pub id: ChannelId,
+	/// Last seen message in this channel
 	pub last_message_id: Option<MessageId>,
+	/// Mentions since that message in this channel
 	pub mention_count: u64,
 }
 
@@ -313,6 +341,7 @@ impl ReadState {
 	}
 }
 
+/// A members's online status
 #[derive(Debug, Clone)]
 pub struct Presence {
 	pub user_id: UserId,
@@ -332,6 +361,7 @@ impl Presence {
 	}
 }
 
+/// A member's state within a voice channel
 #[derive(Debug, Clone)]
 pub struct VoiceState {
 	pub user_id: UserId,
@@ -362,6 +392,7 @@ impl VoiceState {
 	}
 }
 
+/// Live role information
 #[derive(Debug, Clone)]
 pub struct RoleInfo {
 	pub id: RoleId,
@@ -389,6 +420,7 @@ impl RoleInfo {
 	}
 }
 
+/// Live server information
 #[derive(Debug, Clone)]
 pub struct ServerInfo {
 	pub id: ServerId,
@@ -427,6 +459,7 @@ impl ServerInfo {
 	}
 }
 
+/// Information about the logged-in user
 #[derive(Debug, Clone)]
 pub struct SelfInfo {
 	pub id: UserId,
@@ -451,6 +484,7 @@ impl SelfInfo {
 	}
 }
 
+/// Event received over a websocket connection
 #[derive(Debug, Clone)]
 pub enum Event {
 	Ready {

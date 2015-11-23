@@ -53,7 +53,7 @@ impl Discord {
 		})
 	}
 
-	/// Log out from the Discord API, invalidating this object's token.
+	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new().insert("token", &self.token).unwrap();
 		let body = try!(serde_json::to_string(&map));
@@ -79,6 +79,7 @@ impl Discord {
 		}
 	}
 
+	/// Create a channel.
 	pub fn create_channel(&self, server: &ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -90,6 +91,7 @@ impl Discord {
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Edit a channel's name.
 	pub fn edit_channel(&self, channel: &ChannelId, name: &str) -> Result<Channel> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -100,13 +102,14 @@ impl Discord {
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Delete a channel.
 	pub fn delete_channel(&self, channel: &ChannelId) -> Result<Channel> {
 		let response = try!(self.request(||
 			self.client.delete(&format!("{}/channels/{}", API_BASE, channel.0))));
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
-	/// Lasts 5 seconds.
+	/// Indicate typing on a channel for the next 5 seconds.
 	pub fn broadcast_typing(&self, channel: &ChannelId) -> Result<()> {
 		try!(self.request(|| self.client.post(&format!("{}/channels/{}/typing", API_BASE, channel.0))));
 		Ok(())
@@ -116,6 +119,10 @@ impl Discord {
 		unimplemented!()
 	}*/
 
+	/// Send a message to a given channel.
+	///
+	/// The `nonce` will be returned in the result and also transmitted to other
+	/// clients. The empty string is a good default.
 	pub fn send_message(&self, channel: &ChannelId, text: &str, mentions: &[&UserId], nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
@@ -170,6 +177,7 @@ impl Discord {
 	// Get active maintenances
 	// Get upcoming maintenances
 
+	/// Establish a websocket connection over which events can be received.
 	pub fn connect(&self) -> Result<Connection> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/gateway", API_BASE))));
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));

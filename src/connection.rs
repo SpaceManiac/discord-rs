@@ -20,6 +20,7 @@ pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
 	ready_event: Option<Event>,
+	/// Known state composed from received events
 	pub state: State,
 }
 
