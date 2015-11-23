@@ -438,7 +438,7 @@ pub enum Event {
 	PresenceUpdate {
 		server_id: ServerId,
 		presence: Presence,
-		//roles: Vec<()>,
+		roles: Vec<RoleId>,
 	},
 	MessageCreate(Message),
 	MessageUpdate {
@@ -501,6 +501,7 @@ impl Event {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::PresenceUpdate {
 				server_id: server_id,
+				roles: try!(decode_array(try!(remove(&mut value, "")), |x| into_string(x).map(RoleId))),
 				presence: try!(Presence::decode(Value::Object(value))),
 			})
 		} else if kind == "MESSAGE_CREATE" {

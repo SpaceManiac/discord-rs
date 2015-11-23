@@ -201,7 +201,7 @@ impl State {
 					srv.voice_states.push(state.clone());
 				});
 			}
-			Event::PresenceUpdate { ref server_id, ref presence } => {
+			Event::PresenceUpdate { ref server_id, ref presence, roles: _ } => {
 				self.servers.iter_mut().find(|x| x.id == *server_id).map(|srv| {
 					match srv.presences.iter_mut().find(|x| x.user_id == presence.user_id) {
 						Some(srv_presence) => { srv_presence.clone_from(presence); return }
@@ -210,6 +210,7 @@ impl State {
 					srv.presences.push(presence.clone());
 				});
 			}
+			Event::UserUpdate(ref user) => self.user = user.clone(),
 			_ => {}
 		}
 	}
