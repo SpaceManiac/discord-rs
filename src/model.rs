@@ -559,19 +559,23 @@ impl CurrentUser {
 	}
 }
 
+/// The "Ready" event, containing initial state
+#[derive(Debug, Clone)]
+pub struct ReadyEvent {
+	pub version: u64,
+	pub user: CurrentUser,
+	pub session_id: String,
+	pub heartbeat_interval: u64,
+	pub read_state: Vec<ReadState>,
+	pub private_channels: Vec<PrivateChannel>,
+	pub servers: Vec<LiveServer>,
+}
+
 /// Event received over a websocket connection
 #[derive(Debug, Clone)]
 pub enum Event {
 	/// The first event in a connection, containing the initial state
-	Ready {
-		version: u64,
-		user: CurrentUser,
-		session_id: String,
-		heartbeat_interval: u64,
-		read_state: Vec<ReadState>,
-		private_channels: Vec<PrivateChannel>,
-		servers: Vec<LiveServer>,
-	},
+	Ready(ReadyEvent),
 	/// Update to the logged-in user's information
 	UserUpdate(CurrentUser),
 	/// A member's voice state has changed
@@ -606,7 +610,7 @@ pub enum Event {
 		attachments: Option<Vec<Attachment>>,
 		embeds: Option<Vec<Value>>,*/
 	},
-	// TODO: docs
+	/// Another logged-in device acknowledged this message
 	MessageAck {
 		message_id: MessageId,
 		channel_id: ChannelId,
@@ -660,7 +664,7 @@ impl Event {
 		let kind = try!(remove(&mut value, "t").and_then(into_string));
 		let mut value = try!(remove(&mut value, "d").and_then(into_map));
 		if kind == "READY" {
-			warn_json!(value, Event::Ready {
+			warn_json!(value, Event::Ready(ReadyEvent {
 				version: req!(try!(remove(&mut value, "v")).as_u64()),
 				user: try!(remove(&mut value, "user").and_then(CurrentUser::decode)),
 				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
@@ -668,7 +672,7 @@ impl Event {
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
-			})
+			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {

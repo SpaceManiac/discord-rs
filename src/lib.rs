@@ -11,11 +11,13 @@ use serde_json::builder::ObjectBuilder;
 
 mod error;
 mod connection;
+mod state;
 pub mod model;
 
-use model::*;
 pub use error::{Result, Error};
-pub use connection::{Connection, State, ChannelRef};
+pub use connection::Connection;
+pub use state::{State, ChannelRef};
+use model::*;
 
 const API_BASE: &'static str = "https://discordapp.com/api";
 
@@ -182,7 +184,7 @@ impl Discord {
 	// Get upcoming maintenances
 
 	/// Establish a websocket connection over which events can be received.
-	pub fn connect(&self) -> Result<Connection> {
+	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/gateway", API_BASE))));
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let url = match value.get("url") {
