@@ -193,9 +193,10 @@ impl State {
 
 	fn update(&mut self, event: &Event) {
 		match *event {
+			Event::UserUpdate(ref user) => self.user = user.clone(),
 			Event::VoiceStateUpdate(ref server, ref state) => {
-				self.servers.iter_mut().find(|x| x.id == *server).map(|srv| {
-					match srv.voice_states.iter_mut().find(|x| x.user_id == state.user_id) {
+				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
+					match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
 						Some(srv_state) => { srv_state.clone_from(state); return }
 						None => {}
 					}
@@ -203,15 +204,54 @@ impl State {
 				});
 			}
 			Event::PresenceUpdate { ref server_id, ref presence, roles: _ } => {
-				self.servers.iter_mut().find(|x| x.id == *server_id).map(|srv| {
-					match srv.presences.iter_mut().find(|x| x.user_id == presence.user_id) {
+				// TODO: double-check this
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					match srv.presences.iter_mut().find(|u| u.user_id == presence.user_id) {
 						Some(srv_presence) => { srv_presence.clone_from(presence); return }
 						None => {}
 					}
 					srv.presences.push(presence.clone());
 				});
 			}
-			Event::UserUpdate(ref user) => self.user = user.clone(),
+			Event::ServerCreate(ref server) => self.servers.push(server.clone()),
+			Event::ServerUpdate(ref server) => {
+				self.servers.iter_mut().find(|s| s.id == server.id).map(|srv| {
+					srv.name.clone_from(&server.name);
+					srv.joined_at.clone_from(&server.joined_at);
+					srv.afk_timeout = server.afk_timeout;
+					srv.afk_channel_id.clone_from(&server.afk_channel_id);
+					srv.icon.clone_from(&server.icon);
+					srv.roles.clone_from(&server.roles);
+					srv.region.clone_from(&server.region);
+					// embed_enabled and embed_channel_id skipped
+					srv.owner_id.clone_from(&server.owner_id);
+				});
+			}
+			Event::ServerDelete(ref server) => self.servers.retain(|s| s.id != server.id),
+			Event::ServerMemberAdd { ref server_id, ref joined_at, ref roles, ref user } => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.members.push(Member {
+						user: user.clone(),
+						roles: roles.clone(),
+						joined_at: joined_at.clone(),
+						mute: false,
+						deaf: false,
+					})
+				});
+			}
+			Event::ServerMemberUpdate { ref server_id, ref roles, ref user } => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.members.iter_mut().find(|m| m.user.id == user.id).map(|member| {
+						member.user.clone_from(user);
+						member.roles.clone_from(roles);
+					})
+				});
+			}
+			Event::ServerMemberRemove(ref server_id, ref user) => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.members.retain(|m| m.user.id != user.id);
+				});
+			}
 			_ => {}
 		}
 	}
