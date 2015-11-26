@@ -164,11 +164,11 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 
 /// State tracking for events received over Discord.
 pub struct State {
-	user: SelfInfo,
+	user: CurrentUser,
 	session_id: String,
 	heartbeat_interval: u64,
 	private_channels: Vec<PrivateChannel>,
-	servers: Vec<ServerInfo>,
+	servers: Vec<LiveServer>,
 }
 
 impl State {
@@ -308,7 +308,7 @@ impl State {
 	}
 
 	#[inline]
-	pub fn user_info(&self) -> &SelfInfo { &self.user }
+	pub fn user(&self) -> &CurrentUser { &self.user }
 
 	#[inline]
 	pub fn session_id(&self) -> &str { &self.session_id }
@@ -317,7 +317,7 @@ impl State {
 	pub fn private_channels(&self) -> &[PrivateChannel] { &self.private_channels }
 
 	#[inline]
-	pub fn servers(&self) -> &[ServerInfo] { &self.servers }
+	pub fn servers(&self) -> &[LiveServer] { &self.servers }
 
 	pub fn find_channel(&self, id: &ChannelId) -> Option<ChannelRef> {
 		for server in &self.servers {
@@ -336,7 +336,10 @@ impl State {
 	}
 }
 
+/// A reference to a private or public channel
 pub enum ChannelRef<'a> {
-	Public(&'a ServerInfo, &'a PublicChannel),
+	/// A private channel
 	Private(&'a PrivateChannel),
+	/// A public channel and its server
+	Public(&'a LiveServer, &'a PublicChannel),
 }

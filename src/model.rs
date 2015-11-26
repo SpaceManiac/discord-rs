@@ -445,7 +445,7 @@ impl VoiceState {
 
 /// Live server information
 #[derive(Debug, Clone)]
-pub struct ServerInfo {
+pub struct LiveServer {
 	pub id: ServerId,
 	pub name: String,
 	pub owner_id: UserId,
@@ -462,11 +462,11 @@ pub struct ServerInfo {
 	pub afk_channel_id: Option<ChannelId>,
 }
 
-impl ServerInfo {
-	pub fn decode(value: Value) -> Result<ServerInfo> {
+impl LiveServer {
+	pub fn decode(value: Value) -> Result<LiveServer> {
 		let mut value = try!(into_map(value));
 		let id = try!(remove(&mut value, "id").and_then(into_string).map(ServerId));
-		warn_json!(value, ServerInfo {
+		warn_json!(value, LiveServer {
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			owner_id: try!(remove(&mut value, "owner_id").and_then(into_string).map(UserId)),
 			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
@@ -487,7 +487,7 @@ impl ServerInfo {
 
 /// Information about the logged-in user
 #[derive(Debug, Clone)]
-pub struct SelfInfo {
+pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
 	pub discriminator: String,
@@ -496,10 +496,10 @@ pub struct SelfInfo {
 	pub avatar: Option<String>,
 }
 
-impl SelfInfo {
-	pub fn decode(value: Value) -> Result<SelfInfo> {
+impl CurrentUser {
+	pub fn decode(value: Value) -> Result<CurrentUser> {
 		let mut value = try!(into_map(value));
-		warn_json!(value, SelfInfo {
+		warn_json!(value, CurrentUser {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(UserId)),
 			username: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(into_string)),
@@ -516,15 +516,15 @@ pub enum Event {
 	/// The first event in a connection, containing the initial state
 	Ready {
 		version: u64,
-		user: SelfInfo,
+		user: CurrentUser,
 		session_id: String,
 		heartbeat_interval: u64,
 		read_state: Vec<ReadState>,
 		private_channels: Vec<PrivateChannel>,
-		servers: Vec<ServerInfo>,
+		servers: Vec<LiveServer>,
 	},
 	/// Update to the logged-in user's information
-	UserUpdate(SelfInfo),
+	UserUpdate(CurrentUser),
 	/// A member's voice state has changed
 	VoiceStateUpdate(ServerId, VoiceState),
 	/// A user is typing; considered to last 5 seconds
@@ -567,7 +567,7 @@ pub enum Event {
 		channel_id: ChannelId,
 	},
 
-	ServerCreate(ServerInfo),
+	ServerCreate(LiveServer),
 	ServerUpdate(Server),
 	ServerDelete(Server),
 
@@ -613,15 +613,15 @@ impl Event {
 		if kind == "READY" {
 			warn_json!(value, Event::Ready {
 				version: req!(try!(remove(&mut value, "v")).as_u64()),
-				user: try!(remove(&mut value, "user").and_then(SelfInfo::decode)),
+				user: try!(remove(&mut value, "user").and_then(CurrentUser::decode)),
 				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
 				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
-				servers: try!(decode_array(try!(remove(&mut value, "guilds")), ServerInfo::decode)),
+				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
 			})
 		} else if kind == "USER_UPDATE" {
-			SelfInfo::decode(Value::Object(value)).map(Event::UserUpdate)
+			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
@@ -657,7 +657,7 @@ impl Event {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
 			})
 		} else if kind == "GUILD_CREATE" {
-			ServerInfo::decode(Value::Object(value)).map(Event::ServerCreate)
+			LiveServer::decode(Value::Object(value)).map(Event::ServerCreate)
 		} else if kind == "GUILD_UPDATE" {
 			Server::decode(Value::Object(value)).map(Event::ServerUpdate)
 		} else if kind == "GUILD_DELETE" {
