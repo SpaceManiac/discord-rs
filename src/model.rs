@@ -266,7 +266,7 @@ impl PublicChannel {
 	pub fn decode(value: Value) -> Result<PublicChannel> {
 		let mut value = try!(into_map(value));
 		value.remove("is_private"); // discard is_private
-		let id = try!(remove(&mut value, "server_id").and_then(into_string).map(ServerId));
+		let id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 		PublicChannel::decode_server(Value::Object(value), id)
 	}
 
