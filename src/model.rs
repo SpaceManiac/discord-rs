@@ -37,9 +37,12 @@ macro_rules! warn_json {
 	(@ $name:expr, $json:ident, $value:expr) => {
 		(Ok($value), warn_field($name, $json)).0
 	};
+	($json:ident, $ty:ident $(::$ext:ident)* ( $($value:expr),*$(,)* ) ) => {
+		(Ok($ty$(::$ext)* ( $($value),* )), warn_field(stringify!($ty$(::$ext)*), $json)).0
+	};
 	($json:ident, $ty:ident $(::$ext:ident)* { $($name:ident: $value:expr),*$(,)* } ) => {
 		(Ok($ty$(::$ext)* { $($name: $value),* }), warn_field(stringify!($ty$(::$ext)*), $json)).0
-	}
+	};
 }
 
 //=================
@@ -522,6 +525,7 @@ pub enum Event {
 	},
 	/// Update to the logged-in user's information
 	UserUpdate(SelfInfo),
+	/// A member's voice state has changed
 	VoiceStateUpdate(ServerId, VoiceState),
 	/// A user is typing; considered to last 5 seconds
 	TypingStart {
@@ -529,15 +533,15 @@ pub enum Event {
 		user_id: UserId,
 		timestamp: u64,
 	},
+	/// A member's presence state has changed
 	PresenceUpdate {
 		server_id: ServerId,
 		presence: Presence,
 		roles: Vec<RoleId>,
 	},
 
-	/// Message has been posted
 	MessageCreate(Message),
-	/// Message has been edited, either by the user or the system
+	/// A message has been edited, either by the user or the system
 	MessageUpdate {
 		id: MessageId,
 		channel_id: ChannelId,
@@ -553,11 +557,11 @@ pub enum Event {
 		attachments: Option<Vec<Attachment>>,
 		embeds: Option<Vec<Value>>,*/
 	},
+	// TODO: docs
 	MessageAck {
 		message_id: MessageId,
 		channel_id: ChannelId,
 	},
-	/// Message has been deleted
 	MessageDelete {
 		message_id: MessageId,
 		channel_id: ChannelId,
@@ -580,13 +584,13 @@ pub enum Event {
 	},
 	ServerMemberRemove(ServerId, User),
 
-	/*ServerRoleCreate(ServerId, Role),
+	ServerRoleCreate(ServerId, Role),
 	ServerRoleUpdate(ServerId, Role),
 	ServerRoleDelete(ServerId, RoleId),
 
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
-	ChannelDelete(Channel),*/
+	ChannelDelete(Channel),
 
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
@@ -672,10 +676,31 @@ impl Event {
 				user: try!(remove(&mut value, "user").and_then(User::decode)),
 			})
 		} else if kind == "GUILD_MEMBER_REMOVE" {
-			warn_json!(@"Event::ServerMemberRemove", value, Event::ServerMemberRemove(
+			warn_json!(value, Event::ServerMemberRemove(
 				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
 			))
+		} else if kind == "GUILD_ROLE_CREATE" {
+			warn_json!(value, Event::ServerRoleCreate(
+				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "role").and_then(Role::decode)),
+			))
+		} else if kind == "GUILD_ROLE_UPDATE" {
+			warn_json!(value, Event::ServerRoleUpdate(
+				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "role").and_then(Role::decode)),
+			))
+		} else if kind == "GUILD_ROLE_DELETE" {
+			warn_json!(value, Event::ServerRoleDelete(
+				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "role_id").and_then(into_string).map(RoleId)),
+			))
+		} else if kind == "CHANNEL_CREATE" {
+			Channel::decode(Value::Object(value)).map(Event::ChannelCreate)
+		} else if kind == "CHANNEL_UPDATE" {
+			Channel::decode(Value::Object(value)).map(Event::ChannelUpdate)
+		} else if kind == "CHANNEL_DELETE" {
+			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
 		} else {
 			Ok(Event::Unknown(kind, value))
 		}

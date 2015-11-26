@@ -252,6 +252,57 @@ impl State {
 					srv.members.retain(|m| m.user.id != user.id);
 				});
 			}
+			Event::ServerRoleCreate(ref server_id, ref role) => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.roles.push(role.clone());
+				});
+			}
+			Event::ServerRoleUpdate(ref server_id, ref role) => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.roles.iter_mut().find(|r| r.id == role.id).map(|srv_role| {
+						srv_role.clone_from(role);
+					});
+				});
+			}
+			Event::ServerRoleDelete(ref server_id, ref role_id) => {
+				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.roles.retain(|r| r.id != *role_id);
+				});
+			}
+			Event::ChannelCreate(ref channel) => match *channel {
+				Channel::Private(ref channel) => {
+					self.private_channels.push(channel.clone());
+				}
+				Channel::Public(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.channels.push(channel.clone());
+					});
+				}
+			},
+			Event::ChannelUpdate(ref channel) => match *channel {
+				Channel::Private(ref channel) => {
+					self.private_channels.iter_mut().find(|c| c.id == channel.id).map(|chan| {
+						chan.clone_from(channel);
+					});
+				}
+				Channel::Public(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.channels.iter_mut().find(|c| c.id == channel.id).map(|chan| {
+							chan.clone_from(channel);
+						})
+					});
+				}
+			},
+			Event::ChannelDelete(ref channel) => match *channel {
+				Channel::Private(ref channel) => {
+					self.private_channels.retain(|c| c.id != channel.id);
+				}
+				Channel::Public(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.channels.retain(|c| c.id != channel.id);
+					});
+				}
+			},
 			_ => {}
 		}
 	}
