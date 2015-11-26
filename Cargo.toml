@@ -7,3 +7,4 @@ authors = ["Tad Hardesty <tad@platymuus.com>"]
 hyper = "0.6.16"
 serde_json = "0.6"
 websocket = "0.13"
+bitflags = "0.3"

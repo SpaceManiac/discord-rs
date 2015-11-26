@@ -1,16 +1,20 @@
+//! Client library for the [Discord](https://discordapp.com) API.
+
 extern crate hyper;
 extern crate serde_json;
 extern crate websocket;
+#[macro_use]
+extern crate bitflags;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
 
 mod error;
-mod model;
 mod connection;
+pub mod model;
 
+use model::*;
 pub use error::{Result, Error};
-pub use model::*;
 pub use connection::{Connection, State, ChannelRef};
 
 const API_BASE: &'static str = "https://discordapp.com/api";

@@ -7,6 +7,8 @@ use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+pub use self::permissions::Permissions;
+
 /// An identifier for a User
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub struct UserId(pub String);
@@ -123,7 +125,7 @@ pub struct Role {
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
-	pub permissions: u64, // TODO: bitflags?
+	pub permissions: Permissions, // TODO: bitflags?
 }
 
 impl Role {
@@ -132,7 +134,7 @@ impl Role {
 		warn_json!(value, Role {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(RoleId)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
-			permissions: req!(try!(remove(&mut value, "permissions")).as_u64()),
+			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
 			color: req!(try!(remove(&mut value, "color")).as_u64()),
 			hoist: req!(try!(remove(&mut value, "hoist")).as_boolean()),
 			managed: req!(try!(remove(&mut value, "managed")).as_boolean()),
@@ -225,30 +227,6 @@ impl PrivateChannel {
 	}
 }
 
-/// A channel-specific permission overwrite for a role or member
-#[derive(Debug, Clone)]
-pub enum PermissionOverwrite {
-	Role { id: RoleId, allow: u64, deny: u64 },
-	Member { id: UserId, allow: u64, deny: u64 },
-}
-
-impl PermissionOverwrite {
-	pub fn decode(value: Value) -> Result<PermissionOverwrite> {
-		let mut value = try!(into_map(value));
-		let kind = try!(remove(&mut value, "type").and_then(into_string));
-		let id = try!(remove(&mut value, "id").and_then(into_string));
-		let allow = req!(try!(remove(&mut value, "allow")).as_u64());
-		let deny = req!(try!(remove(&mut value, "deny")).as_u64());
-		if kind == "role" {
-			warn_json!(value, PermissionOverwrite::Role { id: RoleId(id), allow: allow, deny: deny })
-		} else if kind == "member" {
-			warn_json!(value, PermissionOverwrite::Member { id: UserId(id), allow: allow, deny: deny })
-		} else {
-			Err(Error::Decode(r#"PermissionOverwrite type ("role" or "member")"#, Value::String(kind)))
-		}
-	}
-}
-
 /// Public voice or text channel within a server
 #[derive(Debug, Clone)]
 pub struct PublicChannel {
@@ -282,6 +260,77 @@ impl PublicChannel {
 			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 		})
+	}
+}
+
+/// A channel-specific permission overwrite for a role or member
+#[derive(Debug, Clone)]
+pub enum PermissionOverwrite {
+	Role { id: RoleId, allow: Permissions, deny: Permissions },
+	Member { id: UserId, allow: Permissions, deny: Permissions },
+}
+
+impl PermissionOverwrite {
+	pub fn decode(value: Value) -> Result<PermissionOverwrite> {
+		let mut value = try!(into_map(value));
+		let kind = try!(remove(&mut value, "type").and_then(into_string));
+		let id = try!(remove(&mut value, "id").and_then(into_string));
+		let allow = try!(remove(&mut value, "allow").and_then(Permissions::decode));
+		let deny = try!(remove(&mut value, "deny").and_then(Permissions::decode));
+		if kind == "role" {
+			warn_json!(value, PermissionOverwrite::Role { id: RoleId(id), allow: allow, deny: deny })
+		} else if kind == "member" {
+			warn_json!(value, PermissionOverwrite::Member { id: UserId(id), allow: allow, deny: deny })
+		} else {
+			Err(Error::Decode(r#"PermissionOverwrite type ("role" or "member")"#, Value::String(kind)))
+		}
+	}
+}
+
+pub mod permissions {
+	use ::{Error, Result};
+	use serde_json::Value;
+
+	bitflags! {
+		/// Set of permissions assignable to a Role or PermissionOverwrite
+		flags Permissions: u64 {
+			const CREATE_INVITE = 1 << 0,
+			const KICK_MEMBERS = 1 << 1,
+			const BAN_MEMBERS = 1 << 2,
+			/// Implies all permissions
+			const MANAGE_ROLES = 1 << 3,
+			/// Create channels or edit existing ones
+			const MANAGE_CHANNELS = 1 << 4,
+			/// Change the server's name or move regions
+			const MANAGE_SERVER = 1 << 5,
+
+			const READ_MESSAGES = 1 << 10,
+			const SEND_MESSAGES = 1 << 11,
+			/// Send text-to-speech messages to those focused on the channel
+			const SEND_TTS_MESSAGES = 1 << 12,
+			/// Delete or edit messages by other users
+			const MANAGE_MESSAGES = 1 << 13,
+			const EMBED_LINKS = 1 << 14,
+			const ATTACH_FILES = 1 << 15,
+			const READ_HISTORY = 1 << 16,
+			/// Trigger a push notification for an entire channel with "@everyone"
+			const MENTION_EVERYONE = 1 << 17,
+
+			const VOICE_CONNECT = 1 << 20,
+			const VOICE_SPEAK = 1 << 21,
+			const VOICE_MUTE_MEMBERS = 1 << 22,
+			const VOICE_DEAFEN_MEMBERS = 1 << 23,
+			/// Move users out of this channel into another
+			const VOICE_MOVE_MEMBERS = 1 << 24,
+			/// When denied, members must use push-to-talk
+			const VOICE_USE_VAD = 1 << 25,
+		}
+	}
+
+	impl Permissions {
+		pub fn decode(value: Value) -> Result<Permissions> {
+			Ok(Self::from_bits_truncate(req!(value.as_u64())))
+		}
 	}
 }
 
