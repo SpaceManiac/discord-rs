@@ -42,8 +42,8 @@ impl Connection {
 				.insert("token", token)
 				.insert_object("properties", |object| object
 					.insert("$os", ::std::env::consts::OS)
-					.insert("$browser", "Howl library for Rust")
-					.insert("$device", "howl")
+					.insert("$browser", "Discord library for Rust")
+					.insert("$device", "discord-rs")
 					.insert("$referring_domain", "")
 					.insert("$referrer", "")
 				)
