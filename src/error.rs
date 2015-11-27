@@ -10,12 +10,19 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// Discord API error type.
 #[derive(Debug)]
 pub enum Error {
+	/// A `hyper` crate error
 	Hyper(HyError),
+	/// A `serde_json` crate error
 	Json(SjError),
+	/// A `websocket` crate error
 	WebSocket(WsError),
+	/// A `std::io` module error
 	Io(IoError),
+	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, ::serde_json::Value),
+	/// A non-success response from the REST API
 	Status(::hyper::status::StatusCode),
+	/// A miscellaneous error, with a description
 	Other(&'static str),
 }
 

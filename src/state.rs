@@ -5,6 +5,7 @@ use super::model::*;
 const VERSION: u64 = 3;
 
 /// Known state composed from received events.
+#[derive(Debug, Clone)]
 pub struct State {
 	user: CurrentUser,
 	session_id: String,
@@ -13,6 +14,7 @@ pub struct State {
 }
 
 impl State {
+	/// Create a new state from an initial `ReadyEvent`.
 	pub fn new(ready: ReadyEvent) -> Result<State> {
 		if ready.version != VERSION {
 			println!("[Warning] Got version {} instead of {}", ready.version, VERSION);
@@ -26,6 +28,7 @@ impl State {
 		})
 	}
 
+	/// Update the state according to the changes described in the given event.
 	pub fn update(&mut self, event: &Event) {
 		match *event {
 			Event::UserUpdate(ref user) => self.user = user.clone(),
@@ -159,18 +162,23 @@ impl State {
 		}
 	}
 
+	/// Get information about the logged-in user.
 	#[inline]
 	pub fn user(&self) -> &CurrentUser { &self.user }
 
+	/// Get the websocket session ID.
 	#[inline]
 	pub fn session_id(&self) -> &str { &self.session_id }
 
+	/// Get the list of private channels with other users.
 	#[inline]
 	pub fn private_channels(&self) -> &[PrivateChannel] { &self.private_channels }
 
+	/// Get the list of servers this user has access to.
 	#[inline]
 	pub fn servers(&self) -> &[LiveServer] { &self.servers }
 
+	/// Look up a private or public channel by its ID.
 	pub fn find_channel(&self, id: &ChannelId) -> Option<ChannelRef> {
 		for server in &self.servers {
 			for channel in &server.channels {
@@ -189,6 +197,7 @@ impl State {
 }
 
 /// A reference to a private or public channel
+#[derive(Debug, Clone, Copy)]
 pub enum ChannelRef<'a> {
 	/// A private channel
 	Private(&'a PrivateChannel),

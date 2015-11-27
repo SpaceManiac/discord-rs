@@ -19,6 +19,13 @@ pub struct Connection {
 }
 
 impl Connection {
+	/// Establish a connection to the Discord websocket servers.
+	///
+	/// Returns both the `Connection` and the `ReadyEvent` which is always the
+	/// first event received and contains initial state information.
+	///
+	/// Usually called internally by `Discord::connect`, which provides both
+	/// the token and URL.
 	pub fn new(url: &str, token: &str) -> Result<(Connection, ReadyEvent)> {
 		// establish the websocket connection
 		let url = match ::websocket::client::request::Url::parse(url) {
@@ -67,15 +74,19 @@ impl Connection {
 		}, ready))
 	}
 
+	/// Change the game that this client reports as playing. Games are referred
+	/// to by a numeric id which is interpreted by the official Discord client.
 	pub fn set_game_id(&mut self, game_id: Option<u64>) {
 		let _ = self.keepalive_channel.send(Status::SetGameId(game_id));
 	}
 
+	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
 		recv_message(&mut self.receiver)
 	}
 
-	pub fn shutdown(&mut self) -> Result<()> {
+	/// Cleanly shut down the websocket connection. Optional.
+	pub fn shutdown(mut self) -> Result<()> {
 		let _ = self.keepalive_channel.send(Status::Shutdown);
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 		Ok(())

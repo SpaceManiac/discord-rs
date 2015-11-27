@@ -1,4 +1,22 @@
 //! Client library for the [Discord](https://discordapp.com) API.
+//!
+//! The Discord API can be divided into three main components: the RESTful API
+//! to which calls can be made to take actions, a websocket-based permanent
+//! connection over which state updates are received, and the voice calling
+//! system. This library covers the first two.
+//!
+//! Log in to Discord with `Discord::new`. The resulting value can be used to
+//! make REST API calls to post messages and manipulate Discord state. Calling
+//! `connect()` will open a websocket connection, through which events can be
+//! received. These two channels are enough to write a simple chatbot which can
+//! read and respond to messages.
+//!
+//! For more in-depth tracking of Discord state, a `State` can be seeded with
+//! the `ReadyEvent` obtained when opening a `Connection` and kept updated with
+//! the events received over it.
+//!
+//! For examples, see the `examples` directory in the source tree.
+#![warn(missing_docs)]
 
 extern crate hyper;
 extern crate serde_json;
@@ -22,6 +40,11 @@ use model::*;
 const API_BASE: &'static str = "https://discordapp.com/api";
 
 /// Client for the Discord REST API.
+///
+/// Log in to the API with a user's email and password using `new()`. Call
+/// `connect()` to create a `Connection` on which to receive events. If desired,
+/// use `logout()` to invalidate the token when done. Other methods manipulate
+/// the Discord REST API.
 pub struct Discord {
 	client: hyper::Client,
 	token: String,
@@ -128,7 +151,7 @@ impl Discord {
 	/// Send a message to a given channel.
 	///
 	/// The `nonce` will be returned in the result and also transmitted to other
-	/// clients. The empty string is a good default.
+	/// clients. The empty string is a good default if you don't care.
 	pub fn send_message(&self, channel: &ChannelId, text: &str, mentions: &[&UserId], nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
@@ -147,6 +170,7 @@ impl Discord {
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
+	// TODO: the remaining API calls
 	/*pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> { unimplemented!() }
 	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
 	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
@@ -184,6 +208,9 @@ impl Discord {
 	// Get upcoming maintenances
 
 	/// Establish a websocket connection over which events can be received.
+	///
+	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
+	/// connection, which contains the initial state as seen by the client.
 	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/gateway", API_BASE))));
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
