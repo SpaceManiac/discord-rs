@@ -126,7 +126,7 @@ pub struct Role {
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
-	pub permissions: Permissions, // TODO: bitflags?
+	pub permissions: Permissions,
 }
 
 impl Role {
