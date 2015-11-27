@@ -31,11 +31,17 @@ impl State {
 			Event::UserUpdate(ref user) => self.user = user.clone(),
 			Event::VoiceStateUpdate(ref server, ref state) => {
 				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
-					match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-						Some(srv_state) => { srv_state.clone_from(state); return }
-						None => {}
+					if !state.channel_id.is_some() {
+						// Remove the user from the voice state list
+						srv.voice_states.retain(|v| v.user_id != state.user_id);
+					} else {
+						// Update or add to the voice state list
+						match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+							Some(srv_state) => { srv_state.clone_from(state); return }
+							None => {}
+						}
+						srv.voice_states.push(state.clone());
 					}
-					srv.voice_states.push(state.clone());
 				});
 			}
 			Event::PresenceUpdate { ref server_id, ref presence, ref user, roles: _ } => {
@@ -50,7 +56,7 @@ impl State {
 						// Remove the user from the presence list
 						srv.presences.retain(|u| u.user_id != presence.user_id);
 					} else {
-						// Update the presence list with the new information
+						// Update or add to the presence list
 						match srv.presences.iter_mut().find(|u| u.user_id == presence.user_id) {
 							Some(srv_presence) => { srv_presence.clone_from(presence); return }
 							None => {}
