@@ -38,14 +38,25 @@ impl State {
 					srv.voice_states.push(state.clone());
 				});
 			}
-			Event::PresenceUpdate { ref server_id, ref presence, roles: _ } => {
-				// TODO: double-check this
+			Event::PresenceUpdate { ref server_id, ref presence, ref user, roles: _ } => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
-					match srv.presences.iter_mut().find(|u| u.user_id == presence.user_id) {
-						Some(srv_presence) => { srv_presence.clone_from(presence); return }
-						None => {}
+					// If the user was modified, update the member list
+					if let &Some(ref user) = user {
+						srv.members.iter_mut().find(|u| u.user.id == user.id).map(|member| {
+							member.user.clone_from(&user);
+						});
 					}
-					srv.presences.push(presence.clone());
+					if presence.status == OnlineStatus::Offline {
+						// Remove the user from the presence list
+						srv.presences.retain(|u| u.user_id != presence.user_id);
+					} else {
+						// Update the presence list with the new information
+						match srv.presences.iter_mut().find(|u| u.user_id == presence.user_id) {
+							Some(srv_presence) => { srv_presence.clone_from(presence); return }
+							None => {}
+						}
+						srv.presences.push(presence.clone());
+					}
 				});
 			}
 			Event::ServerCreate(ref server) => self.servers.push(server.clone()),

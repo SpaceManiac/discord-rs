@@ -431,17 +431,38 @@ impl ReadState {
 	}
 }
 
+/// A user's online presence status
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum OnlineStatus {
+	Offline,
+	Online,
+	Idle,
+}
+
+impl OnlineStatus {
+	pub fn from_str(name: &str) -> Option<OnlineStatus> {
+		if name == "offline" {
+			Some(OnlineStatus::Offline)
+		} else if name == "online" {
+			Some(OnlineStatus::Online)
+		} else if name == "idle" {
+			Some(OnlineStatus::Idle)
+		} else {
+			None
+		}
+	}
+}
+
 /// A members's online status
 #[derive(Debug, Clone)]
 pub struct Presence {
 	pub user_id: UserId,
-	pub user: Option<User>,
-	pub status: String, // enum?
+	pub status: OnlineStatus,
 	pub game_id: Option<u64>,
 }
 
 impl Presence {
-	pub fn decode(value: Value) -> Result<Presence> {
+	pub fn decode(value: Value) -> Result<(Presence, Option<User>)> {
 		let mut value = try!(into_map(value));
 		let mut user_map = try!(remove(&mut value, "user").and_then(into_map));
 
@@ -452,12 +473,12 @@ impl Presence {
 			(try!(remove(&mut user_map, "id").and_then(into_string).map(UserId)), None)
 		};
 
-		warn_json!(value, Presence {
+		warn_json!(@"Presence", value, (Presence {
 			user_id: user_id,
-			user: user,
-			status: try!(remove(&mut value, "status").and_then(into_string)),
+			status: try!(remove(&mut value, "status").and_then(into_string)
+				.and_then(|s| OnlineStatus::from_str(&s).ok_or(Error::Other("presence status")))),
 			game_id: remove(&mut value, "game_id").ok().and_then(|x| x.as_u64()),
-		})
+		}, user))
 	}
 }
 
@@ -521,7 +542,8 @@ impl LiveServer {
 			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
-			presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
+			// these presences don't contain a whole User, so discard that
+			presences: try!(decode_array(try!(remove(&mut value, "presences")), |v| Presence::decode(v).map(|x| x.0))),
 			members: try!(decode_array(try!(remove(&mut value, "members")), Member::decode)),
 			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
@@ -586,11 +608,13 @@ pub enum Event {
 		user_id: UserId,
 		timestamp: u64,
 	},
-	/// A member's presence state has changed
+	/// A member's presence state (or username or avatar) has changed
 	PresenceUpdate {
 		server_id: ServerId,
 		presence: Presence,
 		roles: Vec<RoleId>,
+		/// User information if the username or avatar has changed
+		user: Option<User>,
 	},
 
 	MessageCreate(Message),
@@ -630,6 +654,7 @@ pub enum Event {
 		roles: Vec<RoleId>,
 		user: User,
 	},
+	/// A member's roles have changed
 	ServerMemberUpdate {
 		server_id: ServerId,
 		roles: Vec<RoleId>,
@@ -686,10 +711,13 @@ impl Event {
 			})
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
+			let roles = try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId)));
+			let (presence, user) = try!(Presence::decode(Value::Object(value)));
 			Ok(Event::PresenceUpdate {
 				server_id: server_id,
-				roles: try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId))),
-				presence: try!(Presence::decode(Value::Object(value))),
+				roles: roles,
+				presence: presence,
+				user: user,
 			})
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)

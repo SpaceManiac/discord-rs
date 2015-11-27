@@ -56,7 +56,9 @@ impl Connection {
 
 		// spawn the keepalive thread
 		let (tx, rx) = mpsc::channel();
-		::std::thread::spawn(move || keepalive(heartbeat_interval, sender, rx));
+		try!(::std::thread::Builder::new()
+			.name("Discord Keepalive".into())
+			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
 
 		// return the connection
 		Ok((Connection {
