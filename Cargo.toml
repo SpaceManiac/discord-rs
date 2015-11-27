@@ -3,6 +3,13 @@ name = "discord"
 version = "0.1.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
 
+description = "Client library for the Discord API"
+readme = "README.md"
+license = "MIT"
+keywords = ["discord", "chat", "bot", "discordapp", "api"]
+
+repository = "https://github.com/SpaceManiac/discord-rs"
+
 [dependencies]
 hyper = "0.6.16"
 serde_json = "0.6"
