@@ -603,6 +603,12 @@ pub enum Event {
 	UserUpdate(CurrentUser),
 	/// A member's voice state has changed
 	VoiceStateUpdate(ServerId, VoiceState),
+	/// Voice server information is available
+	VoiceServerUpdate {
+		server_id: ServerId,
+		endpoint: String,
+		token: String,
+	},
 	/// A user is typing; considered to last 5 seconds
 	TypingStart {
 		channel_id: ChannelId,
@@ -704,6 +710,12 @@ impl Event {
 		} else if kind == "VOICE_STATE_UPDATE" {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
+		} else if kind == "VOICE_SERVER_UPDATE" {
+			warn_json!(value, Event::VoiceServerUpdate {
+				server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				endpoint: try!(remove(&mut value, "endpoint").and_then(into_string)),
+				token: try!(remove(&mut value, "token").and_then(into_string)),
+			})
 		} else if kind == "TYPING_START" {
 			warn_json!(value, Event::TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
@@ -785,6 +797,59 @@ impl Event {
 			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
 		} else {
 			Ok(Event::Unknown(kind, value))
+		}
+	}
+}
+
+//=================
+// Voice event model
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub enum VoiceEvent {
+	Handshake {
+		heartbeat_interval: u64,
+		port: u16,
+		ssrc: u32,
+		modes: Vec<String>,
+	},
+	Ready {
+		mode: String,
+		// secret_key: Vec<?>
+	},
+	SpeakingUpdate {
+		user_id: UserId,
+		ssrc: u32,
+		speaking: bool,
+	},
+	Unknown(u64, Value)
+}
+
+impl VoiceEvent {
+	pub fn decode(value: Value) -> Result<VoiceEvent> {
+		let mut value = try!(into_map(value));
+
+		let op = req!(req!(value.remove("op")).as_u64());
+		let mut value = try!(remove(&mut value, "d").and_then(into_map));
+		if op == 2 {
+			warn_json!(value, VoiceEvent::Handshake {
+				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
+				modes: try!(decode_array(try!(remove(&mut value, "modes")), into_string)),
+				port: req!(try!(remove(&mut value, "port")).as_u64()) as u16,
+				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
+			})
+		} else if op == 4 {
+			warn_json!(value, VoiceEvent::Ready {
+				mode: try!(remove(&mut value, "mode").and_then(into_string)),
+				// secret_key
+			})
+		} else if op == 5 {
+			warn_json!(value, VoiceEvent::SpeakingUpdate {
+				user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
+				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
+				speaking: req!(try!(remove(&mut value, "speaking")).as_boolean()),
+			})
+		} else {
+			Ok(VoiceEvent::Unknown(op, Value::Object(value)))
 		}
 	}
 }

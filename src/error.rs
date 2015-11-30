@@ -3,6 +3,7 @@ use std::error::Error as StdError;
 use hyper::Error as HyError;
 use serde_json::Error as SjError;
 use websocket::result::WebSocketError as WsError;
+use byteorder::Error as BoError;
 
 /// Discord API `Result` alias type.
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -22,6 +23,8 @@ pub enum Error {
 	Decode(&'static str, ::serde_json::Value),
 	/// A non-success response from the REST API
 	Status(::hyper::status::StatusCode),
+	/// An error in the Opus library
+	Opus(&'static str, i32),
 	/// A miscellaneous error, with a description
 	Other(&'static str),
 }
@@ -50,6 +53,15 @@ impl From<WsError> for Error {
 	}
 }
 
+impl From<BoError> for Error {
+	fn from(err: BoError) -> Error {
+		match err {
+			BoError::UnexpectedEOF => Error::Other("byteorder::UnexpectedEOF"),
+			BoError::Io(io) => Error::Io(io),
+		}
+	}
+}
+
 impl ::std::fmt::Display for Error {
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		write!(f, "Discord error ({})", self.description())
@@ -65,6 +77,7 @@ impl StdError for Error {
 			Error::Io(ref inner) => inner.description(),
 			Error::Decode(..) => "json decode error",
 			Error::Status(_) => "erroneous HTTP status",
+			Error::Opus(msg, _) => msg,
 			Error::Other(msg) => msg,
 		}
 	}

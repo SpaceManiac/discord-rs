@@ -76,8 +76,37 @@ impl Connection {
 
 	/// Change the game that this client reports as playing. Games are referred
 	/// to by a numeric id which is interpreted by the official Discord client.
-	pub fn set_game_id(&mut self, game_id: Option<u64>) {
+	pub fn set_game_id(&self, game_id: Option<u64>) {
 		let _ = self.keepalive_channel.send(Status::SetGameId(game_id));
+	}
+
+	/// Connect to the specified voice channel. Any previous channel will be
+	/// disconnected from.
+	pub fn voice_connect(&self, server_id: &ServerId, channel_id: &ChannelId) {
+		let _ = self.keepalive_channel.send(Status::SendMessage(ObjectBuilder::new()
+			.insert("op", 4)
+			.insert_object("d", |object| object
+				.insert("guild_id", &server_id.0)
+				.insert("channel_id", &channel_id.0)
+				.insert("self_mute", false)
+				.insert("self_deaf", false)
+			)
+			.unwrap()
+		));
+	}
+
+	/// Disconnect from the current voice channel, if any.
+	pub fn voice_disconnect(&self) {
+		let _ = self.keepalive_channel.send(Status::SendMessage(ObjectBuilder::new()
+			.insert("op", 4)
+			.insert_object("d", |object| object
+				.insert("guild_id", serde_json::Value::Null)
+				.insert("channel_id", serde_json::Value::Null)
+				.insert("self_mute", false)
+				.insert("self_deaf", false)
+			)
+			.unwrap()
+		));
 	}
 
 	/// Receive an event over the websocket, blocking until one is available.
@@ -118,6 +147,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 enum Status {
 	Shutdown,
 	SetGameId(Option<u64>),
+	SendMessage(serde_json::Value),
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
@@ -132,6 +162,16 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 			match channel.try_recv() {
 				Ok(Status::Shutdown) => break 'outer,
 				Ok(Status::SetGameId(id)) => { game_id = id; countdown = 0; },
+				Ok(Status::SendMessage(val)) => {
+					let json = match serde_json::to_string(&val) {
+						Ok(json) => json,
+						Err(e) => return println!("[Warning] Error encoding message: {:?}", e)
+					};
+					match sender.send_message(&WsMessage::text(json)) {
+						Ok(()) => {},
+						Err(e) => return println!("[Warning] Error sending message: {:?}", e)
+					}
+				},
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
 			}

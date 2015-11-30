@@ -23,6 +23,8 @@ extern crate serde_json;
 extern crate websocket;
 #[macro_use]
 extern crate bitflags;
+extern crate byteorder;
+extern crate opus_sys;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -30,11 +32,14 @@ use serde_json::builder::ObjectBuilder;
 mod error;
 mod connection;
 mod state;
+mod voice;
+mod utils;
 pub mod model;
 
 pub use error::{Result, Error};
 pub use connection::Connection;
 pub use state::{State, ChannelRef};
+pub use voice::VoiceConnection;
 use model::*;
 
 const API_BASE: &'static str = "https://discordapp.com/api";
