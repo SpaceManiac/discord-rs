@@ -814,7 +814,7 @@ pub enum VoiceEvent {
 	},
 	Ready {
 		mode: String,
-		// secret_key: Vec<?>
+		secret_key: Vec<Value>,
 	},
 	SpeakingUpdate {
 		user_id: UserId,
@@ -840,7 +840,7 @@ impl VoiceEvent {
 		} else if op == 4 {
 			warn_json!(value, VoiceEvent::Ready {
 				mode: try!(remove(&mut value, "mode").and_then(into_string)),
-				// secret_key
+				secret_key: try!(decode_array(try!(remove(&mut value, "secret_key")), Ok)),
 			})
 		} else if op == 5 {
 			warn_json!(value, VoiceEvent::SpeakingUpdate {

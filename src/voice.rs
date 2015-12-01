@@ -39,7 +39,7 @@ impl VoiceConnection {
 		match *event {
 			Event::VoiceStateUpdate(_, ref voice_state) => {
 				if voice_state.user_id == self.user_id {
-					println!("[Debug] Got our session_id");
+					println!("[Voice] Session id: {}", voice_state.session_id);
 					self.session_id = Some(voice_state.session_id.clone());
 					if !voice_state.channel_id.is_some() {
 						self.channel.take(); // drop the connection
@@ -47,15 +47,14 @@ impl VoiceConnection {
 				}
 			}
 			Event::VoiceServerUpdate { ref server_id, ref endpoint, ref token } => {
-				println!("[Debug] Connectinating");
-				self.connect(server_id, endpoint.clone(), token).expect("Bark Bark")
+				println!("[Voice] Connecting to: {}", endpoint);
+				self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
 			}
 			_ => {}
 		}
 	}
 
 	fn connect(&mut self, server_id: &ServerId, mut endpoint: String, token: &str) -> Result<()> {
-		println!("Connect()");
 		self.channel.take(); // drop any previous connection
 
 		// prepare the URL: drop the :80 and prepend wss://
@@ -68,13 +67,11 @@ impl VoiceConnection {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in Voice::connect()"))
 		};
-		println!("Connect(): websocket");
 		let response = try!(try!(Client::connect(url)).send());
 		try!(response.validate());
 		let (mut sender, receiver) = response.begin().split();
 
 		// send the handshake
-		println!("Connect(): transmit");
 		let map = ObjectBuilder::new()
 			.insert("op", 0)
 			.insert_object("d", |object| object
@@ -87,7 +84,6 @@ impl VoiceConnection {
 		try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
 		// spin up the voice thread, where most of the action will take place
-		println!("Connect(): start thread");
 		let (tx, rx) = mpsc::channel();
 		try!(::std::thread::Builder::new()
 			.name("Discord Voice Thread".into())
@@ -95,13 +91,6 @@ impl VoiceConnection {
 		self.channel = Some(tx);
 		Ok(())
 	}
-
-	/* /// Cleanly shut down the websocket connection. Optional.
-	pub fn shutdown(mut self) -> Result<()> {
-		let _ = self.keepalive_channel.send(Status::Shutdown);
-		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
-		Ok(())
-	} */
 }
 
 fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> {
@@ -128,12 +117,7 @@ fn voice_thread(
 	use std::io::{Cursor, Read, Write};
 	use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 
-	// bind a UDP socket
-	let udp = try!(UdpSocket::bind("0.0.0.0:0"));
-	let udp_port = try!(udp.local_addr()).port();
-	println!("UDP port: {}", udp_port);
-
-	// read the first message...
+	// read the first websocket message
 	let (interval, port, ssrc, modes) = match try!(recv_message(&mut receiver)) {
 		VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
 		_ => return Err(Error::Other("First voice message was not 4/handshake"))
@@ -142,38 +126,40 @@ fn voice_thread(
 		return Err(Error::Other("Plain voice mode is unavailable"))
 	}
 
-	// pack the ssrc value into a packet and send it
+	// bind a UDP socket and send the ssrc value in a packet as identification
+	let udp = try!(UdpSocket::bind("0.0.0.0:0"));
 	let mut bytes = [0; 4];
 	try!(Cursor::new(&mut bytes[..]).write_u32::<BigEndian>(ssrc));
 	try!(udp.send_to(&bytes, (&endpoint[..], port)));
 
-	// receive the packet from the Discord servers
+	// receive the response to the identification to get port and address info
 	let mut bytes = [0; 256];
 	let (len, _remote_addr) = try!(udp.recv_from(&mut bytes));
-	println!("Got UDP packet!! {:?}", &bytes[..len]);
 	let mut cursor = Cursor::new(&bytes[..len]);
-	let _ = try!(cursor.read_u32::<LittleEndian>());
-	let remote_port = try!(cursor.read_u16::<LittleEndian>());
-	println!("Port number: {}", remote_port);
+	let _ = try!(cursor.read_u32::<LittleEndian>()); // discard padding
+	let port_number = try!(cursor.read_u16::<LittleEndian>());
 
-	// send the acknowledgement message
+	// send the acknowledgement websocket message
 	let map = ObjectBuilder::new()
 		.insert("op", 1)
 		.insert_object("d", |object| object
 			.insert("protocol", "udp")
 			.insert_object("data", |object| object
 				.insert("address", "")
-				.insert("port", remote_port)
+				.insert("port", port_number)
 				.insert("mode", "plain")
 			)
 		)
 		.unwrap();
 	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
-	// discard messages until we get the Ready
+	// discard websocket messages until we get the Ready
 	loop {
 		match try!(recv_message(&mut receiver)) {
-			VoiceEvent::Ready { mode } => {
+			VoiceEvent::Ready { mode, secret_key } => {
+				if secret_key.len() != 0 {
+					println!("[Voice] Got secret key: {:?}", secret_key);
+				}
 				if mode != "plain" {
 					return Err(Error::Other("Voice mode in Ready was not 'plain'"))
 				}
@@ -183,8 +169,14 @@ fn voice_thread(
 			_ => {},
 		}
 	}
-	println!("[Voice] Ready");
-	::std::thread::sleep_ms(500);
+
+	// prepare buffers for later use
+	let mut opus = ::utils::OpusEncoder::new().expect("failed new");
+	let mut file = try!(::std::fs::File::open("../res/discord-swing.pcm"));
+	let mut test_data = Vec::with_capacity(960);
+	let mut packet = Vec::with_capacity(256);
+	let mut sequence = 0;
+	let mut timestamp = 0;
 
 	// tell 'em that we're speaking
 	let map = ObjectBuilder::new()
@@ -196,42 +188,60 @@ fn voice_thread(
 		.unwrap();
 	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
-	let mut opus = ::utils::OpusEncoder::new().expect("failed new");
-	let mut file = try!(::std::fs::File::open("../res/discord-swing.pcm"));
-	let mut test_data = Vec::with_capacity(960);
-	let mut packet = Vec::with_capacity(2048);
-	let mut sequence = 0;
-	let mut timestamp = 0;
+	let audio_duration = ::time::Duration::milliseconds(20);
+	let keepalive_duration = ::time::Duration::milliseconds(interval as i64);
+	let mut audio_timer = ::utils::Timer::new(::time::Duration::zero());
+	let mut keepalive_timer = ::utils::Timer::new(keepalive_duration);
 
-	// prepare the encoded packet
-	for i in 0.. {
-		print!("Encoding:{}", i);
+	// start the main loop
+	println!("[Voice] Ready");
+	'outer: loop {
+		::std::thread::sleep_ms(3);
 
-		packet.clear();
-		try!(packet.write_all(&[0x80, 0x78]));
-		try!(packet.write_u16::<BigEndian>(sequence));
-		try!(packet.write_u32::<BigEndian>(timestamp));
-		try!(packet.write_u32::<BigEndian>(ssrc));
-		packet.extend(::std::iter::repeat(0).take(2048-12));
-
-		// read the test data
-		test_data.clear();
-		for _ in 0..test_data.capacity() {
-			test_data.push(try!(file.read_i16::<LittleEndian>()) / 4);
+		loop {
+			match channel.try_recv() {
+				Ok(val) => {
+					let json = try!(serde_json::to_string(&val));
+					try!(sender.send_message(&WsMessage::text(json)));
+				},
+				Err(mpsc::TryRecvError::Empty) => break,
+				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
+			}
 		}
 
-		// encode the test data
-		print!(" Seq:{}:{}", sequence, timestamp);
-		print!(" Input:{}:{}", test_data.len(), ::std::mem::size_of_val(&test_data[..]));
-		let len = opus.encode(&test_data, &mut packet[12..]).expect("failed encode");
+		if keepalive_timer.check_and_add(keepalive_duration) {
+			let map = ObjectBuilder::new()
+				.insert("op", 3)
+				.insert("d", serde_json::Value::Null)
+				.unwrap();
+			let json = try!(serde_json::to_string(&map));
+			try!(sender.send_message(&WsMessage::text(json)));
+		}
 
-		// transmit the encoded packet
-		try!(udp.send_to(&packet[..len + 12], (&endpoint[..], port)));
+		if audio_timer.check_and_add(audio_duration) {
+			const HEADER_LEN: usize = 12;
+			// prepare the packet header
+			packet.clear();
+			try!(packet.write_all(&[0x80, 0x78]));
+			try!(packet.write_u16::<BigEndian>(sequence));
+			try!(packet.write_u32::<BigEndian>(timestamp));
+			try!(packet.write_u32::<BigEndian>(ssrc));
+			let zeroes = packet.capacity() - HEADER_LEN;
+			packet.extend(::std::iter::repeat(0).take(zeroes));
 
-		println!(" Sent:{}", len + 12);
-		::std::thread::sleep_ms(17);
-		sequence = sequence.wrapping_add(1);
-		timestamp = timestamp.wrapping_add(960);
+			// read the test data
+			test_data.clear();
+			for _ in 0..test_data.capacity() {
+				test_data.push(try!(file.read_i16::<LittleEndian>()) / 6);
+			}
+
+			// encode the audio data and transmit it
+			let len = opus.encode(&test_data, &mut packet[HEADER_LEN..]).expect("failed encode");
+			try!(udp.send_to(&packet[..len + HEADER_LEN], (&endpoint[..], port)));
+
+			sequence = sequence.wrapping_add(1);
+			timestamp = timestamp.wrapping_add(960);
+		}
 	}
 
 	// stop speaking
@@ -245,43 +255,7 @@ fn voice_thread(
 		.unwrap();
 	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
-	/*loop {
-		let mut bytes = [0; 1024];
-		let (len, remote_addr) = try!(udp.recv_from(&mut bytes));
-		println!("Got UDP packet!! {:?}", &bytes[..len]);
-	}*/
-
-	// start the main loop
-	let mut countdown = interval;
-	'outer: loop {
-		// TODO: this is not a precise timer, but it's good enough for now
-		::std::thread::sleep_ms(100);
-		countdown = countdown.saturating_sub(100);
-
-		loop {
-			match channel.try_recv() {
-				Ok(val) => {
-					let json = try!(serde_json::to_string(&val));
-					try!(sender.send_message(&WsMessage::text(json)));
-				},
-				Err(mpsc::TryRecvError::Empty) => break,
-				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-			}
-		}
-
-		if countdown == 0 {
-			countdown = interval;
-			let map = ObjectBuilder::new()
-				.insert("op", 3)
-				.insert("d", serde_json::Value::Null)
-				.unwrap();
-			let json = try!(serde_json::to_string(&map));
-			try!(sender.send_message(&WsMessage::text(json)));
-		}
-	}
-	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
+	try!(receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
+	try!(sender.get_mut().shutdown(::std::net::Shutdown::Both));
 	Ok(())
 }
-
-//fn recv_thread(mut receiver: Receiver<WebSocketStream>) { // , channel: mpsc::Receiver<serde_json::Value>) {
-//}

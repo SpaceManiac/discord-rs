@@ -1,10 +1,11 @@
 use opus_sys as opus;
+use time::{Duration, Timespec, get_time};
 
 use super::{Error, Result};
 
-// Opus encoding wrapper
-
+// Safe wrapper for an OpusEncoder
 // TODO: support stereo
+
 //const OPUS_APPLICATION_VOIP: i32 = 2048;
 const OPUS_APPLICATION_AUDIO: i32 = 2049;
 //const OPUS_APPLICATION_RESTRICTED_LOWDELAY: i32 = 2051;
@@ -23,7 +24,9 @@ impl OpusEncoder {
 	}
 
 	pub fn encode(&mut self, input: &[i16], output: &mut [u8]) -> Result<usize> {
-		let len = unsafe { opus::opus_encode(self.0, input.as_ptr(), input.len() as i32, output.as_mut_ptr(), output.len() as i32) };
+		let len = unsafe { opus::opus_encode(self.0,
+			input.as_ptr(), input.len() as i32,
+			output.as_mut_ptr(), output.len() as i32) };
 		if len < 0 {
 			Err(Error::Opus("opus_encode", len))
 		} else {
@@ -38,4 +41,22 @@ impl Drop for OpusEncoder {
 	}
 }
 
-// Opus
+// Timer that remembers when it is supposed to go off
+pub struct Timer(Timespec);
+
+impl Timer {
+	pub fn new(initial_delay: Duration) -> Timer {
+		Timer(get_time() + initial_delay)
+	}
+
+	pub fn immediately(&mut self) {
+		self.0 = get_time();
+	}
+
+	pub fn check_and_add(&mut self, duration: Duration) -> bool {
+		if get_time() >= self.0 {
+			self.0 = self.0 + duration;
+			true
+		} else { false }
+	}
+}

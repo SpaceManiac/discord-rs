@@ -116,7 +116,6 @@ impl Connection {
 
 	/// Cleanly shut down the websocket connection. Optional.
 	pub fn shutdown(mut self) -> Result<()> {
-		let _ = self.keepalive_channel.send(Status::Shutdown);
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 		Ok(())
 	}
@@ -145,23 +144,24 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 }
 
 enum Status {
-	Shutdown,
 	SetGameId(Option<u64>),
 	SendMessage(serde_json::Value),
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
-	let mut countdown = interval;
+	let duration = ::time::Duration::milliseconds(interval as i64);
+	let mut timer = ::utils::Timer::new(duration);
 	let mut game_id = None;
+
 	'outer: loop {
-		// TODO: this is not a precise timer, but it's good enough for now
 		::std::thread::sleep_ms(100);
-		countdown = countdown.saturating_sub(100);
 
 		loop {
 			match channel.try_recv() {
-				Ok(Status::Shutdown) => break 'outer,
-				Ok(Status::SetGameId(id)) => { game_id = id; countdown = 0; },
+				Ok(Status::SetGameId(id)) => {
+					game_id = id;
+					timer.immediately();
+				},
 				Ok(Status::SendMessage(val)) => {
 					let json = match serde_json::to_string(&val) {
 						Ok(json) => json,
@@ -177,8 +177,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 			}
 		}
 
-		if countdown == 0 {
-			countdown = interval;
+		if timer.check_and_add(duration) {
 			let map = ObjectBuilder::new()
 				.insert("op", 3)
 				.insert_object("d", |object| object

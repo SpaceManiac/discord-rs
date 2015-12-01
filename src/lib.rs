@@ -25,6 +25,7 @@ extern crate websocket;
 extern crate bitflags;
 extern crate byteorder;
 extern crate opus_sys;
+extern crate time;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
