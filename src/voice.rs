@@ -1,5 +1,6 @@
 use super::{Result, Error};
 
+use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::net::UdpSocket;
 
@@ -11,6 +12,8 @@ use websocket::message::{Message as WsMessage, Type as MessageType};
 use serde_json;
 use serde_json::builder::ObjectBuilder;
 
+use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
+
 use super::model::*;
 
 /// A websocket connection to the voice servers.
@@ -21,7 +24,8 @@ use super::model::*;
 pub struct VoiceConnection {
 	user_id: UserId,
 	session_id: Option<String>,
-	channel: Option<mpsc::Sender<serde_json::Value>>,
+	channel: Option<mpsc::Sender<Status>>,
+	queue: Vec<AudioSource>,
 }
 
 impl VoiceConnection {
@@ -31,6 +35,7 @@ impl VoiceConnection {
 			user_id: user_id,
 			session_id: None,
 			channel: None,
+			queue: Vec::new(),
 		}
 	}
 
@@ -51,6 +56,36 @@ impl VoiceConnection {
 				self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
 			}
 			_ => {}
+		}
+	}
+
+	/// Check whether the voice thread is currently running.
+	pub fn is_running(&self) -> bool {
+		match self.channel {
+			None => false,
+			Some(ref channel) => channel.send(Status::NoOp).is_ok(),
+		}
+	}
+
+	/// Push the raw PCM file at the given path to the queue.
+	pub fn push_pcm_file<R: Read + Send + 'static>(&mut self, read: R) {
+		self.push_internal(AudioSource::Pcm(Box::new(read)));
+	}
+
+	/// Stop any currently playing audio and clear the queue.
+	pub fn stop_audio(&mut self) {
+		self.channel.as_ref().map(|ch| ch.send(Status::Clear));
+		self.queue.clear();
+	}
+
+	fn push_internal(&mut self, source: AudioSource) {
+		match self.channel {
+			None => self.queue.push(source),
+			Some(ref channel) => match channel.send(Status::Push(source)) {
+				Ok(()) => {},
+				Err(mpsc::SendError(Status::Push(source))) => self.queue.push(source),
+				Err(_) => unreachable!()
+			}
 		}
 	}
 
@@ -88,9 +123,18 @@ impl VoiceConnection {
 		try!(::std::thread::Builder::new()
 			.name("Discord Voice Thread".into())
 			.spawn(move || voice_thread(endpoint, sender, receiver, rx).unwrap()));
+		for source in ::std::mem::replace(&mut self.queue, Vec::new()) {
+			let _ = tx.send(Status::Push(source));
+		}
 		self.channel = Some(tx);
 		Ok(())
 	}
+}
+
+enum Status {
+	Push(AudioSource),
+	Clear,
+	NoOp,
 }
 
 fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> {
@@ -112,10 +156,9 @@ fn voice_thread(
 	endpoint: String,
 	mut sender: Sender<WebSocketStream>,
 	mut receiver: Receiver<WebSocketStream>,
-	channel: mpsc::Receiver<serde_json::Value>,
+	channel: mpsc::Receiver<Status>,
 ) -> Result<()> {
-	use std::io::{Cursor, Read, Write};
-	use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
+	use std::io::Cursor;
 
 	// read the first websocket message
 	let (interval, port, ssrc, modes) = match try!(recv_message(&mut receiver)) {
@@ -172,8 +215,8 @@ fn voice_thread(
 
 	// prepare buffers for later use
 	let mut opus = ::utils::OpusEncoder::new().expect("failed new");
-	let mut file = try!(::std::fs::File::open("../res/discord-swing.pcm"));
-	let mut test_data = Vec::with_capacity(960);
+	let mut audio_queue = ::std::collections::VecDeque::new();
+	let mut audio_buffer = vec![0; 960];
 	let mut packet = Vec::with_capacity(256);
 	let mut sequence = 0;
 	let mut timestamp = 0;
@@ -200,10 +243,11 @@ fn voice_thread(
 
 		loop {
 			match channel.try_recv() {
-				Ok(val) => {
-					let json = try!(serde_json::to_string(&val));
-					try!(sender.send_message(&WsMessage::text(json)));
+				Ok(Status::Push(source)) => {
+					audio_queue.push_back(source)
 				},
+				Ok(Status::Clear) => audio_queue.clear(),
+				Ok(Status::NoOp) => {},
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
 			}
@@ -218,7 +262,7 @@ fn voice_thread(
 			try!(sender.send_message(&WsMessage::text(json)));
 		}
 
-		if audio_timer.check_and_add(audio_duration) {
+		if audio_timer.check_and_add(audio_duration) && audio_queue.len() > 0 {
 			const HEADER_LEN: usize = 12;
 			// prepare the packet header
 			packet.clear();
@@ -229,14 +273,18 @@ fn voice_thread(
 			let zeroes = packet.capacity() - HEADER_LEN;
 			packet.extend(::std::iter::repeat(0).take(zeroes));
 
-			// read the test data
-			test_data.clear();
-			for _ in 0..test_data.capacity() {
-				test_data.push(try!(file.read_i16::<LittleEndian>()) / 6);
+			// read the audio from the source and zero-fill any leftovers
+			let len = try!(audio_queue[0].next(&mut audio_buffer[..]));
+			if len < audio_buffer.len() {
+				// zero-fill the buffer and advance to the next audio source
+				for value in &mut audio_buffer[len..] {
+					*value = 0;
+				}
+				audio_queue.pop_front();
 			}
 
 			// encode the audio data and transmit it
-			let len = opus.encode(&test_data, &mut packet[HEADER_LEN..]).expect("failed encode");
+			let len = opus.encode(&audio_buffer, &mut packet[HEADER_LEN..]).expect("failed encode");
 			try!(udp.send_to(&packet[..len + HEADER_LEN], (&endpoint[..], port)));
 
 			sequence = sequence.wrapping_add(1);
@@ -258,4 +306,25 @@ fn voice_thread(
 	try!(receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 	try!(sender.get_mut().shutdown(::std::net::Shutdown::Both));
 	Ok(())
+}
+
+enum AudioSource {
+	Pcm(Box<::std::io::Read + Send>),
+}
+
+impl AudioSource {
+	fn next(&mut self, buffer: &mut [i16]) -> Result<usize> {
+		match *self {
+			AudioSource::Pcm(ref mut read) => {
+				for (i, val) in buffer.iter_mut().enumerate() {
+					*val = match read.read_i16::<LittleEndian>() {
+						Ok(val) => val / 6,
+						Err(::byteorder::Error::UnexpectedEOF) => return Ok(i),
+						Err(::byteorder::Error::Io(e)) => return Err(From::from(e))
+					};
+				}
+				Ok(buffer.len())
+			}
+		}
+	}
 }
