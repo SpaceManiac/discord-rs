@@ -44,7 +44,6 @@ impl VoiceConnection {
 		match *event {
 			Event::VoiceStateUpdate(_, ref voice_state) => {
 				if voice_state.user_id == self.user_id {
-					println!("[Voice] Session id: {}", voice_state.session_id);
 					self.session_id = Some(voice_state.session_id.clone());
 					if !voice_state.channel_id.is_some() {
 						self.channel.take(); // drop the connection
@@ -52,7 +51,6 @@ impl VoiceConnection {
 				}
 			}
 			Event::VoiceServerUpdate { ref server_id, ref endpoint, ref token } => {
-				println!("[Voice] Connecting to: {}", endpoint);
 				self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
 			}
 			_ => {}
@@ -67,9 +65,30 @@ impl VoiceConnection {
 		}
 	}
 
-	/// Push the raw PCM file at the given path to the queue.
-	pub fn push_pcm_file<R: Read + Send + 'static>(&mut self, read: R) {
-		self.push_internal(AudioSource::Pcm(Box::new(read)));
+	/// Push a source of raw PCM data to the queue.
+	#[inline]
+	pub fn push_pcm<R: Read + Send + 'static>(&mut self, read: R) {
+		self.push_internal(Box::new(read));
+	}
+
+	/// Push the path to an audio file which ffmpeg can decode.
+	pub fn push_file<P: AsRef<::std::path::Path>>(&mut self, path: P) -> Result<()> {
+		use std::process::{Command, Stdio};
+		let child = try!(Command::new("ffmpeg")
+			.args(&[
+				"-i", try!(path.as_ref().to_str().ok_or(Error::Other("File path is not utf8 - fixme?"))),
+				"-f", "s16le",
+				"-ac", "1",
+				"-ar", "48000",
+				"-acodec", "pcm_s16le",
+				"-"])
+			.stdin(Stdio::null())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::null())
+			.spawn());
+		let stdout = try!(child.stdout.ok_or(Error::Other("Child process missing stdout")));
+		self.push_internal(Box::new(stdout));
+		Ok(())
 	}
 
 	/// Stop any currently playing audio and clear the queue.
@@ -130,6 +149,8 @@ impl VoiceConnection {
 		Ok(())
 	}
 }
+
+type AudioSource = Box<::std::io::Read + Send>;
 
 enum Status {
 	Push(AudioSource),
@@ -233,11 +254,11 @@ fn voice_thread(
 
 	let audio_duration = ::time::Duration::milliseconds(20);
 	let keepalive_duration = ::time::Duration::milliseconds(interval as i64);
-	let mut audio_timer = ::utils::Timer::new(::time::Duration::zero());
+	let mut audio_timer = ::utils::Timer::new(audio_duration);
 	let mut keepalive_timer = ::utils::Timer::new(keepalive_duration);
 
 	// start the main loop
-	println!("[Voice] Ready");
+	println!("[Voice] Connected to {}", endpoint);
 	'outer: loop {
 		::std::thread::sleep_ms(3);
 
@@ -273,8 +294,8 @@ fn voice_thread(
 			let zeroes = packet.capacity() - HEADER_LEN;
 			packet.extend(::std::iter::repeat(0).take(zeroes));
 
-			// read the audio from the source and zero-fill any leftovers
-			let len = try!(audio_queue[0].next(&mut audio_buffer[..]));
+			// read the audio from the source
+			let len = try!(next_frame(&mut audio_queue[0], &mut audio_buffer[..]));
 			if len < audio_buffer.len() {
 				// zero-fill the buffer and advance to the next audio source
 				for value in &mut audio_buffer[len..] {
@@ -308,23 +329,13 @@ fn voice_thread(
 	Ok(())
 }
 
-enum AudioSource {
-	Pcm(Box<::std::io::Read + Send>),
-}
-
-impl AudioSource {
-	fn next(&mut self, buffer: &mut [i16]) -> Result<usize> {
-		match *self {
-			AudioSource::Pcm(ref mut read) => {
-				for (i, val) in buffer.iter_mut().enumerate() {
-					*val = match read.read_i16::<LittleEndian>() {
-						Ok(val) => val / 6,
-						Err(::byteorder::Error::UnexpectedEOF) => return Ok(i),
-						Err(::byteorder::Error::Io(e)) => return Err(From::from(e))
-					};
-				}
-				Ok(buffer.len())
-			}
-		}
+fn next_frame(source: &mut AudioSource, buffer: &mut [i16]) -> Result<usize> {
+	for (i, val) in buffer.iter_mut().enumerate() {
+		*val = match source.read_i16::<LittleEndian>() {
+			Ok(val) => val / 6, // TODO: add volume controls
+			Err(::byteorder::Error::UnexpectedEOF) => return Ok(i),
+			Err(::byteorder::Error::Io(e)) => return Err(From::from(e))
+		};
 	}
+	Ok(buffer.len())
 }
