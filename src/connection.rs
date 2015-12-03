@@ -127,7 +127,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 	if message.opcode == MessageType::Close {
 		Ok(Event::Closed(message.cd_status_code.unwrap_or(0xffff)))
 	} else if message.opcode != MessageType::Text {
-		println!("[Warning] Unexpected message: {:?}", message);
+		warn!("Unexpected message: {:?}", message);
 		Ok(Event::Closed(0xfffe))
 	} else {
 		let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));
@@ -136,7 +136,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 			Ok(event) => Ok(event),
 			Err(err) => {
 				// If there was a decode failure, print the original json for debugging
-				println!("[Warning] Error decoding: {}", original);
+				warn!("Error decoding: {}", original);
 				Err(err)
 			}
 		}
@@ -165,11 +165,11 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 				Ok(Status::SendMessage(val)) => {
 					let json = match serde_json::to_string(&val) {
 						Ok(json) => json,
-						Err(e) => return println!("[Warning] Error encoding message: {:?}", e)
+						Err(e) => return warn!("Error encoding message: {:?}", e)
 					};
 					match sender.send_message(&WsMessage::text(json)) {
 						Ok(()) => {},
-						Err(e) => return println!("[Warning] Error sending message: {:?}", e)
+						Err(e) => return warn!("Error sending message: {:?}", e)
 					}
 				},
 				Err(mpsc::TryRecvError::Empty) => break,
@@ -187,11 +187,11 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 				.unwrap();
 			let json = match serde_json::to_string(&map) {
 				Ok(json) => json,
-				Err(e) => return println!("[Warning] Error encoding keepalive: {:?}", e)
+				Err(e) => return warn!("Error encoding keepalive: {:?}", e)
 			};
 			match sender.send_message(&WsMessage::text(json)) {
 				Ok(()) => {},
-				Err(e) => return println!("[Warning] Error sending keepalive: {:?}", e)
+				Err(e) => return warn!("Error sending keepalive: {:?}", e)
 			}
 		}
 	}

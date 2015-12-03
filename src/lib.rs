@@ -26,6 +26,8 @@ extern crate bitflags;
 extern crate byteorder;
 extern crate opus_sys;
 extern crate time;
+#[macro_use]
+extern crate log;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -196,11 +198,11 @@ impl Discord {
 	// Get and accept invite
 	// Create invite
 	// Delete invite
-	
+
 	// Get members
 	// Edit member
 	// Kick member
-	
+
 	// Create role
 	// Edit role
 	// Reorder roles
@@ -209,7 +211,7 @@ impl Discord {
 	// Create private channel with user
 	// Get avatar of user
 	// Edit profile
-	
+
 	// Get active maintenances
 	// Get upcoming maintenances
 

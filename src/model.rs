@@ -899,6 +899,6 @@ fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<Vec<
 
 fn warn_field(name: &str, map: BTreeMap<String, Value>) {
 	if map.len() != 0 {
-		println!("[Warning] Unhandled keys: {} has {:?}", name, Value::Object(map))
+		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}
 }

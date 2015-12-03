@@ -168,7 +168,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> 
 	let original = format!("{:?}", json);
 	VoiceEvent::decode(json).map_err(|err| {
 		// If there was a decode failure, print the original json for debugging
-		println!("[Warning] Error vdecoding: {}", original);
+		warn!("Error vdecoding: {}", original);
 		err
 	})
 }
@@ -222,14 +222,14 @@ fn voice_thread(
 		match try!(recv_message(&mut receiver)) {
 			VoiceEvent::Ready { mode, secret_key } => {
 				if secret_key.len() != 0 {
-					println!("[Voice] Got secret key: {:?}", secret_key);
+					debug!("Secret key: {:?}", secret_key);
 				}
 				if mode != "plain" {
 					return Err(Error::Other("Voice mode in Ready was not 'plain'"))
 				}
 				break
 			}
-			VoiceEvent::Unknown(op, value) => println!("[Voice] Unknown {}/{:?}", op, value),
+			VoiceEvent::Unknown(op, value) => debug!("Unknown message type: {}/{:?}", op, value),
 			_ => {},
 		}
 	}
@@ -258,7 +258,7 @@ fn voice_thread(
 	let mut keepalive_timer = ::utils::Timer::new(keepalive_duration);
 
 	// start the main loop
-	println!("[Voice] Connected to {}", endpoint);
+	info!("Voice connected to {}", endpoint);
 	'outer: loop {
 		::std::thread::sleep_ms(3);
 
@@ -326,6 +326,7 @@ fn voice_thread(
 
 	try!(receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 	try!(sender.get_mut().shutdown(::std::net::Shutdown::Both));
+	info!("Voice disconnected");
 	Ok(())
 }
 

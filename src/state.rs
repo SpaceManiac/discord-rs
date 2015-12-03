@@ -17,7 +17,7 @@ impl State {
 	/// Create a new state from an initial `ReadyEvent`.
 	pub fn new(ready: ReadyEvent) -> Result<State> {
 		if ready.version != VERSION {
-			println!("[Warning] Got version {} instead of {}", ready.version, VERSION);
+			error!("Got version {} instead of {}", ready.version, VERSION);
 			return Err(Error::Other("Wrong protocol version"))
 		}
 		Ok(State {
