@@ -582,6 +582,37 @@ impl CurrentUser {
 	}
 }
 
+/// User settings usually used to influence client behavior
+#[derive(Debug, Clone)]
+pub struct UserSettings {
+	pub enable_tts_command: bool,
+	pub inline_attachment_media: bool,
+	pub inline_embed_media: bool,
+	pub locale: String,
+	pub message_display_compact: bool,
+	pub muted_channels: Vec<ChannelId>,
+	pub render_embeds: bool,
+	pub show_current_game: bool,
+	pub theme: String,
+}
+
+impl UserSettings {
+	pub fn decode(value: Value) -> Result<UserSettings> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, UserSettings {
+			enable_tts_command: req!(try!(remove(&mut value, "enable_tts_command")).as_boolean()),
+			inline_attachment_media: req!(try!(remove(&mut value, "inline_attachment_media")).as_boolean()),
+			inline_embed_media: req!(try!(remove(&mut value, "inline_embed_media")).as_boolean()),
+			locale: try!(remove(&mut value, "locale").and_then(into_string)),
+			message_display_compact: req!(try!(remove(&mut value, "message_display_compact")).as_boolean()),
+			muted_channels: try!(decode_array(try!(remove(&mut value, "muted_channels")), |x| into_string(x).map(ChannelId))),
+			render_embeds: req!(try!(remove(&mut value, "render_embeds")).as_boolean()),
+			show_current_game: req!(try!(remove(&mut value, "show_current_game")).as_boolean()),
+			theme: try!(remove(&mut value, "theme").and_then(into_string)),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
@@ -592,6 +623,7 @@ pub struct ReadyEvent {
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
 	pub servers: Vec<LiveServer>,
+	pub user_settings: UserSettings,
 }
 
 /// Event received over a websocket connection
@@ -638,8 +670,8 @@ pub enum Event {
 		embeds: Option<Vec<Value>>,
 		mention_everyone: Option<bool>,
 		mentions: Option<Vec<User>>,
-		attachments: Option<Vec<Attachment>>,
-		embeds: Option<Vec<Value>>,*/
+		attachments: Option<Vec<Attachment>>,*/
+		embeds: Option<Vec<Value>>,
 	},
 	/// Another logged-in device acknowledged this message
 	MessageAck {
@@ -704,6 +736,7 @@ impl Event {
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
+				user_settings: try!(remove(&mut value, "user_settings").and_then(UserSettings::decode)),
 			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
@@ -738,6 +771,7 @@ impl Event {
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				embeds: remove(&mut value, "embeds").and_then(|v| decode_array(v, Ok)).ok(),
 				// TODO: more fields
 			})
 		} else if kind == "MESSAGE_ACK" {
