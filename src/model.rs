@@ -594,6 +594,7 @@ pub struct UserSettings {
 	pub render_embeds: bool,
 	pub show_current_game: bool,
 	pub theme: String,
+	pub convert_emoticons: bool,
 }
 
 impl UserSettings {
@@ -609,6 +610,7 @@ impl UserSettings {
 			render_embeds: req!(try!(remove(&mut value, "render_embeds")).as_boolean()),
 			show_current_game: req!(try!(remove(&mut value, "show_current_game")).as_boolean()),
 			theme: try!(remove(&mut value, "theme").and_then(into_string)),
+			convert_emoticons: req!(try!(remove(&mut value, "convert_emoticons")).as_boolean()),
 		})
 	}
 }
@@ -620,10 +622,10 @@ pub struct ReadyEvent {
 	pub user: CurrentUser,
 	pub session_id: String,
 	pub heartbeat_interval: u64,
+	pub user_settings: UserSettings,
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
 	pub servers: Vec<LiveServer>,
-	pub user_settings: UserSettings,
 }
 
 /// Event received over a websocket connection
