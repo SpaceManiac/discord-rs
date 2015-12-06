@@ -711,6 +711,12 @@ pub enum Event {
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
 
+	// Used by Connection internally and turned into GatewayChanged
+	#[doc(hidden)]
+	_ChangeGateway(String),
+	/// The connection's gateway has changed and a new Ready is available
+	GatewayChanged(String, ReadyEvent),
+
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
 	/// A websocket "close" frame with the given status
@@ -722,7 +728,12 @@ impl Event {
 		let mut value = try!(into_map(value));
 
 		let op = req!(req!(value.remove("op")).as_u64());
-		if op != 0 {
+		if op == 7 {
+			let mut value = try!(remove(&mut value, "d").and_then(into_map));
+			return warn_json!(value, Event::_ChangeGateway(
+				try!(remove(&mut value, "url").and_then(into_string))
+			))
+		} else if op != 0 {
 			value.insert("op".into(), Value::U64(op));
 			return Err(Error::Decode("Unknown opcode", Value::Object(value)))
 		}

@@ -16,6 +16,7 @@ use super::model::*;
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
+	token: String,
 }
 
 impl Connection {
@@ -27,6 +28,7 @@ impl Connection {
 	/// Usually called internally by `Discord::connect`, which provides both
 	/// the token and URL.
 	pub fn new(url: &str, token: &str) -> Result<(Connection, ReadyEvent)> {
+		debug!("Gateway: {}", url);
 		// establish the websocket connection
 		let url = match ::websocket::client::request::Url::parse(url) {
 			Ok(url) => url,
@@ -71,6 +73,7 @@ impl Connection {
 		Ok((Connection {
 			keepalive_channel: tx,
 			receiver: receiver,
+			token: token.to_owned(),
 		}, ready))
 	}
 
@@ -111,7 +114,14 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		recv_message(&mut self.receiver)
+		match recv_message(&mut self.receiver) {
+			Ok(Event::_ChangeGateway(url)) => {
+				let (conn, ready) = try!(Connection::new(&url, &self.token));
+				try!(::std::mem::replace(self, conn).shutdown());
+				Ok(Event::GatewayChanged(url, ready))
+			}
+			e => e,
+		}
 	}
 
 	/// Cleanly shut down the websocket connection. Optional.

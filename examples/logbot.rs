@@ -21,7 +21,7 @@ fn main() {
 	println!("[Ready] {} logging {} servers with {} text channels", ready.user.username, ready.servers.len(), channel_count);
 
 	// Initialize the state
-	let mut state = State::new(ready).expect("state creation failed");
+	let mut state = State::new(ready);
 
 	loop {
 		// Receive an event and update the state with it

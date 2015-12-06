@@ -1,4 +1,3 @@
-use super::{Result, Error};
 use super::model::*;
 
 /// The websocket protocol version expected.
@@ -15,22 +14,23 @@ pub struct State {
 
 impl State {
 	/// Create a new state from an initial `ReadyEvent`.
-	pub fn new(ready: ReadyEvent) -> Result<State> {
+	pub fn new(ready: ReadyEvent) -> State {
 		if ready.version != VERSION {
-			error!("Got version {} instead of {}", ready.version, VERSION);
-			return Err(Error::Other("Wrong protocol version"))
+			warn!("Got protocol version {} instead of {}", ready.version, VERSION);
 		}
-		Ok(State {
+		State {
 			user: ready.user,
 			session_id: ready.session_id,
 			private_channels: ready.private_channels,
 			servers: ready.servers
-		})
+		}
 	}
 
 	/// Update the state according to the changes described in the given event.
 	pub fn update(&mut self, event: &Event) {
 		match *event {
+			Event::Ready(ref ready) => *self = State::new(ready.clone()),
+			Event::GatewayChanged(_, ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => self.user = user.clone(),
 			Event::VoiceStateUpdate(ref server, ref state) => {
 				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
