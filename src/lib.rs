@@ -152,9 +152,23 @@ impl Discord {
 		Ok(())
 	}
 
-	/*pub fn get_messages(&self, channel: &ChannelId, before: Option<&MessageId>, after: Option<&MessageId>, limit: Option<u64>) -> Result<Vec<Message>> {
-		unimplemented!()
-	}*/
+	/// Get messages in the backlog for a given channel.
+	///
+	/// Before and after limits can be specified to narrow the results. A
+	/// message count limit can also be specified, defaulting to 50. Newer
+	/// messages appear first in the list.
+	pub fn get_messages(&self, channel: &ChannelId, before: Option<&MessageId>, after: Option<&MessageId>, limit: Option<u64>) -> Result<Vec<Message>> {
+		let mut url = format!("{}/channels/{}/messages?limit={}", API_BASE, channel.0, limit.unwrap_or(50));
+		if let Some(id) = before {
+			url.push_str(&format!("&before={}", id.0));
+		}
+		if let Some(id) = after {
+			url.push_str(&format!("&after={}", id.0));
+		}
+		let response = try!(self.request(|| self.client.get(&url)));
+		let values: Vec<serde_json::Value> = try!(serde_json::from_reader(response));
+		values.into_iter().map(Message::decode).collect()
+	}
 
 	/// Send a message to a given channel.
 	///
@@ -163,12 +177,9 @@ impl Discord {
 	pub fn send_message(&self, channel: &ChannelId, text: &str, mentions: &[&UserId], nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
-			.insert_array("mentions", |mut array| {
-				for mention in mentions {
-					array = array.push(&mention.0);
-				}
-				array
-			})
+			.insert_array("mentions", |array|
+				mentions.iter().fold(array, |a, m| a.push(&m.0))
+			)
 			.insert("nonce", nonce)
 			.insert("tts", tts)
 			.unwrap();
@@ -178,12 +189,43 @@ impl Discord {
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// TODO: the remaining API calls
-	/*pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> { unimplemented!() }
-	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
-	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> { unimplemented!() }
+	/// Edit a previously posted message.
+	///
+	/// Requires that either the message was posted by this user, or this user
+	/// has permission to manage other members' messages.
+	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> {
+		let map = ObjectBuilder::new()
+			.insert("content", text)
+			.insert_array("mentions", |array|
+				mentions.iter().fold(array, |a, m| a.push(&m.0))
+			)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.patch(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0)).body(&body)));
+		Message::decode(try!(serde_json::from_reader(response)))
+	}
 
-	//pub fn create_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
+	/// Delete a previously posted message.
+	///
+	/// Requires that either the message was posted by this user, or this user
+	/// has permission to manage other members' messages.
+	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+		try!(self.request(||
+			self.client.delete(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0))));
+		Ok(())
+	}
+
+	/// Acknowledge this message as "read" by this client.
+	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+		try!(self.request(||
+			self.client.post(&format!("{}/channels/{}/messages/{}/ack", API_BASE, channel.0, message.0))));
+		Ok(())
+	}
+
+	// TODO: the remaining API calls
+	/*
+	//pub fn create_role_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
 	//pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
 
 	pub fn create_server(&self, name: &str) -> Result<Server> { unimplemented!() }
@@ -208,8 +250,33 @@ impl Discord {
 	// Reorder roles
 	// Delete roles
 
-	// Create private channel with user
-	// Get avatar of user
+	/// Create a private channel with the given user, or return the existing
+	/// one if it exists.
+	pub fn create_private_channel(&self, recipient: &UserId) -> Result<PrivateChannel> {
+		let map = ObjectBuilder::new()
+			.insert("recipient_id", &recipient.0)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.post(&format!("{}/users/@me/channels", API_BASE)).body(&body)));
+		PrivateChannel::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Get the URL at which a user's avatar is located.
+	pub fn get_user_avatar_url(&self, user: &UserId, avatar: &str) -> String {
+		format!("{}/users/{}/avatars/{}.jpg", API_BASE, user.0, avatar)
+	}
+
+	/// Download a user's avatar.
+	pub fn get_user_avatar(&self, user: &UserId, avatar: &str) -> Result<Vec<u8>> {
+		use std::io::Read;
+		let mut response = try!(self.retry(||
+			self.client.get(&self.get_user_avatar_url(user, avatar))));
+		let mut vec = Vec::new();
+		try!(response.read_to_end(&mut vec));
+		Ok(vec)
+	}
+
 	// Edit profile
 
 	// Get active maintenances
