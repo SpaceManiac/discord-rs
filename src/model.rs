@@ -635,6 +635,19 @@ pub enum Event {
 	Ready(ReadyEvent),
 	/// Update to the logged-in user's information
 	UserUpdate(CurrentUser),
+	/// Update to the logged-in user's preferences or client settings
+	UserSettingsUpdate {
+		enable_tts_command: Option<bool>,
+		inline_attachment_media: Option<bool>,
+		inline_embed_media: Option<bool>,
+		locale: Option<String>,
+		message_display_compact: Option<bool>,
+		muted_channels: Option<Vec<ChannelId>>,
+		render_embeds: Option<bool>,
+		show_current_game: Option<bool>,
+		theme: Option<String>,
+		convert_emoticons: Option<bool>,
+	},
 	/// A member's voice state has changed
 	VoiceStateUpdate(ServerId, VoiceState),
 	/// Voice server information is available
@@ -753,6 +766,19 @@ impl Event {
 			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
+		} else if kind == "USER_SETTINGS_UPDATE" {
+			warn_json!(value, Event::UserSettingsUpdate {
+				enable_tts_command: remove(&mut value, "enable_tts_command").ok().and_then(|v| v.as_boolean()),
+				inline_attachment_media: remove(&mut value, "inline_attachment_media").ok().and_then(|v| v.as_boolean()),
+				inline_embed_media: remove(&mut value, "inline_embed_media").ok().and_then(|v| v.as_boolean()),
+				locale: remove(&mut value, "locale").and_then(into_string).ok(),
+				message_display_compact: remove(&mut value, "message_display_compact").ok().and_then(|v| v.as_boolean()),
+				muted_channels: remove(&mut value, "muted_channels").and_then(|v| decode_array(v, |x| into_string(x).map(ChannelId))).ok(),
+				render_embeds: remove(&mut value, "render_embeds").ok().and_then(|v| v.as_boolean()),
+				show_current_game: remove(&mut value, "show_current_game").ok().and_then(|v| v.as_boolean()),
+				theme: remove(&mut value, "theme").and_then(into_string).ok(),
+				convert_emoticons: remove(&mut value, "convert_emoticons").ok().and_then(|v| v.as_boolean()),
+			})
 		} else if kind == "VOICE_STATE_UPDATE" {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))

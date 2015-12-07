@@ -7,6 +7,7 @@ const VERSION: u64 = 3;
 #[derive(Debug, Clone)]
 pub struct State {
 	user: CurrentUser,
+	settings: UserSettings,
 	session_id: String,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
@@ -20,9 +21,10 @@ impl State {
 		}
 		State {
 			user: ready.user,
+			settings: ready.user_settings,
 			session_id: ready.session_id,
 			private_channels: ready.private_channels,
-			servers: ready.servers
+			servers: ready.servers,
 		}
 	}
 
@@ -32,6 +34,24 @@ impl State {
 			Event::Ready(ref ready) => *self = State::new(ready.clone()),
 			Event::GatewayChanged(_, ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => self.user = user.clone(),
+			Event::UserSettingsUpdate {
+				ref enable_tts_command, ref inline_attachment_media,
+				ref inline_embed_media, ref locale,
+				ref message_display_compact, ref muted_channels,
+				ref render_embeds, ref show_current_game,
+				ref theme, ref convert_emoticons,
+			} => {
+				opt_modify(&mut self.settings.enable_tts_command, enable_tts_command);
+				opt_modify(&mut self.settings.inline_attachment_media, inline_attachment_media);
+				opt_modify(&mut self.settings.inline_embed_media, inline_embed_media);
+				opt_modify(&mut self.settings.locale, locale);
+				opt_modify(&mut self.settings.message_display_compact, message_display_compact);
+				opt_modify(&mut self.settings.muted_channels, muted_channels);
+				opt_modify(&mut self.settings.render_embeds, render_embeds);
+				opt_modify(&mut self.settings.show_current_game, show_current_game);
+				opt_modify(&mut self.settings.theme, theme);
+				opt_modify(&mut self.settings.convert_emoticons, convert_emoticons);
+			}
 			Event::VoiceStateUpdate(ref server, ref state) => {
 				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
 					if !state.channel_id.is_some() {
@@ -166,6 +186,10 @@ impl State {
 	#[inline]
 	pub fn user(&self) -> &CurrentUser { &self.user }
 
+	/// Get the logged-in user's client settings.
+	#[inline]
+	pub fn settings(&self) -> &UserSettings { &self.settings }
+
 	/// Get the websocket session ID.
 	#[inline]
 	pub fn session_id(&self) -> &str { &self.session_id }
@@ -203,4 +227,11 @@ pub enum ChannelRef<'a> {
 	Private(&'a PrivateChannel),
 	/// A public channel and its server
 	Public(&'a LiveServer, &'a PublicChannel),
+}
+
+#[inline]
+fn opt_modify<T: Clone>(dest: &mut T, src: &Option<T>) {
+	if let Some(val) = src.as_ref() {
+		dest.clone_from(val);
+	}
 }
