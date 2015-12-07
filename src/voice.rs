@@ -194,7 +194,13 @@ fn voice_thread(
 	let udp = try!(UdpSocket::bind("0.0.0.0:0"));
 	let mut bytes = [0; 4];
 	try!(Cursor::new(&mut bytes[..]).write_u32::<BigEndian>(ssrc));
-	try!(udp.send_to(&bytes, (&endpoint[..], port)));
+	let destination = {
+		use std::net::ToSocketAddrs;
+		try!(try!((&endpoint[..], port).to_socket_addrs())
+			.next()
+			.ok_or(Error::Other("Failed to resolve voice hostname")))
+	};
+	try!(udp.send_to(&bytes, destination));
 
 	// receive the response to the identification to get port and address info
 	let mut bytes = [0; 256];
@@ -308,7 +314,7 @@ fn voice_thread(
 
 			// encode the audio data and transmit it
 			let len = opus.encode(&audio_buffer, &mut packet[HEADER_LEN..]).expect("failed encode");
-			try!(udp.send_to(&packet[..len + HEADER_LEN], (&endpoint[..], port)));
+			try!(udp.send_to(&packet[..len + HEADER_LEN], destination));
 
 			sequence = sequence.wrapping_add(1);
 			timestamp = timestamp.wrapping_add(960);
