@@ -234,23 +234,19 @@ fn voice_thread(
 		}
 	}
 
+	// start a drain thread for the websocket receiver - without this, eventually
+	// the OS buffer will fill and the connection will be dropped
+	try!(::std::thread::Builder::new()
+		.name("Discord Voice Drain Thread".into())
+		.spawn(move || drain_thread(receiver)));
+
 	// prepare buffers for later use
-	let mut opus = ::utils::OpusEncoder::new().expect("failed new");
+	let mut opus = try!(::utils::OpusEncoder::new());
 	let mut audio_queue = ::std::collections::VecDeque::new();
 	let mut audio_buffer = vec![0; 960];
 	let mut packet = Vec::with_capacity(256);
 	let mut sequence = 0;
 	let mut timestamp = 0;
-
-	// tell 'em that we're speaking
-	let map = ObjectBuilder::new()
-		.insert("op", 5)
-		.insert_object("d", |object| object
-			.insert("speaking", true)
-			.insert("delay", 0)
-		)
-		.unwrap();
-	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
 	let audio_duration = ::time::Duration::milliseconds(20);
 	let keepalive_duration = ::time::Duration::milliseconds(interval as i64);
@@ -265,6 +261,9 @@ fn voice_thread(
 		loop {
 			match channel.try_recv() {
 				Ok(Status::Push(source)) => {
+					if audio_queue.len() == 0 {
+						try!(set_speaking(&mut sender, true));
+					}
 					audio_queue.push_back(source)
 				},
 				Ok(Status::Clear) => audio_queue.clear(),
@@ -302,6 +301,9 @@ fn voice_thread(
 					*value = 0;
 				}
 				audio_queue.pop_front();
+				if audio_queue.len() == 0 {
+					try!(set_speaking(&mut sender, false));
+				}
 			}
 
 			// encode the audio data and transmit it
@@ -313,30 +315,36 @@ fn voice_thread(
 		}
 	}
 
-	// stop speaking
-	::std::thread::sleep_ms(500);
-	let map = ObjectBuilder::new()
-		.insert("op", 5)
-		.insert_object("d", |object| object
-			.insert("speaking", false)
-			.insert("delay", 0)
-		)
-		.unwrap();
-	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
-
-	try!(receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
+	// shutting down the sender like this will also terminate the drain thread
 	try!(sender.get_mut().shutdown(::std::net::Shutdown::Both));
 	info!("Voice disconnected");
 	Ok(())
 }
 
+fn set_speaking(sender: &mut Sender<WebSocketStream>, speaking: bool) -> Result<()> {
+	debug!("Speaking: {}", speaking);
+	let map = ObjectBuilder::new()
+		.insert("op", 5)
+		.insert_object("d", |object| object
+			.insert("speaking", speaking)
+			.insert("delay", 0)
+		)
+		.unwrap();
+	sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))).map_err(From::from)
+}
+
 fn next_frame(source: &mut AudioSource, buffer: &mut [i16]) -> Result<usize> {
 	for (i, val) in buffer.iter_mut().enumerate() {
 		*val = match source.read_i16::<LittleEndian>() {
-			Ok(val) => val / 6, // TODO: add volume controls
+			Ok(val) => val / 3, // TODO: add volume controls
 			Err(::byteorder::Error::UnexpectedEOF) => return Ok(i),
 			Err(::byteorder::Error::Io(e)) => return Err(From::from(e))
 		};
 	}
 	Ok(buffer.len())
+}
+
+fn drain_thread(mut receiver: Receiver<WebSocketStream>) -> Receiver<WebSocketStream> {
+	while let Ok(_) = recv_message(&mut receiver) {}
+	receiver
 }

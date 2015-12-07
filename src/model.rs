@@ -868,6 +868,7 @@ pub enum VoiceEvent {
 		ssrc: u32,
 		speaking: bool,
 	},
+	KeepAlive,
 	Unknown(u64, Value)
 }
 
@@ -876,6 +877,10 @@ impl VoiceEvent {
 		let mut value = try!(into_map(value));
 
 		let op = req!(req!(value.remove("op")).as_u64());
+		if op == 3 {
+			return Ok(VoiceEvent::KeepAlive)
+		}
+
 		let mut value = try!(remove(&mut value, "d").and_then(into_map));
 		if op == 2 {
 			warn_json!(value, VoiceEvent::Handshake {
