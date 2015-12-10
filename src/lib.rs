@@ -45,6 +45,7 @@ pub use state::{State, ChannelRef};
 pub use voice::VoiceConnection;
 use model::*;
 
+const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
 const API_BASE: &'static str = "https://discordapp.com/api";
 
 /// Client for the Discord REST API.
@@ -107,7 +108,9 @@ impl Discord {
 	}
 
 	fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
-		let f2 = || check_status(f().send());
+		let f2 = || check_status(f()
+			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
+			.send());
 		// retry on a ConnectionAborted, which occurs if it's been a while since the last request
 		match f2() {
 			Err(Error::Hyper(hyper::error::Error::Io(ref io)))
