@@ -454,12 +454,27 @@ impl OnlineStatus {
 	}
 }
 
+/// Information about a game being played
+#[derive(Debug, Clone)]
+pub struct Game {
+	pub name: String,
+}
+
+impl Game {
+	pub fn decode(value: Value) -> Result<Game> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Game {
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+		})
+	}
+}
+
 /// A members's online status
 #[derive(Debug, Clone)]
 pub struct Presence {
 	pub user_id: UserId,
 	pub status: OnlineStatus,
-	pub game_id: Option<u64>,
+	pub game: Option<Game>,
 }
 
 impl Presence {
@@ -478,7 +493,7 @@ impl Presence {
 			user_id: user_id,
 			status: try!(remove(&mut value, "status").and_then(into_string)
 				.and_then(|s| OnlineStatus::from_str(&s).ok_or(Error::Other("presence status")))),
-			game_id: remove(&mut value, "game_id").ok().and_then(|x| x.as_u64()),
+			game: remove(&mut value, "game").and_then(Game::decode).ok(),
 		}, user))
 	}
 }
