@@ -79,8 +79,8 @@ impl Connection {
 
 	/// Change the game that this client reports as playing. Games are referred
 	/// to by a numeric id which is interpreted by the official Discord client.
-	pub fn set_game_id(&self, game_id: Option<u64>) {
-		let _ = self.keepalive_channel.send(Status::SetGameId(game_id));
+	pub fn set_game(&self, game: Option<Game>) {
+		let _ = self.keepalive_channel.send(Status::SetGame(game));
 	}
 
 	/// Connect to the specified voice channel. Any previous channel will be
@@ -154,22 +154,22 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 }
 
 enum Status {
-	SetGameId(Option<u64>),
+	SetGame(Option<Game>),
 	SendMessage(serde_json::Value),
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
 	let duration = ::time::Duration::milliseconds(interval as i64);
 	let mut timer = ::utils::Timer::new(duration);
-	let mut game_id = None;
+	let mut game = None;
 
 	'outer: loop {
 		::std::thread::sleep_ms(100);
 
 		loop {
 			match channel.try_recv() {
-				Ok(Status::SetGameId(id)) => {
-					game_id = id;
+				Ok(Status::SetGame(new_game)) => {
+					game = new_game;
 					timer.immediately();
 				},
 				Ok(Status::SendMessage(val)) => {
@@ -190,10 +190,15 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 		if timer.check_and_add(duration) {
 			let map = ObjectBuilder::new()
 				.insert("op", 3)
-				.insert_object("d", |object| object
-					.insert("idle_since", serde_json::Value::Null)
-					.insert("game_id", game_id)
-				)
+				.insert_object("d", |mut object| {
+					object = object.insert("idle_since", serde_json::Value::Null);
+					match game {
+						Some(ref game) => object.insert_object("game", |object| object
+							.insert("name", &game.name)
+						),
+						None => object.insert("game", serde_json::Value::Null),
+					}
+				})
 				.unwrap();
 			let json = match serde_json::to_string(&map) {
 				Ok(json) => json,
