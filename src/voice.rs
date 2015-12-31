@@ -262,7 +262,7 @@ fn voice_thread(
 	// start the main loop
 	info!("Voice connected to {}", endpoint);
 	'outer: loop {
-		::std::thread::sleep_ms(3);
+		::sleep_ms(3);
 
 		loop {
 			match channel.try_recv() {

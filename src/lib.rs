@@ -59,14 +59,6 @@ pub struct Discord {
 	token: String,
 }
 
-fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
-	let response = try!(response);
-	if !response.status.is_success() {
-		return Err(Error::Status(response.status))
-	}
-	Ok(response)
-}
-
 #[allow(unused_variables)]
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
@@ -298,4 +290,16 @@ impl Discord {
 		};
 		Connection::new(&url, &self.token)
 	}
+}
+
+fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
+	let response = try!(response);
+	if !response.status.is_success() {
+		return Err(Error::Status(response.status))
+	}
+	Ok(response)
+}
+
+fn sleep_ms(millis: u64) {
+	std::thread::sleep(std::time::Duration::from_millis(millis))
 }

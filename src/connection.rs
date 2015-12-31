@@ -169,7 +169,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 	let mut game = None;
 
 	'outer: loop {
-		::std::thread::sleep_ms(100);
+		::sleep_ms(100);
 
 		loop {
 			match channel.try_recv() {
