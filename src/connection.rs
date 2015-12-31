@@ -77,10 +77,15 @@ impl Connection {
 		}, ready))
 	}
 
-	/// Change the game that this client reports as playing. Games are referred
-	/// to by a numeric id which is interpreted by the official Discord client.
+	/// Change the game information that this client reports as playing.
 	pub fn set_game(&self, game: Option<Game>) {
 		let _ = self.keepalive_channel.send(Status::SetGame(game));
+	}
+
+	/// Set the client to be playing this game, with defaults used for any
+	/// extended information.
+	pub fn set_game_name(&self, name: String) {
+		self.set_game(Some(Game { name: name }));
 	}
 
 	/// Connect to the specified voice channel. Any previous channel will be
