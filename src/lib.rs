@@ -169,12 +169,9 @@ impl Discord {
 	///
 	/// The `nonce` will be returned in the result and also transmitted to other
 	/// clients. The empty string is a good default if you don't care.
-	pub fn send_message(&self, channel: &ChannelId, text: &str, mentions: &[&UserId], nonce: &str, tts: bool) -> Result<Message> {
+	pub fn send_message(&self, channel: &ChannelId, text: &str, nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
-			.insert_array("mentions", |array|
-				mentions.iter().fold(array, |a, m| a.push(&m.0))
-			)
 			.insert("nonce", nonce)
 			.insert("tts", tts)
 			.unwrap();
@@ -188,12 +185,9 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
-	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str, mentions: &[&UserId]) -> Result<Message> {
+	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
-			.insert_array("mentions", |array|
-				mentions.iter().fold(array, |a, m| a.push(&m.0))
-			)
 			.unwrap();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
