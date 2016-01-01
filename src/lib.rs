@@ -220,17 +220,38 @@ impl Discord {
 
 	// TODO: the remaining API calls
 	/*
-	//pub fn create_role_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
-	//pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
+	pub fn create_role_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
+	pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
+	*/
 
-	pub fn create_server(&self, name: &str) -> Result<Server> { unimplemented!() }
-	pub fn edit_server(&self, server: &ServerId, name: &str) -> Result<Server> { unimplemented!() }
-	/// For owners, deletes the server
-	pub fn leave_server(&self, server: &ServerId) -> Result<Server> { unimplemented!() }
+	/// Create a new server with the given name.
+	pub fn create_server(&self, name: &str, region: &str) -> Result<Server> {
+		// TODO: add icon parameter
+		let map = ObjectBuilder::new()
+			.insert("name", name)
+			.insert("region", region)
+			.insert("icon", serde_json::Value::Null)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.post(&format!("{}/guilds", API_BASE)).body(&body)));
+		Server::decode(try!(serde_json::from_reader(response)))
+	}
 
+	// Edit server
+
+	/// Leave the given server. For the owner, deletes the server.
+	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
+		let response = try!(self.request(||
+			self.client.delete(&format!("{}/guilds/{}", API_BASE, server.0))));
+		Server::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/*
 	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> { unimplemented!() }
 	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: Option<u32>) { unimplemented!() }
-	pub fn remove_ban(&self, server: &ServerId, user: &UserId) { unimplemented!() }*/
+	pub fn remove_ban(&self, server: &ServerId, user: &UserId) { unimplemented!() }
+	*/
 
 	// Get and accept invite
 	// Create invite
@@ -302,4 +323,16 @@ fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hype
 
 fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
+}
+
+/// Known region names.
+#[allow(missing_docs)]
+pub mod region {
+	pub const US_WEST: &'static str = "us-west";
+	pub const US_EAST: &'static str = "us-east";
+	pub const SINGAPORE: &'static str = "singapore";
+	pub const LONDON: &'static str = "london";
+	pub const SYDNEY: &'static str = "sydney";
+	pub const AMSTERDAM: &'static str = "amsterdam";
+	pub const FRANKFURT: &'static str = "frankfurt";
 }
