@@ -123,9 +123,15 @@ impl Discord {
 	}
 
 	/// Edit a channel's name.
-	pub fn edit_channel(&self, channel: &ChannelId, name: &str) -> Result<Channel> {
+	pub fn edit_channel(&self, channel: &ChannelId,
+		name: Option<&str>,
+		position: Option<i64>,
+		topic: Option<&str>,
+	) -> Result<Channel> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
+			.insert("topic", topic)
+			.insert("position", position)
 			.unwrap();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||

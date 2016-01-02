@@ -241,7 +241,7 @@ pub struct PublicChannel {
 	pub kind: ChannelType,
 	pub permission_overwrites: Vec<PermissionOverwrite>,
 	pub topic: Option<String>,
-	pub position: u64,
+	pub position: i64,
 	pub last_message_id: Option<MessageId>,
 }
 
@@ -260,7 +260,7 @@ impl PublicChannel {
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			server_id: server_id,
 			topic: remove(&mut value, "topic").and_then(into_string).ok(),
-			position: req!(try!(remove(&mut value, "position")).as_u64()),
+			position: req!(try!(remove(&mut value, "position")).as_i64()),
 			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_name_err)),
 			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
