@@ -72,6 +72,10 @@ impl ChannelType {
 		}
 	}
 
+	fn from_name_err(name: String) -> Result<ChannelType> {
+		ChannelType::from_name(&name).ok_or(Error::Decode("channel type", Value::String(name)))
+	}
+
 	/// Get the name of this ChannelType
 	pub fn name(&self) -> &'static str {
 		match *self {
@@ -257,7 +261,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: remove(&mut value, "topic").and_then(into_string).ok(),
 			position: req!(try!(remove(&mut value, "position")).as_u64()),
-			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(|s| ChannelType::from_name(&s).ok_or(Error::Other("channel type")))),
+			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_name_err)),
 			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 		})
@@ -403,6 +407,45 @@ impl Message {
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
 			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
 			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
+		})
+	}
+}
+
+/// Information about an invite
+#[derive(Debug, Clone)]
+pub struct Invite {
+	pub code: String,
+	pub xkcdpass: Option<String>,
+	pub server_id: ServerId,
+	pub server_name: String,
+	pub channel_type: ChannelType,
+	pub channel_id: ChannelId,
+	pub channel_name: String,
+}
+
+impl Invite {
+	pub fn decode(value: Value) -> Result<Invite> {
+		let mut value = try!(into_map(value));
+
+		let mut server = try!(remove(&mut value, "guild").and_then(into_map));
+		let server_id = try!(remove(&mut server, "id").and_then(into_string).map(ServerId));
+		let server_name = try!(remove(&mut server, "name").and_then(into_string));
+		warn_field("Invite/guild", server);
+
+		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
+		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_name_err));
+		let channel_id = try!(remove(&mut channel, "id").and_then(into_string).map(ChannelId));
+		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
+		warn_field("Invite/channel", channel);
+
+		warn_json!(value, Invite {
+			code: try!(remove(&mut value, "code").and_then(into_string)),
+			xkcdpass: remove(&mut value, "xkcdpass").and_then(into_string).ok(),
+			server_id: server_id,
+			server_name: server_name,
+			channel_type: channel_type,
+			channel_id: channel_id,
+			channel_name: channel_name,
 		})
 	}
 }

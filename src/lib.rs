@@ -59,7 +59,6 @@ pub struct Discord {
 	token: String,
 }
 
-#[allow(unused_variables)]
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
 	pub fn new(email: &str, password: &str) -> Result<Discord> {
@@ -247,9 +246,34 @@ impl Discord {
 	pub fn remove_ban(&self, server: &ServerId, user: &UserId) { unimplemented!() }
 	*/
 
-	// Get and accept invite
+	/// Extract information from an invite.
+	///
+	/// The invite should either be a URL of the form `http://discord.gg/CODE`,
+	/// or a string containing just the `CODE`.
+	pub fn get_invite(&self, invite: &str) -> Result<Invite> {
+		let invite = resolve_invite(invite);
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/invite/{}", API_BASE, invite))));
+		Invite::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Accept an invite. See `get_invite` for details.
+	pub fn accept_invite(&self, invite: &str) -> Result<Invite> {
+		let invite = resolve_invite(invite);
+		let response = try!(self.request(||
+			self.client.post(&format!("{}/invite/{}", API_BASE, invite))));
+		Invite::decode(try!(serde_json::from_reader(response)))
+	}
+
 	// Create invite
-	// Delete invite
+
+	/// Delete an invite. See `get_invite` for details.
+	pub fn delete_invite(&self, invite: &str) -> Result<Invite> {
+		let invite = resolve_invite(invite);
+		let response = try!(self.request(||
+			self.client.delete(&format!("{}/invite/{}", API_BASE, invite))));
+		Invite::decode(try!(serde_json::from_reader(response)))
+	}
 
 	// Get members
 	// Edit member
@@ -315,18 +339,36 @@ fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hype
 	Ok(response)
 }
 
+fn resolve_invite(invite: &str) -> &str {
+	if invite.starts_with("http://discord.gg/") {
+		&invite[18..]
+	} else if invite.starts_with("https://discord.gg/") {
+		&invite[19..]
+	} else if invite.starts_with("discord.gg/") {
+		&invite[11..]
+	} else {
+		invite
+	}
+}
+
 fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
 
 /// Known region names.
-#[allow(missing_docs)]
 pub mod region {
+	/// US West
 	pub const US_WEST: &'static str = "us-west";
+	/// US East
 	pub const US_EAST: &'static str = "us-east";
+	/// Singapore
 	pub const SINGAPORE: &'static str = "singapore";
+	/// London
 	pub const LONDON: &'static str = "london";
+	/// Sydney
 	pub const SYDNEY: &'static str = "sydney";
+	/// Amsterdam
 	pub const AMSTERDAM: &'static str = "amsterdam";
+	/// Frankfurt
 	pub const FRANKFURT: &'static str = "frankfurt";
 }
