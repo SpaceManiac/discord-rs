@@ -1,6 +1,7 @@
 extern crate discord;
 
-use discord::{Discord, VoiceConnection};
+use discord::Discord;
+use discord::voice::{self, VoiceConnection};
 use discord::model::{Event, ChannelId, ServerId};
 use std::env;
 
@@ -20,7 +21,11 @@ fn main() {
 		&ChannelId(env::var("DISCORD_CHANNEL").expect("DISCORD_CHANNEL")),
 	);
 
-	voice.push_file(&env::var("DISCORD_AUDIO").expect("DISCORD_AUDIO")).expect("File read failed");
+	voice.play(
+		voice::open_ffmpeg_stream(
+			&env::var("DISCORD_AUDIO").expect("DISCORD_AUDIO")
+		).expect("File read failed")
+	);
 
 	println!("Ready.");
 	loop {
