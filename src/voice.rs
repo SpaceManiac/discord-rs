@@ -19,6 +19,9 @@ use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 use super::model::*;
 
 /// A readable audio source.
+///
+/// Audio is expected to be in signed 16-bit little-endian PCM (`pcm_s16le`)
+/// format, at 48000Hz.
 pub type AudioSource = Box<Read + Send>;
 
 /// A websocket connection to the voice servers.
@@ -130,6 +133,8 @@ impl VoiceConnection {
 }
 
 /// Use `ffmpeg` to open an audio file as a PCM stream.
+///
+/// Requires `ffmpeg` to be on the path and executable.
 pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<AudioSource> {
 	use std::process::{Command, Stdio};
 	let child = try!(Command::new("ffmpeg")
@@ -148,6 +153,9 @@ pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<AudioS
 }
 
 /// Use `youtube-dl` and `ffmpeg` to stream from an internet source.
+///
+/// Requires both `youtube-dl` and `ffmpeg` to be on the path and executable.
+/// On Windows, this means the `.exe` version of `youtube-dl` must be used.
 pub fn open_ytdl_stream(url: &str) -> Result<AudioSource> {
 	use std::process::{Command, Stdio};
 	let output = try!(Command::new("youtube-dl")
