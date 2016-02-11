@@ -359,21 +359,3 @@ fn resolve_invite(invite: &str) -> &str {
 fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
-
-/// Known region names.
-pub mod region {
-	/// US West
-	pub const US_WEST: &'static str = "us-west";
-	/// US East
-	pub const US_EAST: &'static str = "us-east";
-	/// Singapore
-	pub const SINGAPORE: &'static str = "singapore";
-	/// London
-	pub const LONDON: &'static str = "london";
-	/// Sydney
-	pub const SYDNEY: &'static str = "sydney";
-	/// Amsterdam
-	pub const AMSTERDAM: &'static str = "amsterdam";
-	/// Frankfurt
-	pub const FRANKFURT: &'static str = "frankfurt";
-}
