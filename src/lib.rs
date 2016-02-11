@@ -35,14 +35,13 @@ use serde_json::builder::ObjectBuilder;
 mod error;
 mod connection;
 mod state;
-mod voice;
+pub mod voice;
 mod utils;
 pub mod model;
 
 pub use error::{Result, Error};
 pub use connection::Connection;
 pub use state::{State, ChannelRef};
-pub use voice::VoiceConnection;
 use model::*;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
