@@ -664,7 +664,7 @@ impl UserSettings {
 			inline_embed_media: req!(try!(remove(&mut value, "inline_embed_media")).as_boolean()),
 			locale: try!(remove(&mut value, "locale").and_then(into_string)),
 			message_display_compact: req!(try!(remove(&mut value, "message_display_compact")).as_boolean()),
-			muted_channels: try!(decode_array(try!(remove(&mut value, "muted_channels")), |x| into_string(x).map(ChannelId))),
+			muted_channels: remove(&mut value, "muted_channels").and_then(|mc| decode_array(mc, |x| into_string(x).map(ChannelId))).unwrap_or(Vec::new()),
 			render_embeds: req!(try!(remove(&mut value, "render_embeds")).as_boolean()),
 			show_current_game: req!(try!(remove(&mut value, "show_current_game")).as_boolean()),
 			theme: try!(remove(&mut value, "theme").and_then(into_string)),
