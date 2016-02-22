@@ -243,7 +243,7 @@ pub struct PublicChannel {
 	pub topic: Option<String>,
 	pub position: i64,
 	pub last_message_id: Option<MessageId>,
-	pub bitrate: u64,
+	pub bitrate: Option<u64>,
 }
 
 impl PublicChannel {
@@ -265,7 +265,7 @@ impl PublicChannel {
 			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_name_err)),
 			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
-			bitrate: req!(try!(remove(&mut value, "position")).as_u64()),
+			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 		})
 	}
 }
