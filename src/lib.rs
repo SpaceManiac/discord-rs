@@ -68,6 +68,7 @@ impl Discord {
 		let client = hyper::Client::new();
 		let response = try!(check_status(client.post(&format!("{}/auth/login", API_BASE))
 			.header(hyper::header::ContentType::json())
+			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 			.body(&try!(serde_json::to_string(&map)))
 			.send()));
 		let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
@@ -81,32 +82,97 @@ impl Discord {
 		})
 	}
 
+	/// Log in to the Discord Rest API, possibly using a cached login token.
+	///
+	/// Cached login tokens are keyed to the email address and will be read from
+	/// and written to the specified path. If no cached token was found and no
+	/// password was specified, an error is returned.
+	pub fn new_cache<P: AsRef<std::path::Path>>(path: P, email: &str, password: Option<&str>) -> Result<Discord> {
+		use std::io::{Write, BufRead, BufReader};
+		use std::fs::File;
+
+		// Read the cache, looking for our token
+		let path = path.as_ref();
+		let mut initial_token: Option<String> = None;
+		if let Ok(file) = File::open(path) {
+			for line in BufReader::new(file).lines() {
+				let line = try!(line);
+				let parts: Vec<_> = line.split('\t').collect();
+				if parts.len() == 2 && parts[0] == email {
+					initial_token = Some(parts[1].trim().into());
+					break;
+				}
+			}
+		}
+
+		// Perform the login
+		let discord = if let Some(ref initial_token) = initial_token {
+			let mut map = BTreeMap::new();
+			map.insert("email", email);
+			if let Some(password) = password {
+				map.insert("password", password);
+			}
+
+			let client = hyper::Client::new();
+			let response = try!(check_status(client.post(&format!("{}/auth/login", API_BASE))
+				.header(hyper::header::ContentType::json())
+				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
+				.header(hyper::header::Authorization(initial_token.clone()))
+				.body(&try!(serde_json::to_string(&map)))
+				.send()));
+			let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+			let token = match json.remove("token") {
+				Some(token) => token,
+				None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
+			};
+			Discord {
+				client: client,
+				token: token,
+			}
+		} else {
+			if let Some(password) = password {
+				try!(Discord::new(email, password))
+			} else {
+				return Err(Error::Other("No password was specified and no cached token was found"))
+			}
+		};
+
+		// Write the token back out, if needed
+		if initial_token.as_ref() != Some(&discord.token) {
+			let mut tokens = Vec::new();
+			tokens.push(format!("{}\t{}", email, discord.token));
+			if let Ok(file) = File::open(path) {
+				for line in BufReader::new(file).lines() {
+					let line = try!(line);
+					if line.split('\t').next() != Some(email) {
+						tokens.push(line);
+					}
+				}
+			}
+			let mut file = try!(File::create(path));
+			for line in tokens {
+				try!(file.write_all(line.as_bytes()));
+				try!(file.write_all(&[b'\n']));
+			}
+		}
+
+		Ok(discord)
+	}
+
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new().insert("token", &self.token).unwrap();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.retry(|| self.client.post(&format!("{}/auth/logout", API_BASE))
+		try!(retry(|| self.client.post(&format!("{}/auth/logout", API_BASE))
 			.header(hyper::header::ContentType::json())
 			.body(&body)));
 		Ok(())
 	}
 
 	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
-		self.retry(|| f()
+		retry(|| f()
 			.header(hyper::header::ContentType::json())
 			.header(hyper::header::Authorization(self.token.clone())))
-	}
-
-	fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
-		let f2 = || check_status(f()
-			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-			.send());
-		// retry on a ConnectionAborted, which occurs if it's been a while since the last request
-		match f2() {
-			Err(Error::Hyper(hyper::error::Error::Io(ref io)))
-				if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
-			other => other
-		}
 	}
 
 	/// Create a channel.
@@ -309,7 +375,7 @@ impl Discord {
 	/// Download a user's avatar.
 	pub fn get_user_avatar(&self, user: &UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
-		let mut response = try!(self.retry(||
+		let mut response = try!(retry(||
 			self.client.get(&self.get_user_avatar_url(user, avatar))));
 		let mut vec = Vec::new();
 		try!(response.read_to_end(&mut vec));
@@ -358,4 +424,16 @@ fn resolve_invite(invite: &str) -> &str {
 
 fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
+}
+
+fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> Result<hyper::client::Response> {
+	let f2 = || check_status(f()
+		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
+		.send());
+	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
+	match f2() {
+		Err(Error::Hyper(hyper::error::Error::Io(ref io)))
+			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
+		other => other
+	}
 }
