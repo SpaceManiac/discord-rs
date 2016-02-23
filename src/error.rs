@@ -1,8 +1,9 @@
 use std::io::Error as IoError;
 use std::error::Error as StdError;
-use hyper::Error as HyError;
-use serde_json::Error as SjError;
-use websocket::result::WebSocketError as WsError;
+use std::fmt::Display;
+use hyper::Error as HyperError;
+use serde_json::Error as JsonError;
+use websocket::result::WebSocketError;
 use byteorder::Error as BoError;
 
 /// Discord API `Result` alias type.
@@ -12,19 +13,21 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
 	/// A `hyper` crate error
-	Hyper(HyError),
+	Hyper(HyperError),
 	/// A `serde_json` crate error
-	Json(SjError),
+	Json(JsonError),
 	/// A `websocket` crate error
-	WebSocket(WsError),
+	WebSocket(WebSocketError),
 	/// A `std::io` module error
 	Io(IoError),
 	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, ::serde_json::Value),
 	/// A non-success response from the REST API
 	Status(::hyper::status::StatusCode),
-	/// An error in the Opus library
+	/// An error in the Opus library, with the function name and error code
 	Opus(&'static str, i32),
+	/// A Discord protocol error, with a description
+	Protocol(&'static str),
 	/// A miscellaneous error, with a description
 	Other(&'static str),
 }
@@ -35,20 +38,20 @@ impl From<IoError> for Error {
 	}
 }
 
-impl From<HyError> for Error {
-	fn from(err: HyError) -> Error {
+impl From<HyperError> for Error {
+	fn from(err: HyperError) -> Error {
 		Error::Hyper(err)
 	}
 }
 
-impl From<SjError> for Error {
-	fn from(err: SjError) -> Error {
+impl From<JsonError> for Error {
+	fn from(err: JsonError) -> Error {
 		Error::Json(err)
 	}
 }
 
-impl From<WsError> for Error {
-	fn from(err: WsError) -> Error {
+impl From<WebSocketError> for Error {
+	fn from(err: WebSocketError) -> Error {
 		Error::WebSocket(err)
 	}
 }
@@ -62,9 +65,15 @@ impl From<BoError> for Error {
 	}
 }
 
-impl ::std::fmt::Display for Error {
+impl Display for Error {
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-		write!(f, "Discord error ({})", self.description())
+		match *self {
+			Error::Hyper(ref inner) => inner.fmt(f),
+			Error::Json(ref inner) => inner.fmt(f),
+			Error::WebSocket(ref inner) => inner.fmt(f),
+			Error::Io(ref inner) => inner.fmt(f),
+			_ => f.write_str(self.description()),
+		}
 	}
 }
 
@@ -75,9 +84,10 @@ impl StdError for Error {
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
-			Error::Decode(..) => "json decode error",
-			Error::Status(_) => "erroneous HTTP status",
+			Error::Decode(msg, _) => msg,
+			Error::Status(status) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::Opus(msg, _) => msg,
+			Error::Protocol(msg) => msg,
 			Error::Other(msg) => msg,
 		}
 	}

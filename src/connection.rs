@@ -59,7 +59,7 @@ impl Connection {
 		let event = try!(recv_message(&mut receiver));
 		let ready = match event {
 			Event::Ready(ready) => ready,
-			_ => return Err(Error::Other("First event was not READY"))
+			_ => return Err(Error::Protocol("First event was not Ready"))
 		};
 		let heartbeat_interval = ready.heartbeat_interval;
 

@@ -167,17 +167,17 @@ pub fn open_ytdl_stream(url: &str) -> Result<AudioSource> {
 		.stdin(Stdio::null())
 		.output());
 	if !output.status.success() {
-		return Err(Error::Other("Youtube-dl failed"))
+		return Err(Error::Other("youtube-dl failed"))
 	}
 
 	let json: serde_json::Value = try!(serde_json::from_reader(&output.stdout[..]));
 	let map = match json.as_object() {
 		Some(map) => map,
-		None => return Err(Error::Other("Youtube-dl output was not an object"))
+		None => return Err(Error::Other("youtube-dl output could not be read"))
 	};
 	let url = match map.get("url").and_then(serde_json::Value::as_string) {
 		Some(url) => url,
-		None => return Err(Error::Other("Youtube-dl output's 'url' field was not a string"))
+		None => return Err(Error::Other("youtube-dl output's \"url\" could not be read"))
 	};
 	open_ffmpeg_stream(url)
 }
@@ -208,7 +208,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> 
 	use websocket::ws::receiver::Receiver;
 	let message: WsMessage = try!(receiver.recv_message());
 	if message.opcode != MessageType::Text {
-		return Err(Error::Other("Got an non-Text frame as voice handshake response"))
+		return Err(Error::Protocol("Voice websocket message was not Text"))
 	}
 	let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));
 	let original = format!("{:?}", json);
@@ -230,10 +230,10 @@ fn voice_thread(
 	// read the first websocket message
 	let (interval, port, ssrc, modes) = match try!(recv_message(&mut receiver)) {
 		VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
-		_ => return Err(Error::Other("First voice message was not 4/handshake"))
+		_ => return Err(Error::Protocol("First voice event was not Handshake"))
 	};
 	if !modes.iter().find(|&s| s == "plain").is_some() {
-		return Err(Error::Other("Plain voice mode is unavailable"))
+		return Err(Error::Protocol("Voice mode \"plain\" unavailable"))
 	}
 
 	// bind a UDP socket and send the ssrc value in a packet as identification
@@ -277,7 +277,7 @@ fn voice_thread(
 					debug!("Secret key: {:?}", secret_key);
 				}
 				if mode != "plain" {
-					return Err(Error::Other("Voice mode in Ready was not 'plain'"))
+					return Err(Error::Protocol("Voice mode in Ready was not \"plain\""))
 				}
 				break
 			}

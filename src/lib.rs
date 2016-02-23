@@ -73,7 +73,7 @@ impl Discord {
 		let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let token = match json.remove("token") {
 			Some(token) => token,
-			None => return Err(Error::Other("login: response missing key `token`"))
+			None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
 		};
 		Ok(Discord {
 			client: client,
@@ -330,7 +330,7 @@ impl Discord {
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let url = match value.get("url") {
 			Some(url) => url,
-			None => return Err(Error::Other("url missing in connect()"))
+			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
 		};
 		Connection::new(&url, &self.token)
 	}

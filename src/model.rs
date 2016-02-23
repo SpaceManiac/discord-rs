@@ -32,7 +32,7 @@ pub struct RoleId(pub String);
 
 macro_rules! req {
 	($opt:expr) => {
-		try!($opt.ok_or(Error::Other(concat!(file!(), ":", line!(), ": ", stringify!($opt)))))
+		try!($opt.ok_or(Error::Decode(concat!("Type mismatch in model:", line!(), ": ", stringify!($opt)), Value::Null)))
 	}
 }
 
@@ -62,7 +62,7 @@ pub enum ChannelType {
 
 impl ChannelType {
 	/// Attempt to parse a ChannelType from a name
-	pub fn from_name(name: &str) -> Option<ChannelType> {
+	pub fn from_str(name: &str) -> Option<ChannelType> {
 		if name == "text" {
 			Some(ChannelType::Text)
 		} else if name == "voice" {
@@ -72,8 +72,8 @@ impl ChannelType {
 		}
 	}
 
-	fn from_name_err(name: String) -> Result<ChannelType> {
-		ChannelType::from_name(&name).ok_or(Error::Decode("channel type", Value::String(name)))
+	fn from_str_err(name: String) -> Result<ChannelType> {
+		ChannelType::from_str(&name).ok_or(Error::Decode("Expected valid ChannelType", Value::String(name)))
 	}
 
 	/// Get the name of this ChannelType
@@ -262,7 +262,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: remove(&mut value, "topic").and_then(into_string).ok(),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_name_err)),
+			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_str_err)),
 			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
@@ -289,7 +289,7 @@ impl PermissionOverwrite {
 		} else if kind == "member" {
 			warn_json!(value, PermissionOverwrite::Member { id: UserId(id), allow: allow, deny: deny })
 		} else {
-			Err(Error::Decode(r#"PermissionOverwrite type ("role" or "member")"#, Value::String(kind)))
+			Err(Error::Decode("Expected valid PermissionOverwrite type", Value::String(kind)))
 		}
 	}
 }
@@ -435,7 +435,7 @@ impl Invite {
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_name_err));
+		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_str_err));
 		let channel_id = try!(remove(&mut channel, "id").and_then(into_string).map(ChannelId));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
@@ -497,6 +497,10 @@ impl OnlineStatus {
 			None
 		}
 	}
+
+	fn from_str_err(name: String) -> Result<OnlineStatus> {
+		OnlineStatus::from_str(&name).ok_or(Error::Decode("Expected valid OnlineStatus", Value::String(name)))
+	}
 }
 
 /// Information about a game being played
@@ -536,8 +540,7 @@ impl Presence {
 
 		warn_json!(@"Presence", value, (Presence {
 			user_id: user_id,
-			status: try!(remove(&mut value, "status").and_then(into_string)
-				.and_then(|s| OnlineStatus::from_str(&s).ok_or(Error::Other("presence status")))),
+			status: try!(remove(&mut value, "status").and_then(into_string).and_then(OnlineStatus::from_str_err)),
 			game: remove(&mut value, "game").and_then(Game::decode).ok(),
 		}, user))
 	}
@@ -808,7 +811,7 @@ impl Event {
 			))
 		} else if op != 0 {
 			value.insert("op".into(), Value::U64(op));
-			return Err(Error::Decode("Unknown opcode", Value::Object(value)))
+			return Err(Error::Decode("Expected opcode 7 or 0", Value::Object(value)))
 		}
 
 		let kind = try!(remove(&mut value, "t").and_then(into_string));
@@ -995,39 +998,37 @@ impl VoiceEvent {
 //=================
 // Decode helpers
 
-fn remove(map: &mut BTreeMap<String, Value>, key: &'static str) -> Result<Value> {
-	map.remove(key).ok_or(Error::Decode(key, Value::Null))
+fn remove(map: &mut BTreeMap<String, Value>, key: &str) -> Result<Value> {
+	map.remove(key).ok_or(Error::Decode("Unexpected absent key", Value::String(key.into())))
 }
 
 fn decode_discriminator(value: Value) -> Result<String> {
-	match into_string(value) {
-		Ok(text) => Ok(text),
-		Err(Error::Decode(_, value)) => match value.as_u64() {
-			Some(num) => Ok(format!("{}", num)),
-			None => Err(Error::Decode("string or u64", value))
-		},
-		Err(other) => Err(other),
+	match value {
+		Value::String(s) => Ok(s),
+		Value::I64(v) => Ok(v.to_string()),
+		Value::U64(v) => Ok(v.to_string()),
+		other => Err(Error::Decode("Expected string or u64", other))
 	}
 }
 
 fn into_string(value: Value) -> Result<String> {
 	match value {
 		Value::String(s) => Ok(s),
-		value => Err(Error::Decode("string", value)),
+		value => Err(Error::Decode("Expected string", value)),
 	}
 }
 
 fn into_array(value: Value) -> Result<Vec<Value>> {
 	match value {
 		Value::Array(v) => Ok(v),
-		value => Err(Error::Decode("array", value)),
+		value => Err(Error::Decode("Expected array", value)),
 	}
 }
 
 fn into_map(value: Value) -> Result<BTreeMap<String, Value>> {
 	match value {
 		Value::Object(m) => Ok(m),
-		value => Err(Error::Decode("object", value)),
+		value => Err(Error::Decode("Expected object", value)),
 	}
 }
 
