@@ -199,6 +199,10 @@ impl State {
 	#[inline]
 	pub fn settings(&self) -> &UserSettings { &self.settings }
 
+	/// Get the logged-in user's per-server notification settings.
+	#[inline]
+	pub fn server_settings(&self) -> &[UserServerSettings] { &self.server_settings }
+
 	/// Get the websocket session ID.
 	#[inline]
 	pub fn session_id(&self) -> &str { &self.session_id }
