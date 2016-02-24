@@ -112,6 +112,7 @@ impl State {
 			Event::ServerDelete(ref server) => self.servers.retain(|s| s.id != server.id),
 			Event::ServerMemberAdd { ref server_id, ref joined_at, ref roles, ref user } => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.member_count += 1;
 					srv.members.push(Member {
 						user: user.clone(),
 						roles: roles.clone(),
@@ -131,6 +132,7 @@ impl State {
 			}
 			Event::ServerMemberRemove(ref server_id, ref user) => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
+					srv.member_count -= 1;
 					srv.members.retain(|m| m.user.id != user.id);
 				});
 			}
