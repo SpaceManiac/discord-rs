@@ -39,7 +39,7 @@ impl State {
 			Event::UserSettingsUpdate {
 				ref enable_tts_command, ref inline_attachment_media,
 				ref inline_embed_media, ref locale,
-				ref message_display_compact, ref muted_channels,
+				ref message_display_compact,
 				ref render_embeds, ref show_current_game,
 				ref theme, ref convert_emoticons,
 			} => {
@@ -48,7 +48,6 @@ impl State {
 				opt_modify(&mut self.settings.inline_embed_media, inline_embed_media);
 				opt_modify(&mut self.settings.locale, locale);
 				opt_modify(&mut self.settings.message_display_compact, message_display_compact);
-				opt_modify(&mut self.settings.muted_channels, muted_channels);
 				opt_modify(&mut self.settings.render_embeds, render_embeds);
 				opt_modify(&mut self.settings.show_current_game, show_current_game);
 				opt_modify(&mut self.settings.theme, theme);
