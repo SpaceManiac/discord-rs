@@ -405,7 +405,7 @@ impl Discord {
 fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
 	let response = try!(response);
 	if !response.status.is_success() {
-		return Err(Error::Status(response.status))
+		return Err(Error::from_response(response))
 	}
 	Ok(response)
 }

@@ -3,6 +3,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use hyper::Error as HyperError;
 use serde_json::Error as JsonError;
+use serde_json::Value;
 use websocket::result::WebSocketError;
 use byteorder::Error as BoError;
 
@@ -21,15 +22,33 @@ pub enum Error {
 	/// A `std::io` module error
 	Io(IoError),
 	/// A json decoding error, with a description and the offending value
-	Decode(&'static str, ::serde_json::Value),
-	/// A non-success response from the REST API
-	Status(::hyper::status::StatusCode),
+	Decode(&'static str, Value),
+	/// A generic non-success response from the REST API
+	Status(::hyper::status::StatusCode, Option<Value>),
+	/// A rate limit error, with how many milliseconds to wait before retrying
+	RateLimited(u64),
 	/// An error in the Opus library, with the function name and error code
 	Opus(&'static str, i32),
 	/// A Discord protocol error, with a description
 	Protocol(&'static str),
 	/// A miscellaneous error, with a description
 	Other(&'static str),
+}
+
+impl Error {
+	#[doc(hidden)]
+	pub fn from_response(response: ::hyper::client::Response) -> Error {
+		let status = response.status;
+		let value = ::serde_json::from_reader(response).ok();
+		if status == ::hyper::status::StatusCode::TooManyRequests {
+			if let Some(Value::Object(ref map)) = value {
+				if let Some(delay) = map.get("retry_after").and_then(|v| v.as_u64()) {
+					return Error::RateLimited(delay)
+				}
+			}
+		}
+		Error::Status(status, value)
+	}
 }
 
 impl From<IoError> for Error {
@@ -85,7 +104,8 @@ impl StdError for Error {
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
 			Error::Decode(msg, _) => msg,
-			Error::Status(status) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
+			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
+			Error::RateLimited(_) => "Rate limited",
 			Error::Opus(msg, _) => msg,
 			Error::Protocol(msg) => msg,
 			Error::Other(msg) => msg,
