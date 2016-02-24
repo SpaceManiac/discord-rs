@@ -22,8 +22,7 @@ the events received over it.
 To use the voice call system, initialize a `VoiceConnection` with the user id
 received in the `ReadyEvent`, call `voice_connect` on the `Connection`, and
 pass events to `VoiceConnection::update`. Once the connection has been
-established, audio queued through `push_pcm` and `push_file` will be sent over
-the voice connection.
+established, the `play` and `stop` methods can be used to control playback.
 
 For further details, browse the [source](src/) or use `cargo doc` to read
 the documentation. For examples, see the [examples](examples/) directory.
