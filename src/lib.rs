@@ -304,8 +304,15 @@ impl Discord {
 
 	// Edit server
 
-	/// Leave the given server. For the owner, deletes the server.
+	/// Leave the given server.
 	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
+		let response = try!(self.request(||
+			self.client.delete(&format!("{}/users/@me/guilds/{}", API_BASE, server.0))));
+		Server::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Delete the given server. Only available to the server owner.
+	pub fn delete_server(&self, server: &ServerId) -> Result<Server> {
 		let response = try!(self.request(||
 			self.client.delete(&format!("{}/guilds/{}", API_BASE, server.0))));
 		Server::decode(try!(serde_json::from_reader(response)))
