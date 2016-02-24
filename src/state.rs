@@ -99,7 +99,6 @@ impl State {
 			Event::ServerUpdate(ref server) => {
 				self.servers.iter_mut().find(|s| s.id == server.id).map(|srv| {
 					srv.name.clone_from(&server.name);
-					srv.joined_at.clone_from(&server.joined_at);
 					srv.afk_timeout = server.afk_timeout;
 					srv.afk_channel_id.clone_from(&server.afk_channel_id);
 					srv.icon.clone_from(&server.icon);
@@ -107,6 +106,7 @@ impl State {
 					srv.region.clone_from(&server.region);
 					// embed_enabled and embed_channel_id skipped
 					srv.owner_id.clone_from(&server.owner_id);
+					srv.verification_level = server.verification_level;
 				});
 			}
 			Event::ServerDelete(ref server) => self.servers.retain(|s| s.id != server.id),

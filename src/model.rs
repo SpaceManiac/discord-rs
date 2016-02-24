@@ -88,7 +88,6 @@ impl ChannelType {
 pub struct Server {
 	pub id: ServerId,
 	pub name: String,
-	pub joined_at: String, // Timestamp
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
 	pub icon: Option<String>,
@@ -97,6 +96,7 @@ pub struct Server {
 	pub embed_enabled: bool,
 	pub embed_channel_id: Option<ChannelId>,
 	pub owner_id: UserId,
+	pub verification_level: VerificationLevel,
 }
 
 impl Server {
@@ -106,7 +106,6 @@ impl Server {
 			id: try!(remove(&mut value, "id").and_then(into_string).map(ServerId)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
-			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(into_string).map(ChannelId).ok(),
 			embed_enabled: req!(try!(remove(&mut value, "embed_enabled")).as_boolean()),
@@ -114,6 +113,7 @@ impl Server {
 			owner_id: try!(remove(&mut value, "owner_id").and_then(into_string).map(UserId)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
+			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
 		})
 	}
 }
@@ -572,6 +572,35 @@ impl VoiceState {
 	}
 }
 
+/// A condition that new users must satisfy before posting in text channels
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum VerificationLevel {
+	/// No verification is needed
+	None,
+	/// Must have a verified email on their Discord account
+	Low,
+	/// Must also be registered on Discord for longer than 5 minutes
+	Medium,
+	/// Must also be a member of this server for longer than 10 minutes
+	High,
+}
+
+impl VerificationLevel {
+	pub fn from_num(level: u64) -> Option<VerificationLevel> {
+		match level {
+			0 => Some(VerificationLevel::None),
+			1 => Some(VerificationLevel::Low),
+			2 => Some(VerificationLevel::Medium),
+			3 => Some(VerificationLevel::High),
+			_ => None,
+		}
+	}
+
+	fn decode(value: Value) -> Result<VerificationLevel> {
+		value.as_u64().and_then(VerificationLevel::from_num).ok_or(Error::Decode("Expected valid VerificationLevel", value))
+	}
+}
+
 /// Live server information
 #[derive(Debug, Clone)]
 pub struct LiveServer {
@@ -582,6 +611,7 @@ pub struct LiveServer {
 	pub roles: Vec<Role>,
 	pub region: String,
 	pub presences: Vec<Presence>,
+	pub member_count: u64,
 	pub members: Vec<Member>,
 	pub joined_at: String,
 	pub icon: Option<String>,
@@ -589,6 +619,7 @@ pub struct LiveServer {
 	pub channels: Vec<PublicChannel>,
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
+	pub verification_level: VerificationLevel,
 }
 
 impl LiveServer {
@@ -603,6 +634,7 @@ impl LiveServer {
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			// these presences don't contain a whole User, so discard that
 			presences: try!(decode_array(try!(remove(&mut value, "presences")), |v| Presence::decode(v).map(|x| x.0))),
+			member_count: req!(try!(remove(&mut value, "member_count")).as_u64()),
 			members: try!(decode_array(try!(remove(&mut value, "members")), Member::decode)),
 			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
@@ -610,6 +642,7 @@ impl LiveServer {
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(into_string).map(ChannelId).ok(),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id.clone()))),
+			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
 			id: id,
 		})
 	}
