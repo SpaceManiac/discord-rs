@@ -1,8 +1,5 @@
 use super::model::*;
 
-/// The websocket protocol version expected.
-const VERSION: u64 = 3;
-
 /// Known state composed from received events.
 #[derive(Debug, Clone)]
 pub struct State {
@@ -17,8 +14,8 @@ pub struct State {
 impl State {
 	/// Create a new state from an initial `ReadyEvent`.
 	pub fn new(ready: ReadyEvent) -> State {
-		if ready.version != VERSION {
-			warn!("Got protocol version {} instead of {}", ready.version, VERSION);
+		if ready.version != ::GATEWAY_VERSION {
+			warn!("Got protocol version {} instead of {}", ready.version, ::GATEWAY_VERSION);
 		}
 		State {
 			user: ready.user,

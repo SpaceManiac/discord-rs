@@ -50,7 +50,7 @@ impl Connection {
 					.insert("$referring_domain", "")
 					.insert("$referrer", "")
 				)
-				.insert("v", 3)
+				.insert("v", ::GATEWAY_VERSION)
 			)
 			.unwrap();
 		try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
