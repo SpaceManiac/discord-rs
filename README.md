@@ -1,7 +1,7 @@
 discord-rs
 ==========
 
-**discord-rs** is a [Rust](https://rust-lang.org) client library for the
+**discord-rs** is a [Rust](https://www.rust-lang.org) client library for the
 [Discord](https://discordapp.com) chat client's API.
 
 The Discord API can be divided into three main components: the RESTful API
