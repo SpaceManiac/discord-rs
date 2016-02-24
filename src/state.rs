@@ -8,6 +8,7 @@ const VERSION: u64 = 3;
 pub struct State {
 	user: CurrentUser,
 	settings: UserSettings,
+	server_settings: Vec<UserServerSettings>,
 	session_id: String,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
@@ -22,6 +23,7 @@ impl State {
 		State {
 			user: ready.user,
 			settings: ready.user_settings,
+			server_settings: ready.user_server_settings,
 			session_id: ready.session_id,
 			private_channels: ready.private_channels,
 			servers: ready.servers,
@@ -51,6 +53,11 @@ impl State {
 				opt_modify(&mut self.settings.show_current_game, show_current_game);
 				opt_modify(&mut self.settings.theme, theme);
 				opt_modify(&mut self.settings.convert_emoticons, convert_emoticons);
+			}
+			Event::UserServerSettingsUpdate(ref settings) => {
+				self.server_settings.iter_mut().find(|s| s.server_id == settings.server_id).map(|srv| {
+					srv.clone_from(settings);
+				});
 			}
 			Event::VoiceStateUpdate(ref server, ref state) => {
 				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {

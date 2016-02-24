@@ -63,12 +63,10 @@ pub enum ChannelType {
 impl ChannelType {
 	/// Attempt to parse a ChannelType from a name
 	pub fn from_str(name: &str) -> Option<ChannelType> {
-		if name == "text" {
-			Some(ChannelType::Text)
-		} else if name == "voice" {
-			Some(ChannelType::Voice)
-		} else {
-			None
+		match name {
+			"text" => Some(ChannelType::Text),
+			"voice" => Some(ChannelType::Voice),
+			_ => None,
 		}
 	}
 
@@ -487,14 +485,11 @@ pub enum OnlineStatus {
 
 impl OnlineStatus {
 	pub fn from_str(name: &str) -> Option<OnlineStatus> {
-		if name == "offline" {
-			Some(OnlineStatus::Offline)
-		} else if name == "online" {
-			Some(OnlineStatus::Online)
-		} else if name == "idle" {
-			Some(OnlineStatus::Idle)
-		} else {
-			None
+		match name {
+			"offline" => Some(OnlineStatus::Offline),
+			"online" => Some(OnlineStatus::Online),
+			"idle" => Some(OnlineStatus::Idle),
+			_ => None,
 		}
 	}
 
@@ -678,6 +673,79 @@ impl UserSettings {
 	}
 }
 
+/// A user's online presence status
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum NotificationLevel {
+	/// All messages trigger a notification
+	All,
+	/// Only @mentions trigger a notification
+	Mentions,
+	/// No messages, even @mentions, trigger a notification
+	Nothing,
+	/// Follow the parent's notification level
+	Parent,
+}
+
+impl NotificationLevel {
+	pub fn from_num(level: u64) -> Option<NotificationLevel> {
+		match level {
+			0 => Some(NotificationLevel::All),
+			1 => Some(NotificationLevel::Mentions),
+			2 => Some(NotificationLevel::Nothing),
+			3 => Some(NotificationLevel::Parent),
+			_ => None,
+		}
+	}
+
+	fn decode(value: Value) -> Result<NotificationLevel> {
+		value.as_u64().and_then(NotificationLevel::from_num).ok_or(Error::Decode("Expected valid NotificationLevel", value))
+	}
+}
+
+/// A channel-specific notification settings override
+#[derive(Debug, Clone)]
+pub struct ChannelOverride {
+	pub channel_id: ChannelId,
+	pub message_notifications: NotificationLevel,
+	pub muted: bool,
+}
+
+impl ChannelOverride {
+	pub fn decode(value: Value) -> Result<ChannelOverride> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, ChannelOverride {
+			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
+			muted: req!(try!(remove(&mut value, "muted")).as_boolean()),
+		})
+	}
+}
+
+/// User settings which influence per-server notification behavior
+#[derive(Debug, Clone)]
+pub struct UserServerSettings {
+	pub server_id: ServerId,
+	pub message_notifications: NotificationLevel,
+	pub mobile_push: bool,
+	pub muted: bool,
+	pub suppress_everyone: bool,
+	pub channel_overrides: Vec<ChannelOverride>,
+}
+
+impl UserServerSettings {
+	pub fn decode(value: Value) -> Result<UserServerSettings> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, UserServerSettings {
+			server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
+			mobile_push: req!(try!(remove(&mut value, "mobile_push")).as_boolean()),
+			muted: req!(try!(remove(&mut value, "muted")).as_boolean()),
+			suppress_everyone: req!(try!(remove(&mut value, "suppress_everyone")).as_boolean()),
+			channel_overrides: try!(remove(&mut value, "channel_overrides").and_then(|v| decode_array(v, ChannelOverride::decode))),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
@@ -689,6 +757,7 @@ pub struct ReadyEvent {
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
 	pub servers: Vec<LiveServer>,
+	pub user_server_settings: Vec<UserServerSettings>,
 }
 
 /// Event received over a websocket connection
@@ -711,6 +780,8 @@ pub enum Event {
 		theme: Option<String>,
 		convert_emoticons: Option<bool>,
 	},
+	/// Update to the logged-in user's server-specific notification settings
+	UserServerSettingsUpdate(UserServerSettings),
 	/// A member's voice state has changed
 	VoiceStateUpdate(ServerId, VoiceState),
 	/// Voice server information is available
@@ -817,7 +888,7 @@ impl Event {
 		let kind = try!(remove(&mut value, "t").and_then(into_string));
 		let mut value = try!(remove(&mut value, "d").and_then(into_map));
 		if kind == "READY" {
-			warn_json!(value, Event::Ready(ReadyEvent {
+			warn_json!(@"Event::Ready", value, Event::Ready(ReadyEvent {
 				version: req!(try!(remove(&mut value, "v")).as_u64()),
 				user: try!(remove(&mut value, "user").and_then(CurrentUser::decode)),
 				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
@@ -826,6 +897,7 @@ impl Event {
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
 				user_settings: try!(remove(&mut value, "user_settings").and_then(UserSettings::decode)),
+				user_server_settings: try!(remove(&mut value, "user_guild_settings").and_then(|v| decode_array(v, UserServerSettings::decode))),
 			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
@@ -842,6 +914,8 @@ impl Event {
 				theme: remove(&mut value, "theme").and_then(into_string).ok(),
 				convert_emoticons: remove(&mut value, "convert_emoticons").ok().and_then(|v| v.as_boolean()),
 			})
+		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
+			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
 			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
