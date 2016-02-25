@@ -1,4 +1,4 @@
-discord-rs
+discord-rs [![](https://meritbadge.herokuapp.com/discord)](https://crates.io/crates/discord) [![](https://img.shields.io/badge/chat-Discord-blue.svg)](https://discord.gg/0SBTUU1wZTWAPisK)
 ==========
 
 **discord-rs** is a [Rust](https://www.rust-lang.org) client library for the
