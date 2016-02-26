@@ -450,6 +450,36 @@ impl Invite {
 	}
 }
 
+/// Information about an available voice region
+#[derive(Debug, Clone)]
+pub struct VoiceRegion {
+	pub id: String,
+	pub name: String,
+	pub sample_hostname: String,
+	pub sample_port: u16,
+	pub optimal: bool,
+	pub vip: bool,
+}
+
+impl VoiceRegion {
+	pub fn decode(value: Value) -> Result<VoiceRegion> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, VoiceRegion {
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			sample_hostname: try!(remove(&mut value, "sample_hostname").and_then(into_string)),
+			sample_port: req!(try!(remove(&mut value, "sample_port")).as_u64()) as u16,
+			optimal: req!(try!(remove(&mut value, "optimal")).as_boolean()),
+			vip: req!(try!(remove(&mut value, "vip")).as_boolean()),
+		})
+	}
+
+	#[doc(hidden)]
+	pub fn decode_array(value: Value) -> Result<Vec<VoiceRegion>> {
+		decode_array(value, VoiceRegion::decode)
+	}
+}
+
 //=================
 // Event model
 

@@ -399,6 +399,23 @@ impl Discord {
 	// Get active maintenances
 	// Get upcoming maintenances
 
+	/// Get the list of available voice regions for a server.
+	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
+		let response = try!(self.request(|| self.client.get(&format!("{}/voice/regions", API_BASE))));
+		VoiceRegion::decode_array(try!(serde_json::from_reader(response)))
+	}
+
+	/// Move a server member to another voice channel.
+	pub fn move_member_voice(&self, server: &ServerId, user: &UserId, channel: &ChannelId) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("channel_id", &channel.0)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(||
+			self.client.patch(&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
+		Ok(())
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
