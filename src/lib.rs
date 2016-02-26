@@ -295,12 +295,11 @@ impl Discord {
 	*/
 
 	/// Create a new server with the given name.
-	pub fn create_server(&self, name: &str, region: &str) -> Result<Server> {
-		// TODO: add icon parameter
+	pub fn create_server(&self, name: &str, region: &str, icon: Option<&str>) -> Result<Server> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
 			.insert("region", region)
-			.insert("icon", serde_json::Value::Null)
+			.insert("icon", icon)
 			.unwrap();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
