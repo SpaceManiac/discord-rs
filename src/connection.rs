@@ -164,9 +164,8 @@ enum Status {
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
-	let duration = ::time::Duration::milliseconds(interval as i64);
-	let mut timer = ::Timer::new(duration);
 	let mut game = None;
+	let mut timer = ::Timer::new(interval);
 
 	'outer: loop {
 		::sleep_ms(100);
@@ -192,7 +191,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 			}
 		}
 
-		if timer.check_and_add(duration) {
+		if timer.check_tick() {
 			let map = ObjectBuilder::new()
 				.insert("op", 3)
 				.insert_object("d", |mut object| {

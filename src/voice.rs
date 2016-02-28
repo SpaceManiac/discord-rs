@@ -233,16 +233,17 @@ fn voice_thread(
 	mut receiver: Receiver<WebSocketStream>,
 	channel: mpsc::Receiver<Status>,
 ) -> Result<()> {
-	use opus;
 	use std::io::Cursor;
+	use sodiumoxide::crypto::secretbox as crypto;
+	use opus;
 
 	// read the first websocket message
 	let (interval, port, ssrc, modes) = match try!(recv_message(&mut receiver)) {
 		VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
 		_ => return Err(Error::Protocol("First voice event was not Handshake"))
 	};
-	if !modes.iter().find(|&s| s == "plain").is_some() {
-		return Err(Error::Protocol("Voice mode \"plain\" unavailable"))
+	if !modes.iter().find(|&s| s == "xsalsa20_poly1305").is_some() {
+		return Err(Error::Protocol("Voice mode \"xsalsa20_poly1305\" unavailable"))
 	}
 
 	// bind a UDP socket and send the ssrc value in a packet as identification
@@ -272,21 +273,20 @@ fn voice_thread(
 			.insert_object("data", |object| object
 				.insert("address", "")
 				.insert("port", port_number)
-				.insert("mode", "plain")
+				.insert("mode", "xsalsa20_poly1305")
 			)
 		)
 		.unwrap();
 	try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
 
 	// discard websocket messages until we get the Ready
+	let encryption_key;
 	loop {
 		match try!(recv_message(&mut receiver)) {
 			VoiceEvent::Ready { mode, secret_key } => {
-				if secret_key.len() != 0 {
-					debug!("Secret key: {:?}", secret_key);
-				}
-				if mode != "plain" {
-					return Err(Error::Protocol("Voice mode in Ready was not \"plain\""))
+				encryption_key = crypto::Key::from_slice(&secret_key).expect("failed to create key");
+				if mode != "xsalsa20_poly1305" {
+					return Err(Error::Protocol("Voice mode in Ready was not \"xsalsa20_poly1305\""))
 				}
 				break
 			}
@@ -302,25 +302,23 @@ fn voice_thread(
 		.spawn(move || drain_thread(receiver)));
 
 	// prepare buffers for later use
-	let mut opus = try!(opus::Encoder::new(48000, opus::Channels::Mono, opus::CodingMode::Audio));
-	let mut audio_buffer = [0i16; 960];
-	let mut packet = Vec::with_capacity(256);
 	let mut sequence = 0;
 	let mut timestamp = 0;
 	let mut speaking = false;
-
 	let mut audio = None;
 
-	let audio_duration = ::time::Duration::milliseconds(20);
-	let keepalive_duration = ::time::Duration::milliseconds(interval as i64);
-	let mut audio_timer = ::Timer::new(audio_duration);
-	let mut keepalive_timer = ::Timer::new(keepalive_duration);
+	let mut audio_buffer = [0i16; 960];
+	let mut packet = [0u8; 512]; // 256 forces opus to reduce bitrate for some packets
+	let mut nonce = crypto::Nonce([0; 24]);
+
+	let mut opus = try!(opus::Encoder::new(48000, opus::Channels::Mono, opus::CodingMode::Audio));
+	let mut audio_timer = ::Timer::new(20);
+	let mut keepalive_timer = ::Timer::new(interval);
 
 	// start the main loop
 	info!("Voice connected to {}", endpoint);
 	'outer: loop {
-		::sleep_ms(3);
-
+		// Check on the signalling channel
 		loop {
 			match channel.try_recv() {
 				Ok(Status::Source(source)) => audio = Some(source),
@@ -331,7 +329,8 @@ fn voice_thread(
 			}
 		}
 
-		if keepalive_timer.check_and_add(keepalive_duration) {
+		// If it's been long enough, send the keepalive
+		if keepalive_timer.check_tick() {
 			let map = ObjectBuilder::new()
 				.insert("op", 3)
 				.insert("d", serde_json::Value::Null)
@@ -340,41 +339,47 @@ fn voice_thread(
 			try!(sender.send_message(&WsMessage::text(json)));
 		}
 
-		if audio_timer.check_and_add(audio_duration) {
-			// read the audio from the source
-			let len = match audio.as_mut() {
-				Some(source) => try!(next_frame(source, &mut audio_buffer[..])),
-				None => 0
-			};
-			if len == 0 {
-				// stop speaking, don't send any audio
-				try!(set_speaking(&mut sender, &mut speaking, false));
-				continue
-			} else if len < audio_buffer.len() {
-				// zero-fill the rest of the buffer
-				for value in &mut audio_buffer[len..] {
-					*value = 0;
-				}
+		// read the audio from the source
+		let len = match audio.as_mut() {
+			Some(source) => try!(next_frame(source, &mut audio_buffer[..])),
+			None => 0
+		};
+		if len == 0 {
+			// stop speaking, don't send any audio
+			try!(set_speaking(&mut sender, &mut speaking, false));
+			audio_timer.sleep_until_tick();
+			continue;
+		} else if len < audio_buffer.len() {
+			// zero-fill the rest of the buffer
+			for value in &mut audio_buffer[len..] {
+				*value = 0;
 			}
-			try!(set_speaking(&mut sender, &mut speaking, true));
-
-			// prepare the packet header
-			const HEADER_LEN: usize = 12;
-			packet.clear();
-			try!(packet.write_all(&[0x80, 0x78]));
-			try!(packet.write_u16::<BigEndian>(sequence));
-			try!(packet.write_u32::<BigEndian>(timestamp));
-			try!(packet.write_u32::<BigEndian>(ssrc));
-			let zeroes = packet.capacity() - HEADER_LEN;
-			packet.extend(::std::iter::repeat(0).take(zeroes));
-
-			// encode the audio data and transmit it
-			let len = opus.encode(&audio_buffer, &mut packet[HEADER_LEN..]).expect("failed encode");
-			try!(udp.send_to(&packet[..len + HEADER_LEN], destination));
-
-			sequence = sequence.wrapping_add(1);
-			timestamp = timestamp.wrapping_add(960);
 		}
+		try!(set_speaking(&mut sender, &mut speaking, true));
+
+		// prepare the packet header
+		const HEADER_LEN: usize = 12;
+		{
+			let mut cursor = Cursor::new(&mut packet[..HEADER_LEN]);
+			try!(cursor.write_all(&[0x80, 0x78]));
+			try!(cursor.write_u16::<BigEndian>(sequence));
+			try!(cursor.write_u32::<BigEndian>(timestamp));
+			try!(cursor.write_u32::<BigEndian>(ssrc));
+		}
+		nonce.0[..HEADER_LEN].clone_from_slice(&packet[..HEADER_LEN]);
+
+		// encode the audio data
+		let extent = packet.len() - 16; // leave 16 bytes for encryption overhead
+		let len = try!(opus.encode(&audio_buffer, &mut packet[HEADER_LEN..extent]));
+		let crypted = crypto::seal(&packet[HEADER_LEN..HEADER_LEN + len], &nonce, &encryption_key);
+		packet[HEADER_LEN..HEADER_LEN + crypted.len()].clone_from_slice(&crypted);
+
+		sequence = sequence.wrapping_add(1);
+		timestamp = timestamp.wrapping_add(960);
+
+		// wait until the right time, then transmit the packet
+		audio_timer.sleep_until_tick();
+		try!(udp.send_to(&packet[..HEADER_LEN + crypted.len()], destination));
 	}
 
 	// shutting down the sender like this will also terminate the drain thread

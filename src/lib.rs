@@ -33,6 +33,7 @@ extern crate opus;
 extern crate time;
 #[macro_use]
 extern crate log;
+extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -491,21 +492,35 @@ fn sleep_ms(millis: u64) {
 }
 
 // Timer that remembers when it is supposed to go off
-struct Timer(time::Timespec);
+struct Timer {
+	next_tick_at: time::Timespec,
+	tick_len: time::Duration,
+}
 
 impl Timer {
-	fn new(initial_delay: time::Duration) -> Timer {
-		Timer(time::get_time() + initial_delay)
+	fn new(tick_len_ms: u64) -> Timer {
+		let tick_len = time::Duration::milliseconds(tick_len_ms as i64);
+		Timer {
+			next_tick_at: time::get_time() + tick_len,
+			tick_len: tick_len,
+		}
 	}
 
 	fn immediately(&mut self) {
-		self.0 = time::get_time();
+		self.next_tick_at = time::get_time();
 	}
 
-	fn check_and_add(&mut self, duration: time::Duration) -> bool {
-		if time::get_time() >= self.0 {
-			self.0 = self.0 + duration;
-			true
-		} else { false }
+	fn check_tick(&mut self) -> bool {
+		time::get_time() >= self.next_tick_at && {
+			self.next_tick_at = self.next_tick_at + self.tick_len; true
+		}
+	}
+
+	fn sleep_until_tick(&mut self) {
+		let difference = self.next_tick_at - time::get_time();
+		if difference > time::Duration::zero() {
+			sleep_ms(difference.num_milliseconds() as u64)
+		}
+		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
 }
