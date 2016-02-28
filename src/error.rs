@@ -5,6 +5,7 @@ use hyper::Error as HyperError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use websocket::result::WebSocketError;
+use opus::Error as OpusError;
 use byteorder::Error as BoError;
 
 /// Discord API `Result` alias type.
@@ -21,14 +22,14 @@ pub enum Error {
 	WebSocket(WebSocketError),
 	/// A `std::io` module error
 	Io(IoError),
+	/// An error in the Opus library, with the function name and error code
+	Opus(OpusError),
 	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, Value),
 	/// A generic non-success response from the REST API
 	Status(::hyper::status::StatusCode, Option<Value>),
 	/// A rate limit error, with how many milliseconds to wait before retrying
 	RateLimited(u64),
-	/// An error in the Opus library, with the function name and error code
-	Opus(&'static str, i32),
 	/// A Discord protocol error, with a description
 	Protocol(&'static str),
 	/// A miscellaneous error, with a description
@@ -75,6 +76,12 @@ impl From<WebSocketError> for Error {
 	}
 }
 
+impl From<OpusError> for Error {
+	fn from(err: OpusError) -> Error {
+		Error::Opus(err)
+	}
+}
+
 impl From<BoError> for Error {
 	fn from(err: BoError) -> Error {
 		match err {
@@ -91,6 +98,7 @@ impl Display for Error {
 			Error::Json(ref inner) => inner.fmt(f),
 			Error::WebSocket(ref inner) => inner.fmt(f),
 			Error::Io(ref inner) => inner.fmt(f),
+			Error::Opus(ref inner) => inner.fmt(f),
 			_ => f.write_str(self.description()),
 		}
 	}
@@ -103,10 +111,10 @@ impl StdError for Error {
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
+			Error::Opus(ref inner) => inner.description(),
 			Error::Decode(msg, _) => msg,
 			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::RateLimited(_) => "Rate limited",
-			Error::Opus(msg, _) => msg,
 			Error::Protocol(msg) => msg,
 			Error::Other(msg) => msg,
 		}
@@ -118,6 +126,7 @@ impl StdError for Error {
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
 			Error::Io(ref inner) => Some(inner),
+			Error::Opus(ref inner) => Some(inner),
 			_ => None,
 		}
 	}

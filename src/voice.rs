@@ -233,6 +233,7 @@ fn voice_thread(
 	mut receiver: Receiver<WebSocketStream>,
 	channel: mpsc::Receiver<Status>,
 ) -> Result<()> {
+	use opus;
 	use std::io::Cursor;
 
 	// read the first websocket message
@@ -301,7 +302,7 @@ fn voice_thread(
 		.spawn(move || drain_thread(receiver)));
 
 	// prepare buffers for later use
-	let mut opus = try!(::utils::OpusEncoder::new());
+	let mut opus = try!(opus::Encoder::new(48000, opus::Channels::Mono, opus::CodingMode::Audio));
 	let mut audio_buffer = [0i16; 960];
 	let mut packet = Vec::with_capacity(256);
 	let mut sequence = 0;
@@ -312,8 +313,8 @@ fn voice_thread(
 
 	let audio_duration = ::time::Duration::milliseconds(20);
 	let keepalive_duration = ::time::Duration::milliseconds(interval as i64);
-	let mut audio_timer = ::utils::Timer::new(audio_duration);
-	let mut keepalive_timer = ::utils::Timer::new(keepalive_duration);
+	let mut audio_timer = ::Timer::new(audio_duration);
+	let mut keepalive_timer = ::Timer::new(keepalive_duration);
 
 	// start the main loop
 	info!("Voice connected to {}", endpoint);

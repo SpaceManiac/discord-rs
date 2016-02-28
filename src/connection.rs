@@ -165,7 +165,7 @@ enum Status {
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
 	let duration = ::time::Duration::milliseconds(interval as i64);
-	let mut timer = ::utils::Timer::new(duration);
+	let mut timer = ::Timer::new(duration);
 	let mut game = None;
 
 	'outer: loop {

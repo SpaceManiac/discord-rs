@@ -29,7 +29,7 @@ extern crate websocket;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
-extern crate opus_sys;
+extern crate opus;
 extern crate time;
 #[macro_use]
 extern crate log;
@@ -41,7 +41,6 @@ mod error;
 mod connection;
 mod state;
 pub mod voice;
-mod utils;
 pub mod model;
 
 pub use error::{Result, Error};
@@ -431,6 +430,18 @@ impl Discord {
 	}
 }
 
+fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> Result<hyper::client::Response> {
+	let f2 = || check_status(f()
+		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
+		.send());
+	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
+	match f2() {
+		Err(Error::Hyper(hyper::error::Error::Io(ref io)))
+			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
+		other => other
+	}
+}
+
 fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
 	let response = try!(response);
 	if !response.status.is_success() {
@@ -455,14 +466,22 @@ fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
 
-fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> Result<hyper::client::Response> {
-	let f2 = || check_status(f()
-		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-		.send());
-	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
-	match f2() {
-		Err(Error::Hyper(hyper::error::Error::Io(ref io)))
-			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
-		other => other
+// Timer that remembers when it is supposed to go off
+struct Timer(time::Timespec);
+
+impl Timer {
+	fn new(initial_delay: time::Duration) -> Timer {
+		Timer(time::get_time() + initial_delay)
+	}
+
+	fn immediately(&mut self) {
+		self.0 = time::get_time();
+	}
+
+	fn check_and_add(&mut self, duration: time::Duration) -> bool {
+		if time::get_time() >= self.0 {
+			self.0 = self.0 + duration;
+			true
+		} else { false }
 	}
 }
