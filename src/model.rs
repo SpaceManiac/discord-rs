@@ -847,7 +847,7 @@ pub enum Event {
 	/// Voice server information is available
 	VoiceServerUpdate {
 		server_id: ServerId,
-		endpoint: String,
+		endpoint: Option<String>,
 		token: String,
 	},
 	/// A user is typing; considered to last 5 seconds
@@ -981,7 +981,7 @@ impl Event {
 		} else if kind == "VOICE_SERVER_UPDATE" {
 			warn_json!(value, Event::VoiceServerUpdate {
 				server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
-				endpoint: try!(remove(&mut value, "endpoint").and_then(into_string)),
+				endpoint: remove(&mut value, "endpoint").and_then(into_string).ok(),
 				token: try!(remove(&mut value, "token").and_then(into_string)),
 			})
 		} else if kind == "TYPING_START" {

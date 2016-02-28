@@ -66,14 +66,16 @@ impl VoiceConnection {
 					self.session_id = Some(voice_state.session_id.clone());
 					if !voice_state.channel_id.is_some() {
 						// drop the previous connection
-						let (tx, rx) = mpsc::channel();
-						self.sender = tx;
-						self.receiver = Some(rx);
+						self.disconnect();
 					}
 				}
 			}
 			Event::VoiceServerUpdate { ref server_id, ref endpoint, ref token } => {
-				self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
+				if let Some(endpoint) = endpoint.as_ref() {
+					self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
+				} else {
+					self.disconnect()
+				}
 			}
 			_ => {}
 		}
@@ -85,6 +87,12 @@ impl VoiceConnection {
 			None => self.sender.send(Status::Poke).is_ok(),
 			Some(_) => false,
 		}
+	}
+
+	fn disconnect(&mut self) {
+		let (tx, rx) = mpsc::channel();
+		self.sender = tx;
+		self.receiver = Some(rx);
 	}
 
 	fn connect(&mut self, server_id: &ServerId, mut endpoint: String, token: &str) -> Result<()> {
