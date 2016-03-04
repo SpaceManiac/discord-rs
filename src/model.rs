@@ -202,7 +202,7 @@ pub enum Channel {
 impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
 		let mut value = try!(into_map(value));
-		if req!(req!(value.remove("is_private")).as_boolean()) {
+		if req!(try!(remove(&mut value, "is_private")).as_boolean()) {
 			PrivateChannel::decode(Value::Object(value)).map(Channel::Private)
 		} else {
 			PublicChannel::decode(Value::Object(value)).map(Channel::Public)
@@ -914,6 +914,9 @@ pub enum Event {
 	ServerRoleUpdate(ServerId, Role),
 	ServerRoleDelete(ServerId, RoleId),
 
+	ServerBanAdd(ServerId, User),
+	ServerBanRemove(ServerId, User),
+
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
@@ -1057,6 +1060,16 @@ impl Event {
 			warn_json!(value, Event::ServerRoleDelete(
 				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
 				try!(remove(&mut value, "role_id").and_then(into_string).map(RoleId)),
+			))
+		} else if kind == "GUILD_BAN_ADD" {
+			warn_json!(value, Event::ServerBanAdd(
+				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "user").and_then(User::decode)),
+			))
+		} else if kind == "GUILD_BAN_REMOVE" {
+			warn_json!(value, Event::ServerBanRemove(
+				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "user").and_then(User::decode)),
 			))
 		} else if kind == "CHANNEL_CREATE" {
 			Channel::decode(Value::Object(value)).map(Event::ChannelCreate)
