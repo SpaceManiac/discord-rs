@@ -1,6 +1,4 @@
 extern crate discord;
-extern crate time;
-extern crate serde_json;
 
 use std::env;
 use discord::{Discord, State};
