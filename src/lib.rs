@@ -293,6 +293,13 @@ impl Discord {
 	pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
 	*/
 
+	/// Get the list of servers this user knows about.
+	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/users/@me/guilds", API_BASE))));
+		decode_array(try!(serde_json::from_reader(response)), ServerInfo::decode)
+	}
+
 	/// Create a new server with the given name.
 	pub fn create_server(&self, name: &str, region: &str, icon: Option<&str>) -> Result<Server> {
 		let map = ObjectBuilder::new()
@@ -322,11 +329,28 @@ impl Discord {
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
-	/*
-	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> { unimplemented!() }
-	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: Option<u32>) { unimplemented!() }
-	pub fn remove_ban(&self, server: &ServerId, user: &UserId) { unimplemented!() }
-	*/
+	/// Get the ban list for the given server.
+	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/guilds/{}/bans", API_BASE, server.0))));
+		decode_array(try!(serde_json::from_reader(response)), User::decode_ban)
+	}
+
+	/// Ban a user from the server, optionally deleting their recent messages.
+	///
+	/// Zero may be passed for `delete_message_days` if no deletion is desired.
+	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: u32) -> Result<()> {
+		try!(self.request(|| self.client.put(
+			&format!("{}/guilds/{}/bans/{}?delete_message_days={}", API_BASE, server.0, user.0, delete_message_days))));
+		Ok(())
+	}
+
+	/// Unban a user from the server.
+	pub fn remove_ban(&self, server: &ServerId, user: &UserId) -> Result<()> {
+		try!(self.request(|| self.client.delete(
+			&format!("{}/guilds/{}/bans/{}", API_BASE, server.0, user.0))));
+		Ok(())
+	}
 
 	/// Extract information from an invite.
 	///
@@ -401,7 +425,7 @@ impl Discord {
 	/// Get the list of available voice regions for a server.
 	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/voice/regions", API_BASE))));
-		VoiceRegion::decode_array(try!(serde_json::from_reader(response)))
+		decode_array(try!(serde_json::from_reader(response)), VoiceRegion::decode)
 	}
 
 	/// Move a server member to another voice channel.

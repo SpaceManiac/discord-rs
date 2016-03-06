@@ -83,6 +83,27 @@ impl ChannelType {
 	}
 }
 
+/// The basic information about a server only
+#[derive(Debug, Clone)]
+pub struct ServerInfo {
+	pub id: ServerId,
+	pub name: String,
+	pub icon: Option<String>,
+	pub owner: bool,
+}
+
+impl ServerInfo {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, ServerInfo {
+			id: try!(remove(&mut value, "id").and_then(into_string).map(ServerId)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			icon: remove(&mut value, "icon").and_then(into_string).ok(),
+			owner: req!(try!(remove(&mut value, "owner")).as_boolean()),
+		})
+	}
+}
+
 /// Static information about a server
 #[derive(Debug, Clone)]
 pub struct Server {
@@ -164,6 +185,12 @@ impl User {
 			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
 			avatar: remove(&mut value, "avatar").and_then(into_string).ok()
 		})
+	}
+
+	#[doc(hidden)]
+	pub fn decode_ban(value: Value) -> Result<User> {
+		let mut value = try!(into_map(value));
+		warn_json!(@"Ban", value, try!(remove(&mut value, "user").and_then(User::decode)))
 	}
 }
 
@@ -472,11 +499,6 @@ impl VoiceRegion {
 			optimal: req!(try!(remove(&mut value, "optimal")).as_boolean()),
 			vip: req!(try!(remove(&mut value, "vip")).as_boolean()),
 		})
-	}
-
-	#[doc(hidden)]
-	pub fn decode_array(value: Value) -> Result<Vec<VoiceRegion>> {
-		decode_array(value, VoiceRegion::decode)
 	}
 }
 
@@ -1178,7 +1200,8 @@ fn into_map(value: Value) -> Result<BTreeMap<String, Value>> {
 	}
 }
 
-fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<Vec<T>> {
+#[doc(hidden)]
+pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<Vec<T>> {
 	into_array(value).and_then(|x| x.into_iter().map(f).collect())
 }
 
