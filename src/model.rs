@@ -75,6 +75,8 @@ id! {
 	MessageId;
 	/// An identifier for a Role
 	RoleId;
+	/// An identifier for an Emoji
+	EmojiId;
 }
 
 //=================
@@ -682,6 +684,29 @@ impl VerificationLevel {
 	}
 }
 
+/// A parter custom emoji
+#[derive(Debug, Clone)]
+pub struct Emoji {
+	pub id: EmojiId,
+	pub name: String,
+	pub managed: bool,
+	pub require_colons: bool,
+	pub roles: Vec<RoleId>,
+}
+
+impl Emoji {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Emoji {
+			id: try!(remove(&mut value, "id").and_then(EmojiId::decode)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			managed: req!(try!(remove(&mut value, "managed")).as_boolean()),
+			require_colons: req!(try!(remove(&mut value, "require_colons")).as_boolean()),
+			roles: try!(remove(&mut value, "roles").and_then(|v| decode_array(v, RoleId::decode))),
+		})
+	}
+}
+
 /// Live server information
 #[derive(Debug, Clone)]
 pub struct LiveServer {
@@ -701,6 +726,9 @@ pub struct LiveServer {
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
 	pub verification_level: VerificationLevel,
+	pub emojis: Vec<Emoji>,
+	pub features: Vec<String>,
+	pub splash: Option<String>,
 }
 
 impl LiveServer {
@@ -724,6 +752,9 @@ impl LiveServer {
 			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(ChannelId::decode).ok(),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id.clone()))),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
+			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
+			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
+			splash: remove(&mut value, "splash").and_then(into_string).ok(),
 			id: id,
 		})
 	}
@@ -968,6 +999,9 @@ pub enum Event {
 	ServerBanAdd(ServerId, User),
 	ServerBanRemove(ServerId, User),
 
+	ServerIntegrationsUpdate(ServerId),
+	ServerEmojisUpdate(ServerId, Vec<Emoji>),
+
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
@@ -1121,6 +1155,15 @@ impl Event {
 			warn_json!(value, Event::ServerBanRemove(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
+			))
+		} else if kind == "GUILD_INTEGRATIONS_UPDATE" {
+			warn_json!(value, Event::ServerIntegrationsUpdate(
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+			))
+		} else if kind == "GUILD_EMOJIS_UPDATE" {
+			warn_json!(value, Event::ServerEmojisUpdate(
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			))
 		} else if kind == "CHANNEL_CREATE" {
 			Channel::decode(Value::Object(value)).map(Event::ChannelCreate)
