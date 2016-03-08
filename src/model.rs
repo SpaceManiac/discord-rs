@@ -10,26 +10,6 @@ use std::collections::BTreeMap;
 
 pub use self::permissions::Permissions;
 
-/// An identifier for a User
-#[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-pub struct UserId(pub String);
-
-/// An identifier for a Server
-#[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-pub struct ServerId(pub String);
-
-/// An identifier for a Channel
-#[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-pub struct ChannelId(pub String);
-
-/// An identifier for a Message
-#[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-pub struct MessageId(pub String);
-
-/// An identifier for a Role
-#[derive(Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-pub struct RoleId(pub String);
-
 macro_rules! req {
 	($opt:expr) => {
 		try!($opt.ok_or(Error::Decode(concat!("Type mismatch in model:", line!(), ": ", stringify!($opt)), Value::Null)))
@@ -46,6 +26,55 @@ macro_rules! warn_json {
 	($json:ident, $ty:ident $(::$ext:ident)* { $($name:ident: $value:expr),*$(,)* } ) => {
 		(Ok($ty$(::$ext)* { $($name: $value),* }), warn_field(stringify!($ty$(::$ext)*), $json)).0
 	};
+}
+
+//=================
+// Discord identifier types
+
+fn decode_id(value: Value) -> Result<u64> {
+	let value = try!(into_string(value));
+	match value.parse::<u64>() {
+		Ok(num) => Ok(num),
+		Err(_) => Err(Error::Decode("Expected numeric string", Value::String(value)))
+	}
+}
+
+macro_rules! id {
+	($(#[$attr:meta] $name:ident;)*) => {
+		$(
+			#[$attr]
+			#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
+			pub struct $name(pub u64);
+
+			impl $name {
+				#[inline]
+				fn decode(value: Value) -> Result<Self> {
+					decode_id(value).map($name)
+				}
+
+				/// Get the creation date of the object referred to by this ID.
+				///
+				/// Discord generates identifiers using a scheme based on [Twitter Snowflake]
+				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
+				pub fn creation_date(&self) -> ::time::Timespec {
+					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				}
+			}
+		)*
+	}
+}
+
+id! {
+	/// An identifier for a User
+	UserId;
+	/// An identifier for a Server
+	ServerId;
+	/// An identifier for a Channel
+	ChannelId;
+	/// An identifier for a Message
+	MessageId;
+	/// An identifier for a Role
+	RoleId;
 }
 
 //=================
@@ -96,7 +125,7 @@ impl ServerInfo {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, ServerInfo {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(ServerId)),
+			id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
 			owner: req!(try!(remove(&mut value, "owner")).as_boolean()),
@@ -124,14 +153,14 @@ impl Server {
 	pub fn decode(value: Value) -> Result<Server> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, Server {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(ServerId)),
+			id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
-			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(into_string).map(ChannelId).ok(),
+			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(ChannelId::decode).ok(),
 			embed_enabled: req!(try!(remove(&mut value, "embed_enabled")).as_boolean()),
-			embed_channel_id: remove(&mut value, "embed_channel_id").and_then(into_string).map(ChannelId).ok(),
-			owner_id: try!(remove(&mut value, "owner_id").and_then(into_string).map(UserId)),
+			embed_channel_id: remove(&mut value, "embed_channel_id").and_then(ChannelId::decode).ok(),
+			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
@@ -156,7 +185,7 @@ impl Role {
 	pub fn decode(value: Value) -> Result<Role> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, Role {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(RoleId)),
+			id: try!(remove(&mut value, "id").and_then(RoleId::decode)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
 			color: req!(try!(remove(&mut value, "color")).as_u64()),
@@ -180,7 +209,7 @@ impl User {
 	pub fn decode(value: Value) -> Result<User> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, User {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(UserId)),
+			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
 			name: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
 			avatar: remove(&mut value, "avatar").and_then(into_string).ok()
@@ -209,7 +238,7 @@ impl Member {
 		let mut value = try!(into_map(value));
 		warn_json!(value, Member {
 			user: try!(remove(&mut value, "user").and_then(User::decode)),
-			roles: try!(decode_array(try!(remove(&mut value, "roles")), |v| into_string(v).map(RoleId))),
+			roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
 			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
 			mute: req!(try!(remove(&mut value, "mute")).as_boolean()),
 			deaf: req!(try!(remove(&mut value, "deaf")).as_boolean()),
@@ -250,9 +279,9 @@ impl PrivateChannel {
 		let mut value = try!(into_map(value));
 		value.remove("is_private"); // discard is_private
 		warn_json!(value, PrivateChannel {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
+			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			recipient: try!(remove(&mut value, "recipient").and_then(User::decode)),
-			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
+			last_message_id: remove(&mut value, "last_message_id").and_then(MessageId::decode).ok(),
 		})
 	}
 }
@@ -275,20 +304,20 @@ impl PublicChannel {
 	pub fn decode(value: Value) -> Result<PublicChannel> {
 		let mut value = try!(into_map(value));
 		value.remove("is_private"); // discard is_private
-		let id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
+		let id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
 		PublicChannel::decode_server(Value::Object(value), id)
 	}
 
 	pub fn decode_server(value: Value, server_id: ServerId) -> Result<PublicChannel> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, PublicChannel {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
+			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			server_id: server_id,
 			topic: remove(&mut value, "topic").and_then(into_string).ok(),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
 			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_str_err)),
-			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
+			last_message_id: remove(&mut value, "last_message_id").and_then(MessageId::decode).ok(),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 		})
@@ -306,7 +335,7 @@ impl PermissionOverwrite {
 	pub fn decode(value: Value) -> Result<PermissionOverwrite> {
 		let mut value = try!(into_map(value));
 		let kind = try!(remove(&mut value, "type").and_then(into_string));
-		let id = try!(remove(&mut value, "id").and_then(into_string));
+		let id = try!(remove(&mut value, "id").and_then(decode_id));
 		let allow = try!(remove(&mut value, "allow").and_then(Permissions::decode));
 		let deny = try!(remove(&mut value, "deny").and_then(Permissions::decode));
 		if kind == "role" {
@@ -422,8 +451,8 @@ impl Message {
 	pub fn decode(value: Value) -> Result<Message> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, Message {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
-			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+			id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
+			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 			nonce: remove(&mut value, "nonce").and_then(into_string).ok(),
 			content: try!(remove(&mut value, "content").and_then(into_string)),
 			tts: req!(try!(remove(&mut value, "tts")).as_boolean()),
@@ -455,13 +484,13 @@ impl Invite {
 		let mut value = try!(into_map(value));
 
 		let mut server = try!(remove(&mut value, "guild").and_then(into_map));
-		let server_id = try!(remove(&mut server, "id").and_then(into_string).map(ServerId));
+		let server_id = try!(remove(&mut server, "id").and_then(ServerId::decode));
 		let server_name = try!(remove(&mut server, "name").and_then(into_string));
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
 		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_str_err));
-		let channel_id = try!(remove(&mut channel, "id").and_then(into_string).map(ChannelId));
+		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
 
@@ -520,8 +549,8 @@ impl ReadState {
 	pub fn decode(value: Value) -> Result<ReadState> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, ReadState {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(ChannelId)),
-			last_message_id: remove(&mut value, "last_message_id").and_then(into_string).map(MessageId).ok(),
+			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
+			last_message_id: remove(&mut value, "last_message_id").and_then(MessageId::decode).ok(),
 			mention_count: req!(try!(remove(&mut value, "mention_count")).as_u64()),
 		})
 	}
@@ -582,7 +611,7 @@ impl Presence {
 			let user = try!(User::decode(Value::Object(user_map)));
 			(user.id.clone(), Some(user))
 		} else {
-			(try!(remove(&mut user_map, "id").and_then(into_string).map(UserId)), None)
+			(try!(remove(&mut user_map, "id").and_then(UserId::decode)), None)
 		};
 
 		warn_json!(@"Presence", value, (Presence {
@@ -611,8 +640,8 @@ impl VoiceState {
 	pub fn decode(value: Value) -> Result<VoiceState> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, VoiceState {
-			user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
-			channel_id: remove(&mut value, "channel_id").and_then(into_string).map(ChannelId).ok(),
+			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
+			channel_id: remove(&mut value, "channel_id").and_then(ChannelId::decode).ok(),
 			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
 			token: remove(&mut value, "token").and_then(into_string).ok(),
 			suppress: req!(req!(value.remove("suppress")).as_boolean()),
@@ -677,10 +706,10 @@ pub struct LiveServer {
 impl LiveServer {
 	pub fn decode(value: Value) -> Result<LiveServer> {
 		let mut value = try!(into_map(value));
-		let id = try!(remove(&mut value, "id").and_then(into_string).map(ServerId));
+		let id = try!(remove(&mut value, "id").and_then(ServerId::decode));
 		warn_json!(value, LiveServer {
 			name: try!(remove(&mut value, "name").and_then(into_string)),
-			owner_id: try!(remove(&mut value, "owner_id").and_then(into_string).map(UserId)),
+			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
 			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
@@ -692,7 +721,7 @@ impl LiveServer {
 			icon: remove(&mut value, "icon").and_then(into_string).ok(),
 			large: req!(try!(remove(&mut value, "large")).as_boolean()),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
-			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(into_string).map(ChannelId).ok(),
+			afk_channel_id: remove(&mut value, "afk_channel_id").and_then(ChannelId::decode).ok(),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id.clone()))),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
 			id: id,
@@ -715,7 +744,7 @@ impl CurrentUser {
 	pub fn decode(value: Value) -> Result<CurrentUser> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, CurrentUser {
-			id: try!(remove(&mut value, "id").and_then(into_string).map(UserId)),
+			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
 			username: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(into_string)),
 			email: try!(remove(&mut value, "email").and_then(into_string)),
@@ -797,7 +826,7 @@ impl ChannelOverride {
 	pub fn decode(value: Value) -> Result<ChannelOverride> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, ChannelOverride {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
 			muted: req!(try!(remove(&mut value, "muted")).as_boolean()),
 		})
@@ -819,7 +848,7 @@ impl UserServerSettings {
 	pub fn decode(value: Value) -> Result<UserServerSettings> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, UserServerSettings {
-			server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+			server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
 			mobile_push: req!(try!(remove(&mut value, "mobile_push")).as_boolean()),
 			muted: req!(try!(remove(&mut value, "muted")).as_boolean()),
@@ -1001,23 +1030,23 @@ impl Event {
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
 			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
-			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
+			let server_id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
 		} else if kind == "VOICE_SERVER_UPDATE" {
 			warn_json!(value, Event::VoiceServerUpdate {
-				server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				endpoint: remove(&mut value, "endpoint").and_then(into_string).ok(),
 				token: try!(remove(&mut value, "token").and_then(into_string)),
 			})
 		} else if kind == "TYPING_START" {
 			warn_json!(value, Event::TypingStart {
-				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
-				user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
 			})
 		} else if kind == "PRESENCE_UPDATE" {
-			let server_id = try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId));
-			let roles = try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId)));
+			let server_id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
+			let roles = try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode));
 			let (presence, user) = try!(Presence::decode(Value::Object(value)));
 			Ok(Event::PresenceUpdate {
 				server_id: server_id,
@@ -1029,20 +1058,20 @@ impl Event {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
 			warn_json!(value, Event::MessageUpdate {
-				id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
-				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				embeds: remove(&mut value, "embeds").and_then(|v| decode_array(v, Ok)).ok(),
 				// TODO: more fields
 			})
 		} else if kind == "MESSAGE_ACK" {
 			warn_json!(value, Event::MessageAck {
-				message_id: try!(remove(&mut value, "message_id").and_then(into_string).map(MessageId)),
-				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 			})
 		} else if kind == "MESSAGE_DELETE" {
 			warn_json!(value, Event::MessageDelete {
-				message_id: try!(remove(&mut value, "id").and_then(into_string).map(MessageId)),
-				channel_id: try!(remove(&mut value, "channel_id").and_then(into_string).map(ChannelId)),
+				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
 			LiveServer::decode(Value::Object(value)).map(Event::ServerCreate)
@@ -1052,45 +1081,45 @@ impl Event {
 			Server::decode(Value::Object(value)).map(Event::ServerDelete)
 		} else if kind == "GUILD_MEMBER_ADD" {
 			warn_json!(value, Event::ServerMemberAdd {
-				server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
-				roles: try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId))),
+				roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
 				user: try!(remove(&mut value, "user").and_then(User::decode)),
 			})
 		} else if kind == "GUILD_MEMBER_UPDATE" {
 			warn_json!(value, Event::ServerMemberUpdate {
-				server_id: try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
-				roles: try!(decode_array(try!(remove(&mut value, "roles")), |x| into_string(x).map(RoleId))),
+				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
 				user: try!(remove(&mut value, "user").and_then(User::decode)),
 			})
 		} else if kind == "GUILD_MEMBER_REMOVE" {
 			warn_json!(value, Event::ServerMemberRemove(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
 			))
 		} else if kind == "GUILD_ROLE_CREATE" {
 			warn_json!(value, Event::ServerRoleCreate(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "role").and_then(Role::decode)),
 			))
 		} else if kind == "GUILD_ROLE_UPDATE" {
 			warn_json!(value, Event::ServerRoleUpdate(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "role").and_then(Role::decode)),
 			))
 		} else if kind == "GUILD_ROLE_DELETE" {
 			warn_json!(value, Event::ServerRoleDelete(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
-				try!(remove(&mut value, "role_id").and_then(into_string).map(RoleId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				try!(remove(&mut value, "role_id").and_then(RoleId::decode)),
 			))
 		} else if kind == "GUILD_BAN_ADD" {
 			warn_json!(value, Event::ServerBanAdd(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
 			))
 		} else if kind == "GUILD_BAN_REMOVE" {
 			warn_json!(value, Event::ServerBanRemove(
-				try!(remove(&mut value, "guild_id").and_then(into_string).map(ServerId)),
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
 			))
 		} else if kind == "CHANNEL_CREATE" {
@@ -1155,7 +1184,7 @@ impl VoiceEvent {
 			})
 		} else if op == 5 {
 			warn_json!(value, VoiceEvent::SpeakingUpdate {
-				user_id: try!(remove(&mut value, "user_id").and_then(into_string).map(UserId)),
+				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
 				speaking: req!(try!(remove(&mut value, "speaking")).as_boolean()),
 			})
