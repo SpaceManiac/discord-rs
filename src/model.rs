@@ -889,6 +889,23 @@ impl UserServerSettings {
 	}
 }
 
+/// Progress through the Discord tutorial
+#[derive(Debug, Clone)]
+pub struct Tutorial {
+	pub indicators_suppressed: bool,
+	pub indicators_confirmed: Vec<String>,
+}
+
+impl Tutorial {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Tutorial {
+			indicators_suppressed: req!(try!(remove(&mut value, "indicators_suppressed")).as_boolean()),
+			indicators_confirmed: try!(remove(&mut value, "indicators_confirmed").and_then(|v| decode_array(v, into_string))),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
@@ -901,6 +918,7 @@ pub struct ReadyEvent {
 	pub private_channels: Vec<PrivateChannel>,
 	pub servers: Vec<LiveServer>,
 	pub user_server_settings: Vec<UserServerSettings>,
+	pub tutorial: Option<Tutorial>,
 }
 
 /// Event received over a websocket connection
@@ -1046,6 +1064,7 @@ impl Event {
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
 				user_settings: try!(remove(&mut value, "user_settings").and_then(UserSettings::decode)),
 				user_server_settings: try!(remove(&mut value, "user_guild_settings").and_then(|v| decode_array(v, UserServerSettings::decode))),
+				tutorial: remove(&mut value, "tutorial").and_then(Tutorial::decode).ok(),
 			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
