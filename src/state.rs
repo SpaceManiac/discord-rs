@@ -106,16 +106,10 @@ impl State {
 				});
 			}
 			Event::ServerDelete(ref server) => self.servers.retain(|s| s.id != server.id),
-			Event::ServerMemberAdd { ref server_id, ref joined_at, ref roles, ref user } => {
+			Event::ServerMemberAdd(ref server_id, ref member) => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
 					srv.member_count += 1;
-					srv.members.push(Member {
-						user: user.clone(),
-						roles: roles.clone(),
-						joined_at: joined_at.clone(),
-						mute: false,
-						deaf: false,
-					})
+					srv.members.push(member.clone());
 				});
 			}
 			Event::ServerMemberUpdate { ref server_id, ref roles, ref user } => {

@@ -996,12 +996,7 @@ pub enum Event {
 	ServerUpdate(Server),
 	ServerDelete(Server),
 
-	ServerMemberAdd {
-		server_id: ServerId,
-		joined_at: String, // timestamp
-		roles: Vec<RoleId>,
-		user: User,
-	},
+	ServerMemberAdd(ServerId, Member),
 	/// A member's roles have changed
 	ServerMemberUpdate {
 		server_id: ServerId,
@@ -1133,12 +1128,10 @@ impl Event {
 		} else if kind == "GUILD_DELETE" {
 			Server::decode(Value::Object(value)).map(Event::ServerDelete)
 		} else if kind == "GUILD_MEMBER_ADD" {
-			warn_json!(value, Event::ServerMemberAdd {
-				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
-				joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
-				roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
-				user: try!(remove(&mut value, "user").and_then(User::decode)),
-			})
+			Ok(Event::ServerMemberAdd(
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				try!(Member::decode(Value::Object(value))),
+			))
 		} else if kind == "GUILD_MEMBER_UPDATE" {
 			warn_json!(value, Event::ServerMemberUpdate {
 				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
