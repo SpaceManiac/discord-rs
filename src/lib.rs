@@ -543,6 +543,10 @@ impl Timer {
 		self.next_tick_at = time::get_time();
 	}
 
+	fn defer(&mut self) {
+		self.next_tick_at = time::get_time() + self.tick_len;
+	}
+
 	fn check_tick(&mut self) -> bool {
 		time::get_time() >= self.next_tick_at && {
 			self.next_tick_at = self.next_tick_at + self.tick_len; true
