@@ -400,8 +400,24 @@ impl Discord {
 	}
 
 	// Get members
-	// Edit member
-	// Kick member
+
+	/// Edit the list of roles assigned to a member of a server.
+	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[&RoleId]) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert_array("roles", |ab| roles.iter().fold(ab, |ab, id| ab.push(id.0)))
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(|| self.client.patch(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
+		Ok(())
+	}
+
+	/// Kick a member from a server.
+	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
+		try!(self.request(|| self.client.delete(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
+		Ok(())
+	}
 
 	// Create role
 	// Edit role
