@@ -11,12 +11,13 @@ keywords = ["discord", "chat", "bot", "api", "voice"]
 repository = "https://github.com/SpaceManiac/discord-rs"
 
 [dependencies]
-hyper = "0.6.16"
+hyper = "0.7"
 serde_json = "0.6"
-websocket = "0.13"
+websocket = "0.15"
 bitflags = "0.3"
 byteorder = "0.4"
 opus = "0.1"
 time = "0.1"
 log = "0.3"
 sodiumoxide = { version = "0.0.9", features = [] }
+multipart = { version = "0.4.1", features = ["hyper", "client"] }

@@ -34,6 +34,7 @@ extern crate time;
 #[macro_use]
 extern crate log;
 extern crate sodiumoxide;
+extern crate multipart;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -279,6 +280,22 @@ impl Discord {
 		try!(self.request(||
 			self.client.delete(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0))));
 		Ok(())
+	}
+
+	/// Send a file attached to a message on a given channel.
+	///
+	/// The `text` is allowed to be empty, but the filename must always be specified.
+	pub fn send_file<R: ::std::io::Read>(&self, channel: &ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+		let url = match hyper::Url::parse(&format!("{}/channels/{}/messages", API_BASE, channel.0)) {
+			Ok(url) => url,
+			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
+		};
+		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
+		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
+		let mut request = try!(multipart::client::Multipart::from_request(request));
+		request.write_text("content", text);
+		request.write_stream("file", &mut file, Some(filename), None);
+		Message::decode(try!(serde_json::from_reader(try!(request.send()))))
 	}
 
 	/// Acknowledge this message as "read" by this client.
