@@ -18,12 +18,6 @@ use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 
 use super::model::*;
 
-/// A readable audio source.
-///
-/// Audio is expected to be in signed 16-bit little-endian PCM (`pcm_s16le`)
-/// format, at 48000Hz.
-pub type AudioSource = Box<Read + Send>;
-
 /// A websocket connection to the voice servers.
 ///
 /// A VoiceConnection may be active or inactive. Use `voice_connect` and
@@ -34,6 +28,28 @@ pub struct VoiceConnection {
 	session_id: Option<String>,
 	sender: mpsc::Sender<Status>,
 	receiver: Option<mpsc::Receiver<Status>>,
+}
+
+/// A readable audio source.
+pub trait AudioSource: Send {
+	/// Called each frame to determine if the audio source is stereo.
+	///
+	/// This value should change infrequently; changing it will reset the encoder state.
+	fn is_stereo(&mut self) -> bool;
+
+	/// Called each frame when more audio is required.
+	///
+	/// Samples should be supplied at 48000Hz, and if `is_stereo` returned true, the channels
+	/// should be interleaved, left first.
+	///
+	/// The result should normally be `Some(N)`, where `N` is the number of samples written to the
+	/// buffer. The rest of the buffer is zero-filled; the whole buffer must be filled each call
+	/// to avoid audio interruptions.
+	///
+	/// If `Some(0)` is returned, no audio will be sent this frame, but the audio source will
+	/// remain active. If `None` is returned, the audio source is considered to have ended, and
+	/// `read_frame` will not be called again.
+	fn read_frame(&mut self, buffer: &mut [i16]) -> Option<usize>;
 }
 
 /// A receiver for incoming audio.
@@ -64,7 +80,7 @@ impl VoiceConnection {
 	}
 
 	/// Play from the given audio source.
-	pub fn play(&self, source: AudioSource) {
+	pub fn play(&self, source: Box<AudioSource>) {
 		let _ = self.sender.send(Status::SetSource(Some(source)));
 	}
 
@@ -165,16 +181,43 @@ impl VoiceConnection {
 	}
 }
 
+/// Create an audio source based on a `pcm_s16le` input stream.
+///
+/// The input data should be in signed 16-bit little-endian PCM input stream at 48000Hz. If
+/// `stereo` is true, the channels should be interleaved, left first.
+pub fn create_pcm_source<R: Read + Send + 'static>(stereo: bool, read: R) -> Box<AudioSource> {
+	Box::new(PcmSource(stereo, read))
+}
+
+struct PcmSource<R: Read + Send>(bool, R);
+
+impl<R: Read + Send> AudioSource for PcmSource<R> {
+	fn is_stereo(&mut self) -> bool { self.0 }
+	fn read_frame(&mut self, buffer: &mut [i16]) -> Option<usize> {
+		for (i, val) in buffer.iter_mut().enumerate() {
+			*val = match self.1.read_i16::<LittleEndian>() {
+				Ok(val) => val,
+				Err(::byteorder::Error::UnexpectedEOF) => return Some(i),
+				Err(_) => return None
+			}
+		}
+		Some(buffer.len())
+	}
+}
+
 /// Use `ffmpeg` to open an audio file as a PCM stream.
 ///
-/// Requires `ffmpeg` to be on the path and executable.
-pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<AudioSource> {
+/// Requires `ffmpeg` to be on the path and executable. If `ffprobe` is available and indicates
+/// that the input file is stereo, the returned audio source will be stereo.
+pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<Box<AudioSource>> {
 	use std::process::{Command, Stdio};
+	let path = path.as_ref();
+	let stereo = check_stereo(path).unwrap_or(false);
 	let child = try!(Command::new("ffmpeg")
 		.arg("-i").arg(path)
 		.args(&[
 			"-f", "s16le",
-			"-ac", "1",
+			"-ac", if stereo { "2" } else { "1" },
 			"-ar", "48000",
 			"-acodec", "pcm_s16le",
 			"-"])
@@ -182,14 +225,50 @@ pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<AudioS
 		.stdout(Stdio::piped())
 		.stderr(Stdio::null())
 		.spawn());
-	Ok(Box::new(ProcessStream(child)))
+	Ok(create_pcm_source(stereo, ProcessStream(child)))
+}
+
+fn check_stereo(path: &::std::ffi::OsStr) -> Result<bool> {
+	use std::process::{Command, Stdio};
+	let output = try!(Command::new("ffprobe")
+		.args(&["-v", "quiet", "-of", "json", "-show_streams", "-i"])
+		.arg(path)
+		.stdin(Stdio::null())
+		.output());
+	let json: serde_json::Value = try!(serde_json::from_reader(&output.stdout[..]));
+	let streams = try!(json.as_object()
+		.and_then(|m| m.get("streams"))
+		.and_then(|v| v.as_array())
+		.ok_or(Error::Other("")));
+	Ok(streams.iter().any(|stream|
+		stream.as_object().and_then(|m| m.get("channels").and_then(|v| v.as_i64())) == Some(2)
+	))
+}
+
+/// A stream that reads from a child's stdout and kills it on drop.
+struct ProcessStream(::std::process::Child);
+
+impl Read for ProcessStream {
+	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+		self.0.stdout.as_mut().expect("missing stdout").read(buf)
+	}
+}
+
+impl Drop for ProcessStream {
+	fn drop(&mut self) {
+		// If we can't kill it, it's dead already or out of our hands
+		let _ = self.0.kill();
+	}
 }
 
 /// Use `youtube-dl` and `ffmpeg` to stream from an internet source.
 ///
 /// Requires both `youtube-dl` and `ffmpeg` to be on the path and executable.
 /// On Windows, this means the `.exe` version of `youtube-dl` must be used.
-pub fn open_ytdl_stream(url: &str) -> Result<AudioSource> {
+///
+/// The audio download is streamed rather than downloaded in full; this may be desireable for
+/// longer audios but can introduce occasional brief interruptions.
+pub fn open_ytdl_stream(url: &str) -> Result<Box<AudioSource>> {
 	use std::process::{Command, Stdio};
 	let output = try!(Command::new("youtube-dl")
 		.args(&[
@@ -215,24 +294,8 @@ pub fn open_ytdl_stream(url: &str) -> Result<AudioSource> {
 	open_ffmpeg_stream(url)
 }
 
-/// A stream that reads from a child's stdout and kills it on drop.
-struct ProcessStream(::std::process::Child);
-
-impl Read for ProcessStream {
-	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-		self.0.stdout.as_mut().expect("missing stdout").read(buf)
-	}
-}
-
-impl Drop for ProcessStream {
-	fn drop(&mut self) {
-		// If we can't kill it, it's dead already or out of our hands
-		let _ = self.0.kill();
-	}
-}
-
 enum Status {
-	SetSource(Option<AudioSource>),
+	SetSource(Option<Box<AudioSource>>),
 	SetReceiver(Option<Box<AudioReceiver>>),
 	Poke,
 }
@@ -368,12 +431,13 @@ fn voice_thread(
 	let mut audio_source = None;
 	let mut receiver = None;
 
-	let mut audio_buffer = [0i16; 960];
+	let mut audio_buffer = [0i16; 960 * 2]; // 20 ms, stereo
 	let mut packet = [0u8; 512]; // 256 forces opus to reduce bitrate for some packets
 	let mut nonce = crypto::Nonce([0; 24]);
 	let mut decoder_map = ::std::collections::HashMap::new();
 
 	let mut opus = try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::CodingMode::Audio));
+	let mut opus_stereo = false;
 	let mut audio_timer = ::Timer::new(20);
 	let mut keepalive_timer = ::Timer::new(interval);
 	// after 5 minutes of us sending nothing, Discord will stop sending voice data to us
@@ -441,10 +505,25 @@ fn voice_thread(
 		}
 
 		// read the audio from the source
-		let len = match audio_source.as_mut() {
-			Some(source) => try!(next_frame(source, &mut audio_buffer)),
-			None => 0
+		let mut clear_source = false;
+		let len = if let Some(ref mut source) = audio_source {
+			let stereo = source.is_stereo();
+			if stereo != opus_stereo {
+				let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
+				opus = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
+				opus_stereo = stereo;
+			}
+			let buffer_len = if stereo { 960 * 2 } else { 960 };
+			match source.read_frame(&mut audio_buffer[..buffer_len]) {
+				Some(len) => len,
+				None => { clear_source = true; 0 }
+			}
+		} else {
+			0
 		};
+		if clear_source {
+			audio_source = None;
+		}
 		if len == 0 {
 			// stop speaking, don't send any audio
 			try!(set_speaking(&mut sender, &mut speaking, false));
@@ -470,7 +549,8 @@ fn voice_thread(
 
 		// encode the audio data
 		let extent = packet.len() - 16; // leave 16 bytes for encryption overhead
-		let len = try!(opus.encode(&audio_buffer, &mut packet[HEADER_LEN..extent]));
+		let buffer_len = if opus_stereo { 960 * 2 } else { 960 };
+		let len = try!(opus.encode(&audio_buffer[..buffer_len], &mut packet[HEADER_LEN..extent]));
 		let crypted = crypto::seal(&packet[HEADER_LEN..HEADER_LEN + len], &nonce, &encryption_key);
 		packet[HEADER_LEN..HEADER_LEN + crypted.len()].clone_from_slice(&crypted);
 
@@ -487,17 +567,6 @@ fn voice_thread(
 	try!(sender.get_mut().shutdown(::std::net::Shutdown::Both));
 	info!("Voice disconnected");
 	Ok(())
-}
-
-fn next_frame(source: &mut AudioSource, buffer: &mut [i16]) -> Result<usize> {
-	for (i, val) in buffer.iter_mut().enumerate() {
-		*val = match source.read_i16::<LittleEndian>() {
-			Ok(val) => val,
-			Err(::byteorder::Error::UnexpectedEOF) => return Ok(i),
-			Err(::byteorder::Error::Io(e)) => return Err(From::from(e))
-		};
-	}
-	Ok(buffer.len())
 }
 
 fn set_speaking(sender: &mut Sender<WebSocketStream>, store: &mut bool, speaking: bool) -> Result<()> {
