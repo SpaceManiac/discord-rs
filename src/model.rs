@@ -972,8 +972,8 @@ pub enum Event {
 	MessageUpdate {
 		id: MessageId,
 		channel_id: ChannelId,
-		/* TODO: the remaining fields
 		content: Option<String>,
+		/* TODO: the remaining fields
 		tts: Option<bool>,
 		timestamp: Option<String>,
 		edited_timestamp: Option<String>,
@@ -1107,11 +1107,11 @@ impl Event {
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
-			println!("{:?}", value);
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				embeds: remove(&mut value, "embeds").and_then(|v| decode_array(v, Ok)).ok(),
+				content: remove(&mut value, "content").and_then(into_string).ok(),
 				// TODO: more fields
 			})
 		} else if kind == "MESSAGE_ACK" {
