@@ -166,6 +166,15 @@ impl Discord {
 		Ok(discord)
 	}
 
+	/// Log in as a bot account using the given authentication token.
+	pub fn from_bot_token(token: &str) -> Result<Discord> {
+		Ok(Discord {
+			client: hyper::Client::new(),
+			// TODO: use "Bot {}" when the gateway bug is fixed
+			token: format!("{}", token),
+		})
+	}
+
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new().insert("token", &self.token).unwrap();

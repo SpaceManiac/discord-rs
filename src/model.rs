@@ -205,6 +205,7 @@ pub struct User {
 	pub name: String,
 	pub discriminator: String,
 	pub avatar: Option<String>,
+	pub bot: bool,
 }
 
 impl User {
@@ -214,7 +215,8 @@ impl User {
 			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
 			name: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
-			avatar: remove(&mut value, "avatar").and_then(into_string).ok()
+			avatar: remove(&mut value, "avatar").and_then(into_string).ok(),
+			bot: remove(&mut value, "bot").ok().and_then(|x| x.as_boolean()).unwrap_or(false),
 		})
 	}
 
@@ -766,7 +768,7 @@ pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
 	pub discriminator: String,
-	pub email: String,
+	pub email: Option<String>,
 	pub verified: bool,
 	pub avatar: Option<String>,
 }
@@ -778,7 +780,7 @@ impl CurrentUser {
 			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
 			username: try!(remove(&mut value, "username").and_then(into_string)),
 			discriminator: try!(remove(&mut value, "discriminator").and_then(into_string)),
-			email: try!(remove(&mut value, "email").and_then(into_string)),
+			email: remove(&mut value, "email").and_then(into_string).ok(),
 			avatar: remove(&mut value, "avatar").and_then(into_string).ok(),
 			verified: req!(try!(remove(&mut value, "verified")).as_boolean()),
 		})
@@ -913,11 +915,11 @@ pub struct ReadyEvent {
 	pub user: CurrentUser,
 	pub session_id: String,
 	pub heartbeat_interval: u64,
-	pub user_settings: UserSettings,
+	pub user_settings: Option<UserSettings>,
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
 	pub servers: Vec<LiveServer>,
-	pub user_server_settings: Vec<UserServerSettings>,
+	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
 }
 
@@ -1057,8 +1059,8 @@ impl Event {
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
-				user_settings: try!(remove(&mut value, "user_settings").and_then(UserSettings::decode)),
-				user_server_settings: try!(remove(&mut value, "user_guild_settings").and_then(|v| decode_array(v, UserServerSettings::decode))),
+				user_settings: remove(&mut value, "user_settings").and_then(UserSettings::decode).ok(),
+				user_server_settings: remove(&mut value, "user_guild_settings").and_then(|v| decode_array(v, UserServerSettings::decode)).ok(),
 				tutorial: remove(&mut value, "tutorial").and_then(Tutorial::decode).ok(),
 			}))
 		} else if kind == "USER_UPDATE" {

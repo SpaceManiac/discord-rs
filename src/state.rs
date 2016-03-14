@@ -4,8 +4,8 @@ use super::model::*;
 #[derive(Debug, Clone)]
 pub struct State {
 	user: CurrentUser,
-	settings: UserSettings,
-	server_settings: Vec<UserServerSettings>,
+	settings: Option<UserSettings>,
+	server_settings: Option<Vec<UserServerSettings>>,
 	session_id: String,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
@@ -40,20 +40,24 @@ impl State {
 				ref render_embeds, ref show_current_game,
 				ref theme, ref convert_emoticons,
 			} => {
-				opt_modify(&mut self.settings.enable_tts_command, enable_tts_command);
-				opt_modify(&mut self.settings.inline_attachment_media, inline_attachment_media);
-				opt_modify(&mut self.settings.inline_embed_media, inline_embed_media);
-				opt_modify(&mut self.settings.locale, locale);
-				opt_modify(&mut self.settings.message_display_compact, message_display_compact);
-				opt_modify(&mut self.settings.render_embeds, render_embeds);
-				opt_modify(&mut self.settings.show_current_game, show_current_game);
-				opt_modify(&mut self.settings.theme, theme);
-				opt_modify(&mut self.settings.convert_emoticons, convert_emoticons);
+				if let Some(settings) = self.settings.as_mut() {
+					opt_modify(&mut settings.enable_tts_command, enable_tts_command);
+					opt_modify(&mut settings.inline_attachment_media, inline_attachment_media);
+					opt_modify(&mut settings.inline_embed_media, inline_embed_media);
+					opt_modify(&mut settings.locale, locale);
+					opt_modify(&mut settings.message_display_compact, message_display_compact);
+					opt_modify(&mut settings.render_embeds, render_embeds);
+					opt_modify(&mut settings.show_current_game, show_current_game);
+					opt_modify(&mut settings.theme, theme);
+					opt_modify(&mut settings.convert_emoticons, convert_emoticons);
+				}
 			}
 			Event::UserServerSettingsUpdate(ref settings) => {
-				self.server_settings.iter_mut().find(|s| s.server_id == settings.server_id).map(|srv| {
-					srv.clone_from(settings);
-				});
+				if let Some(server_settings) = self.server_settings.as_mut() {
+					server_settings.iter_mut().find(|s| s.server_id == settings.server_id).map(|srv| {
+						srv.clone_from(settings);
+					});
+				}
 			}
 			Event::VoiceStateUpdate(ref server, ref state) => {
 				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
@@ -185,13 +189,13 @@ impl State {
 	#[inline]
 	pub fn user(&self) -> &CurrentUser { &self.user }
 
-	/// Get the logged-in user's client settings.
+	/// Get the logged-in user's client settings. Will return `None` for bots.
 	#[inline]
-	pub fn settings(&self) -> &UserSettings { &self.settings }
+	pub fn settings(&self) -> Option<&UserSettings> { self.settings.as_ref() }
 
-	/// Get the logged-in user's per-server notification settings.
+	/// Get the logged-in user's per-server notification settings. Will return `None` for bots.
 	#[inline]
-	pub fn server_settings(&self) -> &[UserServerSettings] { &self.server_settings }
+	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
 
 	/// Get the websocket session ID.
 	#[inline]
