@@ -1107,6 +1107,7 @@ impl Event {
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
+			println!("{:?}", value);
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
