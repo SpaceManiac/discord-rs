@@ -972,17 +972,15 @@ pub enum Event {
 	MessageUpdate {
 		id: MessageId,
 		channel_id: ChannelId,
+		embeds: Option<Vec<Value>>,
 		content: Option<String>,
-		/* TODO: the remaining fields
 		tts: Option<bool>,
 		timestamp: Option<String>,
 		edited_timestamp: Option<String>,
 		author: Option<User>,
-		embeds: Option<Vec<Value>>,
 		mention_everyone: Option<bool>,
-		mentions: Option<Vec<User>>,
+		/*mentions: Option<Vec<User>>,
 		attachments: Option<Vec<Attachment>>,*/
-		embeds: Option<Vec<Value>>,
 	},
 	/// Another logged-in device acknowledged this message
 	MessageAck {
@@ -1113,7 +1111,13 @@ impl Event {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				embeds: remove(&mut value, "embeds").and_then(|v| decode_array(v, Ok)).ok(),
 				content: remove(&mut value, "content").and_then(into_string).ok(),
-				// TODO: more fields
+				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_boolean()),
+				timestamp: remove(&mut value, "timestamp").and_then(into_string).ok(),
+				edited_timestamp: remove(&mut value, "edited_timestamp").and_then(into_string).ok(),
+				author: remove(&mut value, "author").and_then(User::decode).ok(),
+				mention_everyone: remove(&mut value, "mention_everyone").ok().and_then(|v| v.as_boolean()),
+				/*mentions: remove(&mut value, "mentions").and_then(|v| decode_array(v, Ok)).ok(),
+				attachments: remove(&mut value, "attachments").and_then(|v| decode_array(v, Ok)).ok(),*/
 			})
 		} else if kind == "MESSAGE_ACK" {
 			warn_json!(value, Event::MessageAck {
