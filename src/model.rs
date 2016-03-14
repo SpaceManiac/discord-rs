@@ -979,8 +979,8 @@ pub enum Event {
 		edited_timestamp: Option<String>,
 		author: Option<User>,
 		mention_everyone: Option<bool>,
-		/*mentions: Option<Vec<User>>,
-		attachments: Option<Vec<Attachment>>,*/
+		mentions: Option<Vec<User>>,
+		attachments: Option<Vec<Attachment>>,
 	},
 	/// Another logged-in device acknowledged this message
 	MessageAck {
@@ -1116,8 +1116,8 @@ impl Event {
 				edited_timestamp: remove(&mut value, "edited_timestamp").and_then(into_string).ok(),
 				author: remove(&mut value, "author").and_then(User::decode).ok(),
 				mention_everyone: remove(&mut value, "mention_everyone").ok().and_then(|v| v.as_boolean()),
-				/*mentions: remove(&mut value, "mentions").and_then(|v| decode_array(v, Ok)).ok(),
-				attachments: remove(&mut value, "attachments").and_then(|v| decode_array(v, Ok)).ok(),*/
+				mentions: remove(&mut value, "mentions").and_then(|v| decode_array(v, User::decode)).ok(),
+				attachments: remove(&mut value, "attachments").and_then(|v| decode_array(v, Attachment::decode)).ok(),
 			})
 		} else if kind == "MESSAGE_ACK" {
 			warn_json!(value, Event::MessageAck {
