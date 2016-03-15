@@ -590,11 +590,18 @@ pub struct Game {
 }
 
 impl Game {
-	pub fn decode(value: Value) -> Result<Game> {
+	pub fn decode(value: Value) -> Result<Option<Game>> {
 		let mut value = try!(into_map(value));
-		warn_json!(value, Game {
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-		})
+		let name = match value.remove("name") {
+			None | Some(Value::Null) => return Ok(None),
+			Some(val) => try!(into_string(val)),
+		};
+		if name.trim().len() == 0 {
+			return Ok(None)
+		}
+		warn_json!(@"Game", value, Some(Game {
+			name: name,
+		}))
 	}
 }
 
@@ -621,7 +628,10 @@ impl Presence {
 		warn_json!(@"Presence", value, (Presence {
 			user_id: user_id,
 			status: try!(remove(&mut value, "status").and_then(into_string).and_then(OnlineStatus::from_str_err)),
-			game: try!(opt(&mut value, "game", Game::decode)),
+			game: match value.remove("game") {
+				None | Some(Value::Null) => None,
+				Some(val) => try!(Game::decode(val)),
+			},
 		}, user))
 	}
 }
