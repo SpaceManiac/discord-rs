@@ -1,9 +1,6 @@
 //! Struct and enum definitions of values in the Discord model.
 #![allow(missing_docs)]
 
-// TODO: When reading optional keys, type errors are silently treated as if the
-// key was absent. Either decoding should fail or a warning should be printed.
-
 use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;

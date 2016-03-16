@@ -570,3 +570,10 @@ impl Timer {
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
 }
+
+mod internal {
+	pub enum Status {
+		SetGame(Option<::model::Game>),
+		SendMessage(::serde_json::Value),
+	}
+}

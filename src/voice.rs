@@ -16,16 +16,23 @@ use serde_json::builder::ObjectBuilder;
 
 use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 
-use super::model::*;
+use model::*;
 
-/// A websocket connection to the voice servers.
-///
-/// A VoiceConnection may be active or inactive. Use `voice_connect` and
-/// `voice_disconnect` on the `Connection` you are feeding it events from to
-/// change what channel it is connected to.
+/// An active or inactive voice connection, obtained from `Connection::voice`.
 pub struct VoiceConnection {
+	// primary WS send control
+	server_id: ServerId,
 	user_id: UserId,
+	main_ws: mpsc::Sender<::internal::Status>,
+	channel_id: Option<ChannelId>,
+	mute: bool,
+	deaf: bool,
+
+	// main WS receive control
 	session_id: Option<String>,
+	endpoint_token: Option<(String, String)>,
+
+	// voice thread (voice WS + UDP) control
 	sender: mpsc::Sender<Status>,
 	receiver: Option<mpsc::Receiver<Status>>,
 }
@@ -68,14 +75,96 @@ pub trait AudioReceiver: Send {
 }
 
 impl VoiceConnection {
-	/// Prepare a VoiceConnection for later use.
-	pub fn new(user_id: UserId) -> Self {
+	#[doc(hidden)]
+	pub fn __new(server_id: ServerId, user_id: UserId, main_ws: mpsc::Sender<::internal::Status>) -> Self {
 		let (tx, rx) = mpsc::channel();
 		VoiceConnection {
+			server_id: server_id,
 			user_id: user_id,
+			main_ws: main_ws,
+			channel_id: None,
+			mute: false,
+			deaf: false,
 			session_id: None,
+			endpoint_token: None,
 			sender: tx,
 			receiver: Some(rx),
+		}
+	}
+
+	/// Connect to the specified voice channel. Any previous channel will be
+	/// disconnected from.
+	pub fn connect(&mut self, channel_id: ChannelId) {
+		self.channel_id = Some(channel_id);
+		self.send_connect();
+	}
+
+	/// Disconnect from the current voice channel, if any.
+	pub fn disconnect(&mut self) {
+		self.channel_id = None;
+		self.send_connect();
+	}
+
+	/// Set the mute status of the voice connection.
+	pub fn set_mute(&mut self, mute: bool) {
+		self.mute = mute;
+		if self.channel_id.is_some() { self.send_connect() }
+	}
+
+	/// Set the deaf status of the voice connection. Does not affect mute status.
+	pub fn set_deaf(&mut self, deaf: bool) {
+		self.deaf = deaf;
+		if self.channel_id.is_some() { self.send_connect() }
+	}
+
+	/// Get the current channel of this voice connection, if any.
+	pub fn current_channel(&self) -> Option<ChannelId> {
+		self.channel_id
+	}
+
+	/// Send the connect/disconnect command over the main websocket
+	fn send_connect(&self) {
+		let _ = self.main_ws.send(::internal::Status::SendMessage(ObjectBuilder::new()
+			.insert("op", 4)
+			.insert_object("d", |object| object
+				.insert("guild_id", self.server_id.0)
+				.insert("channel_id", self.channel_id.map(|c| c.0))
+				.insert("self_mute", self.mute)
+				.insert("self_deaf", self.deaf)
+			)
+			.unwrap()
+		));
+	}
+
+	#[doc(hidden)]
+	pub fn __update_state(&mut self, voice_state: &VoiceState) {
+		if voice_state.user_id == self.user_id {
+			if voice_state.channel_id.is_some() {
+				if let Some((endpoint, token)) = self.endpoint_token.take() {
+					if let Err(e) = self.internal_connect(&voice_state.session_id, endpoint, &token) {
+						error!("Failed to connect to voice: {:?}", e);
+					}
+				} else {
+					self.session_id = Some(voice_state.session_id.clone());
+				}
+			} else {
+				self.internal_disconnect();
+			}
+		}
+	}
+
+	#[doc(hidden)]
+	pub fn __update_server(&mut self, endpoint: &Option<String>, token: &String) {
+		if let Some(endpoint) = endpoint.clone() {
+			if let Some(session_id) = self.session_id.take() {
+				if let Err(e) = self.internal_connect(&session_id, endpoint, token) {
+					error!("Failed to connect to voice: {:?}", e);
+				}
+			} else {
+				self.endpoint_token = Some((endpoint, token.clone()));
+			}
+		} else {
+			self.internal_disconnect();
 		}
 	}
 
@@ -99,29 +188,6 @@ impl VoiceConnection {
 		let _ = self.sender.send(Status::SetReceiver(None));
 	}
 
-	/// Update the voice state based on an event.
-	pub fn update(&mut self, event: &Event) {
-		match *event {
-			Event::VoiceStateUpdate(_, ref voice_state) => {
-				if voice_state.user_id == self.user_id {
-					self.session_id = Some(voice_state.session_id.clone());
-					if !voice_state.channel_id.is_some() {
-						// drop the previous connection
-						self.disconnect();
-					}
-				}
-			}
-			Event::VoiceServerUpdate { ref server_id, ref endpoint, ref token } => {
-				if let Some(endpoint) = endpoint.as_ref() {
-					self.connect(server_id, endpoint.clone(), token).expect("Voice::connect failure")
-				} else {
-					self.disconnect()
-				}
-			}
-			_ => {}
-		}
-	}
-
 	/// Check whether the voice thread is currently running.
 	pub fn is_running(&self) -> bool {
 		match self.receiver {
@@ -130,13 +196,13 @@ impl VoiceConnection {
 		}
 	}
 
-	fn disconnect(&mut self) {
+	fn internal_disconnect(&mut self) {
 		let (tx, rx) = mpsc::channel();
 		self.sender = tx;
 		self.receiver = Some(rx);
 	}
 
-	fn connect(&mut self, server_id: &ServerId, mut endpoint: String, token: &str) -> Result<()> {
+	fn internal_connect(&mut self, session_id: &str, mut endpoint: String, token: &str) -> Result<()> {
 		// take any pending receiver, or build a new one if there isn't any
 		let rx = match self.receiver.take() {
 			Some(rx) => rx,
@@ -165,9 +231,9 @@ impl VoiceConnection {
 		let map = ObjectBuilder::new()
 			.insert("op", 0)
 			.insert_object("d", |object| object
-				.insert("server_id", &server_id.0)
-				.insert("user_id", &self.user_id.0)
-				.insert("session_id", self.session_id.as_ref().expect("no session id"))
+				.insert("server_id", self.server_id.0)
+				.insert("user_id", self.user_id.0)
+				.insert("session_id", session_id)
 				.insert("token", token)
 			)
 			.unwrap();
@@ -175,7 +241,7 @@ impl VoiceConnection {
 
 		// spin up the voice thread, where most of the action will take place
 		try!(::std::thread::Builder::new()
-			.name("Discord Voice Thread".into())
+			.name(format!("discord voice (server id: {})", self.server_id.0))
 			.spawn(move || voice_thread(endpoint, sender, receiver, rx).unwrap()));
 		Ok(())
 	}
@@ -309,6 +375,7 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> 
 	use websocket::ws::receiver::Receiver;
 	let message: WsMessage = try!(receiver.recv_message());
 	if message.opcode != MessageType::Text {
+		warn!("Closed on with code {:?} {:?}", message.cd_status_code, ::std::str::from_utf8(&message.payload));
 		return Err(Error::Protocol("Voice websocket message was not Text"))
 	}
 	let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));

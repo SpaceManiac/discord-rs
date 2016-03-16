@@ -225,6 +225,22 @@ impl State {
 		}
 		None
 	}
+
+	/// Look up the voice channel a user is in, if any.
+	///
+	/// For bot users which may be in multiple voice channels, the first found is returned.
+	pub fn find_voice_user(&self, user_id: UserId) -> Option<(ServerId, ChannelId)> {
+		for server in &self.servers {
+			for vstate in &server.voice_states {
+				if vstate.user_id == user_id {
+					if let Some(channel_id) = vstate.channel_id {
+						return Some((server.id, channel_id));
+					}
+				}
+			}
+		}
+		None
+	}
 }
 
 /// A reference to a private or public channel

@@ -1,6 +1,7 @@
 use super::{Result, Error};
 
 use std::sync::mpsc;
+use std::collections::HashMap;
 
 use websocket::ws::sender::Sender as SenderTrait;
 use websocket::client::{Client, Sender, Receiver};
@@ -10,12 +11,16 @@ use websocket::message::{Message as WsMessage, Type as MessageType};
 use serde_json;
 use serde_json::builder::ObjectBuilder;
 
-use super::model::*;
+use model::*;
+use internal::Status;
+use voice::VoiceConnection;
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
+	voice_handles: HashMap<ServerId, VoiceConnection>,
+	user_id: UserId,
 	token: String,
 }
 
@@ -73,6 +78,8 @@ impl Connection {
 		Ok((Connection {
 			keepalive_channel: tx,
 			receiver: receiver,
+			voice_handles: HashMap::new(),
+			user_id: ready.user.id,
 			token: token.to_owned(),
 		}, ready))
 	}
@@ -88,33 +95,12 @@ impl Connection {
 		self.set_game(Some(Game { name: name }));
 	}
 
-	/// Connect to the specified voice channel. Any previous channel will be
-	/// disconnected from.
-	pub fn voice_connect(&self, server_id: &ServerId, channel_id: &ChannelId) {
-		let _ = self.keepalive_channel.send(Status::SendMessage(ObjectBuilder::new()
-			.insert("op", 4)
-			.insert_object("d", |object| object
-				.insert("guild_id", &server_id.0)
-				.insert("channel_id", &channel_id.0)
-				.insert("self_mute", false)
-				.insert("self_deaf", false)
-			)
-			.unwrap()
-		));
-	}
-
-	/// Disconnect from the current voice channel, if any.
-	pub fn voice_disconnect(&self) {
-		let _ = self.keepalive_channel.send(Status::SendMessage(ObjectBuilder::new()
-			.insert("op", 4)
-			.insert_object("d", |object| object
-				.insert("guild_id", serde_json::Value::Null)
-				.insert("channel_id", serde_json::Value::Null)
-				.insert("self_mute", false)
-				.insert("self_deaf", false)
-			)
-			.unwrap()
-		));
+	/// Get a voice handle for the specified server.
+	pub fn voice(&mut self, server_id: ServerId) -> &mut VoiceConnection {
+		let Connection { ref mut voice_handles, user_id, ref keepalive_channel, .. } = *self;
+		voice_handles.entry(server_id).or_insert_with(||
+			VoiceConnection::__new(server_id, user_id, keepalive_channel.clone())
+		)
 	}
 
 	/// Receive an event over the websocket, blocking until one is available.
@@ -125,7 +111,15 @@ impl Connection {
 				try!(::std::mem::replace(self, conn).shutdown());
 				Ok(Event::GatewayChanged(url, ready))
 			}
-			e => e,
+			Ok(Event::VoiceStateUpdate(server_id, voice_state)) => {
+				self.voice(server_id).__update_state(&voice_state);
+				Ok(Event::VoiceStateUpdate(server_id, voice_state))
+			}
+			Ok(Event::VoiceServerUpdate { server_id, endpoint, token }) => {
+				self.voice(server_id).__update_server(&endpoint, &token);
+				Ok(Event::VoiceServerUpdate { server_id: server_id, endpoint: endpoint, token: token })
+			}
+			other => other
 		}
 	}
 
@@ -156,11 +150,6 @@ fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
 			}
 		}
 	}
-}
-
-enum Status {
-	SetGame(Option<Game>),
-	SendMessage(serde_json::Value),
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {

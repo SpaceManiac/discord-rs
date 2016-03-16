@@ -2,7 +2,6 @@ extern crate discord;
 
 use std::env;
 use discord::{Discord, State};
-use discord::voice::VoiceConnection;
 use discord::model::Event;
 
 // A simple DJ bot example.
@@ -23,9 +22,7 @@ pub fn main() {
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
 	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
-	let mut voice = VoiceConnection::new(ready.user.id.clone());
 	let mut state = State::new(ready);
-	let mut current_channel = None;
 
 	// receive events forever
 	loop {
@@ -44,7 +41,6 @@ pub fn main() {
 			},
 		};
 		state.update(&event);
-		voice.update(&event);
 
 		match event {
 			Event::Closed(n) => {
@@ -65,26 +61,24 @@ pub fn main() {
 
 				if first_word.eq_ignore_ascii_case("!dj") {
 					if argument.eq_ignore_ascii_case("stop") {
-						voice.stop();
+						if let Some((server_id, _)) = state.find_voice_user(message.author.id) {
+							connection.voice(server_id).stop();
+						}
 					} else if argument.eq_ignore_ascii_case("quit") {
-						connection.voice_disconnect();
+						if let Some((server_id, _)) = state.find_voice_user(message.author.id) {
+							connection.voice(server_id).disconnect();
+						}
 					} else {
 						let output = (|| {
-							for server in state.servers() {
-								for vstate in &server.voice_states {
-									if vstate.user_id == message.author.id {
-										if let Some(ref chan) = vstate.channel_id {
-											let stream = match discord::voice::open_ytdl_stream(&argument) {
-												Ok(stream) => stream,
-												Err(error) => return format!("Error: {}", error),
-											};
-											voice.stop();
-											connection.voice_connect(&server.id, chan);
-											voice.play(stream);
-											return String::new()
-										}
-									}
-								}
+							if let Some((server_id, channel_id)) = state.find_voice_user(message.author.id) {
+								let stream = match discord::voice::open_ytdl_stream(&argument) {
+									Ok(stream) => stream,
+									Err(error) => return format!("Error: {}", error),
+								};
+								let voice = connection.voice(server_id);
+								voice.connect(channel_id);
+								voice.play(stream);
+								return String::new()
 							}
 							"You must be in a voice channel to DJ".into()
 						})();
@@ -94,17 +88,13 @@ pub fn main() {
 					}
 				}
 			}
-			Event::VoiceStateUpdate(server_id, voice_state) => {
-				if voice_state.user_id == state.user().id {
-					current_channel = voice_state.channel_id.map(|c| (server_id, c));
-				} else if let Some((ref cur_server, ref cur_channel)) = current_channel {
-					// If we are in a voice channel, && someone on our server moves/hangs up,
-					if *cur_server == server_id {
-						// && our current voice channel is empty, disconnect from voice
-						if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-							if srv.voice_states.iter().filter(|vs| vs.channel_id.as_ref() == Some(cur_channel)).count() <= 1 {
-								connection.voice_disconnect();
-							}
+			Event::VoiceStateUpdate(server_id, _) => {
+				// If someone moves/hangs up, and we are in a voice channel,
+				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
+					// and our current voice channel is empty, disconnect from voice
+					if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
+						if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
+							connection.voice(server_id).disconnect();
 						}
 					}
 				}
