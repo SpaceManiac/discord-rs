@@ -95,12 +95,20 @@ impl Connection {
 		self.set_game(Some(Game { name: name }));
 	}
 
-	/// Get a voice handle for the specified server.
+	/// Get a handle to the voice connection for a server.
 	pub fn voice(&mut self, server_id: ServerId) -> &mut VoiceConnection {
 		let Connection { ref mut voice_handles, user_id, ref keepalive_channel, .. } = *self;
 		voice_handles.entry(server_id).or_insert_with(||
 			VoiceConnection::__new(server_id, user_id, keepalive_channel.clone())
 		)
+	}
+
+	/// Drop the voice connection for a server, forgetting all settings.
+	///
+	/// Calling `.voice(server_id).disconnect()` will disconnect from voice but retain the mute
+	/// and deaf status, audio source, and audio receiver.
+	pub fn drop_voice(&mut self, server_id: ServerId) {
+		self.voice_handles.remove(&server_id);
 	}
 
 	/// Receive an event over the websocket, blocking until one is available.
