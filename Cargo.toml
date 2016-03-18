@@ -20,4 +20,4 @@ opus = "0.1"
 time = "0.1"
 log = "0.3"
 sodiumoxide = { version = "0.0.9", features = [] }
-multipart = { version = "0.4.1", features = ["hyper", "client"] }
+multipart = { version = "0.5", features = ["hyper", "client"] }

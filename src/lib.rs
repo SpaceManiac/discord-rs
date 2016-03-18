@@ -302,8 +302,8 @@ impl Discord {
 		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
 		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
 		let mut request = try!(multipart::client::Multipart::from_request(request));
-		request.write_text("content", text);
-		request.write_stream("file", &mut file, Some(filename), None);
+		try!(request.write_text("content", text));
+		try!(request.write_stream("file", &mut file, Some(filename), None));
 		Message::decode(try!(serde_json::from_reader(try!(request.send()))))
 	}
 
