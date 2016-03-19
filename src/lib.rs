@@ -512,7 +512,32 @@ impl Discord {
 		Ok(vec)
 	}
 
-	// Edit profile
+	/// Edit the logged-in user's profile. See `EditProfile` for editable fields.
+	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&mut self, f: F) -> Result<CurrentUser> {
+		// First, get the current profile, so that providing username and avatar is optional.
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/users/@me", API_BASE))));
+		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		let mut map = ObjectBuilder::new()
+			.insert("username", user.username)
+			.insert("avatar", user.avatar);
+		if let Some(email) = user.email.as_ref() {
+			map = map.insert("email", email);
+		}
+
+		// Then, send the profile patch.
+		let map = f(EditProfile(map)).0.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.patch(&format!("{}/users/@me", API_BASE)).body(&body)));
+		let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+		// If a token was included in the response, switch to it. Important because if the
+		// password was changed, the old token is invalidated.
+		if let Some(serde_json::Value::String(token)) = json.remove("token") {
+			self.token = token;
+		}
+		CurrentUser::decode(serde_json::Value::Object(json))
+	}
 
 	// Get active maintenances
 	// Get upcoming maintenances
@@ -578,6 +603,36 @@ impl EditServer {
 	/// Edit the server's AFK timeout.
 	pub fn afk_timeout(self, timeout: u64) -> Self {
 		EditServer(self.0.insert("afk_timeout", timeout))
+	}
+}
+
+/// Patch content for the `edit_profile` call.
+pub struct EditProfile(ObjectBuilder);
+
+impl EditProfile {
+	/// Edit the user's username. Must be between 2 and 32 characters long.
+	pub fn username(self, username: &str) -> Self {
+		EditProfile(self.0.insert("username", username))
+	}
+	/// Edit the user's avatar. Use `None` to remove the avatar.
+	pub fn avatar(self, icon: Option<&str>) -> Self {
+		EditProfile(match icon {
+			Some(icon) => self.0.insert("avatar", icon),
+			None => self.0.insert("avatar", serde_json::Value::Null),
+		})
+	}
+	/// Provide the user's current password for authentication. Does not apply to bot accounts, and
+	/// must be supplied for user accounts.
+	pub fn password(self, password: &str) -> Self {
+		EditProfile(self.0.insert("password", password))
+	}
+	/// Edit the user's email address. Does not apply to bot accounts.
+	pub fn email(self, email: &str) -> Self {
+		EditProfile(self.0.insert("email", email))
+	}
+	/// Edit the user's password. Does not apply to bot accounts.
+	pub fn new_password(self, password: &str) -> Self {
+		EditProfile(self.0.insert("new_password", password))
 	}
 }
 
