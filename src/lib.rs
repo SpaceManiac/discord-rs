@@ -340,7 +340,26 @@ impl Discord {
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// Edit server
+	/// Edit a server's information. See `EditServer` for the editable fields.
+	///
+	/// ```ignore
+	/// // Rename a server
+	/// discord.edit_server(server_id, |server| server.name("My Cool Server"));
+	/// // Edit many properties at once
+	/// discord.edit_server(server_id, |server| server
+	///     .name("My Cool Server")
+	///     .icon(Some("data:image/jpg;base64,..."))
+	///     .afk_timeout(300)
+	///     .region("us-south")
+	/// );
+	/// ```
+	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
+		let map = f(EditServer(ObjectBuilder::new())).0.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.patch(&format!("{}/guilds/{}", API_BASE, server_id.0)).body(&body)));
+		Server::decode(try!(serde_json::from_reader(response)))
+	}
 
 	/// Leave the given server.
 	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
@@ -494,6 +513,38 @@ impl Discord {
 			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
 		};
 		Connection::new(&url, &self.token)
+	}
+}
+
+/// Patch content for the `edit_server` call.
+pub struct EditServer(ObjectBuilder);
+
+impl EditServer {
+	/// Edit the server's name.
+	pub fn name(self, name: &str) -> Self {
+		EditServer(self.0.insert("name", name))
+	}
+	/// Edit the server's voice region.
+	pub fn region(self, region: &str) -> Self {
+		EditServer(self.0.insert("region", region))
+	}
+	/// Edit the server's icon. Use `None` to remove the icon.
+	pub fn icon(self, icon: Option<&str>) -> Self {
+		EditServer(match icon {
+			Some(icon) => self.0.insert("icon", icon),
+			None => self.0.insert("icon", serde_json::Value::Null),
+		})
+	}
+	/// Edit the server's AFK channel. Use `None` to select no AFK channel.
+	pub fn afk_channel(self, channel: Option<ChannelId>) -> Self {
+		EditServer(match channel {
+			Some(ch) => self.0.insert("afk_channel_id", ch.0),
+			None => self.0.insert("afk_channel_id", serde_json::Value::Null),
+		})
+	}
+	/// Edit the server's AFK timeout.
+	pub fn afk_timeout(self, timeout: u64) -> Self {
+		EditServer(self.0.insert("afk_timeout", timeout))
 	}
 }
 
