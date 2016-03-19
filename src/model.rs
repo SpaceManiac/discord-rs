@@ -118,6 +118,7 @@ pub struct ServerInfo {
 	pub name: String,
 	pub icon: Option<String>,
 	pub owner: bool,
+	pub permissions: Permissions,
 }
 
 impl ServerInfo {
@@ -128,6 +129,7 @@ impl ServerInfo {
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			icon: try!(opt(&mut value, "icon", into_string)),
 			owner: req!(try!(remove(&mut value, "owner")).as_boolean()),
+			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
 		})
 	}
 }
