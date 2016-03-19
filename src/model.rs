@@ -507,6 +507,62 @@ impl Invite {
 	}
 }
 
+/// Detailed information about an invite, available to server managers
+#[derive(Debug, Clone)]
+pub struct RichInvite {
+	pub code: String,
+	pub xkcdpass: Option<String>,
+	pub server_id: ServerId,
+	pub server_name: String,
+	pub server_splash_hash: Option<String>,
+	pub channel_type: ChannelType,
+	pub channel_id: ChannelId,
+	pub channel_name: String,
+	pub inviter: User,
+	pub created_at: String,
+	pub max_age: u64,
+	pub max_uses: u64,
+	pub revoked: bool,
+	pub temporary: bool,
+	pub uses: u64,
+}
+
+impl RichInvite {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+
+		let mut server = try!(remove(&mut value, "guild").and_then(into_map));
+		let server_id = try!(remove(&mut server, "id").and_then(ServerId::decode));
+		let server_name = try!(remove(&mut server, "name").and_then(into_string));
+		let server_splash_hash = try!(opt(&mut server, "splash_hash", into_string));
+		warn_field("RichInvite/guild", server);
+
+		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
+		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_str_err));
+		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
+		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
+		warn_field("RichInvite/channel", channel);
+
+		warn_json!(value, RichInvite {
+			code: try!(remove(&mut value, "code").and_then(into_string)),
+			xkcdpass: try!(opt(&mut value, "xkcdpass", into_string)),
+			server_id: server_id,
+			server_name: server_name,
+			server_splash_hash: server_splash_hash,
+			channel_type: channel_type,
+			channel_id: channel_id,
+			channel_name: channel_name,
+			inviter: try!(remove(&mut value, "inviter").and_then(User::decode)),
+			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
+			max_age: req!(try!(remove(&mut value, "max_age")).as_u64()),
+			max_uses: req!(try!(remove(&mut value, "max_uses")).as_u64()),
+			revoked: req!(try!(remove(&mut value, "revoked")).as_boolean()),
+			temporary: req!(try!(remove(&mut value, "temporary")).as_boolean()),
+			uses: req!(try!(remove(&mut value, "uses")).as_u64()),
+		})
+	}
+}
+
 /// Information about an available voice region
 #[derive(Debug, Clone)]
 pub struct VoiceRegion {

@@ -409,6 +409,20 @@ impl Discord {
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Get the active invites for a server.
+	pub fn get_server_invites(&self, server: ServerId) -> Result<Vec<RichInvite>> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/guilds/{}/invites", API_BASE, server.0))));
+		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
+	}
+
+	/// Get the active invites for a channel.
+	pub fn get_channel_invites(&self, channel: ChannelId) -> Result<Vec<RichInvite>> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/channels/{}/invites", API_BASE, channel.0))));
+		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
+	}
+
 	/// Accept an invite. See `get_invite` for details.
 	pub fn accept_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
@@ -417,7 +431,26 @@ impl Discord {
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// Create invite
+	/// Create an invite to a channel.
+	///
+	/// Passing 0 for `max_age` or `max_uses` means no limit. `max_age` should be specified in
+	/// seconds. Enabling `xkcdpass` forces a 30-minute expiry.
+	pub fn create_invite(&self, channel: ChannelId,
+		max_age: u64, max_uses: u64,
+		temporary: bool, xkcdpass: bool
+	) -> Result<RichInvite> {
+		let map = ObjectBuilder::new()
+			.insert("validate", serde_json::Value::Null)
+			.insert("max_age", max_age)
+			.insert("max_uses", max_uses)
+			.insert("temporary", temporary)
+			.insert("xkcdpass", xkcdpass)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(||
+			self.client.post(&format!("{}/channels/{}/invites", API_BASE, channel.0)).body(&body)));
+		RichInvite::decode(try!(serde_json::from_reader(response)))
+	}
 
 	/// Delete an invite. See `get_invite` for details.
 	pub fn delete_invite(&self, invite: &str) -> Result<Invite> {
