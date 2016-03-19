@@ -35,6 +35,7 @@ extern crate time;
 extern crate log;
 extern crate sodiumoxide;
 extern crate multipart;
+extern crate base64;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -572,6 +573,18 @@ impl Discord {
 		};
 		Connection::new(&url, &self.token)
 	}
+}
+
+/// Read an image from a file into a string suitable for upload.
+pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
+	use std::io::Read;
+	let path = path.as_ref();
+	let mut vec = Vec::new();
+	try!(try!(std::fs::File::open(path)).read_to_end(&mut vec));
+	Ok(format!("data:image/{};base64,{}",
+		if path.extension() == Some("png".as_ref()) { "png" } else { "jpg" },
+		base64::encode(&vec),
+	))
 }
 
 /// Patch content for the `edit_server` call.

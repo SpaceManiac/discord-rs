@@ -21,3 +21,4 @@ time = "0.1"
 log = "0.3"
 sodiumoxide = { version = "0.0.9", features = [] }
 multipart = { version = "0.5", features = ["hyper", "client"] }
+base64-rs = "0.1.0"
