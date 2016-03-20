@@ -7,9 +7,10 @@ pub struct State {
 	settings: Option<UserSettings>,
 	server_settings: Option<Vec<UserServerSettings>>,
 	session_id: String,
-	presences: Vec<Presence>,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
+	presences: Vec<Presence>,
+	relationships: Vec<Relationship>
 }
 
 impl State {
@@ -26,6 +27,7 @@ impl State {
 			private_channels: ready.private_channels,
 			servers: ready.servers,
 			presences: ready.presences,
+			relationships: ready.relationships,
 		}
 	}
 
@@ -67,6 +69,8 @@ impl State {
 				ref message_display_compact,
 				ref render_embeds, ref show_current_game,
 				ref theme, ref convert_emoticons,
+				ref allow_email_friend_request,
+				ref friend_source_flags,
 			} => {
 				if let Some(settings) = self.settings.as_mut() {
 					opt_modify(&mut settings.enable_tts_command, enable_tts_command);
@@ -78,6 +82,8 @@ impl State {
 					opt_modify(&mut settings.show_current_game, show_current_game);
 					opt_modify(&mut settings.theme, theme);
 					opt_modify(&mut settings.convert_emoticons, convert_emoticons);
+					opt_modify(&mut settings.allow_email_friend_request, allow_email_friend_request);
+					opt_modify(&mut settings.friend_source_flags, friend_source_flags);
 				}
 			}
 			Event::UserServerSettingsUpdate(ref settings) => {
@@ -116,6 +122,19 @@ impl State {
 				} else {
 					update_presence(&mut self.presences, presence);
 				}
+			}
+			Event::PresencesReplace(ref presences) => {
+				self.presences.clone_from(presences);
+			}
+			Event::RelationshipAdd(ref relationship) => {
+				match self.relationships.iter_mut().find(|r| r.id == relationship.id) {
+					Some(rel) => { rel.clone_from(relationship); return }
+					None => {}
+				}
+				self.relationships.push(relationship.clone());
+			}
+			Event::RelationshipRemove(user_id, _) => {
+				self.relationships.retain(|r| r.id != user_id);
 			}
 			Event::ServerCreate(ref server) => self.servers.push(server.clone()),
 			Event::ServerUpdate(ref server) => {

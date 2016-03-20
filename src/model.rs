@@ -861,6 +861,71 @@ impl CurrentUser {
 	}
 }
 
+/// A type of relationship this user has with another.
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum RelationshipType {
+	Ignored,
+	Friends,
+	Blocked,
+	IncomingRequest,
+	OutgoingRequest,
+}
+
+impl RelationshipType {
+	pub fn from_num(kind: u64) -> Option<Self> {
+		match kind {
+			0 => Some(RelationshipType::Ignored),
+			1 => Some(RelationshipType::Friends),
+			2 => Some(RelationshipType::Blocked),
+			3 => Some(RelationshipType::IncomingRequest),
+			4 => Some(RelationshipType::OutgoingRequest),
+			_ => None,
+		}
+	}
+
+	fn decode(value: Value) -> Result<Self> {
+		value.as_u64().and_then(RelationshipType::from_num).ok_or(Error::Decode("Expected valid RelationshipType", value))
+	}
+}
+
+/// Information on a friendship relationship this user has with another.
+#[derive(Debug, Clone)]
+pub struct Relationship {
+	pub id: UserId,
+	pub kind: RelationshipType,
+	pub user: User,
+}
+
+impl Relationship {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Relationship {
+			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
+			kind: try!(remove(&mut value, "type").and_then(RelationshipType::decode)),
+			user: try!(remove(&mut value, "user").and_then(User::decode)),
+		})
+	}
+}
+
+/// Flags for who may add this user as a friend.
+#[derive(Debug, Clone)]
+pub struct FriendSourceFlags {
+	pub all: bool,
+	pub mutual_friends: bool,
+	pub mutual_servers: bool,
+}
+
+impl FriendSourceFlags {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, FriendSourceFlags {
+			all: try!(opt(&mut value, "all", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
+			mutual_friends: try!(opt(&mut value, "mutual_friends", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
+			mutual_servers: try!(opt(&mut value, "mutual_guilds", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
+		})
+	}
+}
+
 /// User settings usually used to influence client behavior
 #[derive(Debug, Clone)]
 pub struct UserSettings {
@@ -873,6 +938,10 @@ pub struct UserSettings {
 	pub show_current_game: bool,
 	pub theme: String,
 	pub convert_emoticons: bool,
+	pub allow_email_friend_request: bool,
+	pub friend_source_flags: FriendSourceFlags,
+	/// Servers whose members cannot private message this user.
+	pub restricted_servers: Vec<ServerId>,
 }
 
 impl UserSettings {
@@ -888,6 +957,9 @@ impl UserSettings {
 			show_current_game: req!(try!(remove(&mut value, "show_current_game")).as_boolean()),
 			theme: try!(remove(&mut value, "theme").and_then(into_string)),
 			convert_emoticons: req!(try!(remove(&mut value, "convert_emoticons")).as_boolean()),
+			allow_email_friend_request: req!(try!(remove(&mut value, "allow_email_friend_request")).as_boolean()),
+			friend_source_flags: try!(remove(&mut value, "friend_source_flags").and_then(FriendSourceFlags::decode)),
+			restricted_servers: try!(remove(&mut value, "restricted_guilds").and_then(|v| decode_array(v, ServerId::decode))),
 		})
 	}
 }
@@ -993,6 +1065,7 @@ pub struct ReadyEvent {
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
 	pub presences: Vec<Presence>,
+	pub relationships: Vec<Relationship>,
 	pub servers: Vec<LiveServer>,
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
@@ -1016,6 +1089,8 @@ pub enum Event {
 		show_current_game: Option<bool>,
 		theme: Option<String>,
 		convert_emoticons: Option<bool>,
+		allow_email_friend_request: Option<bool>,
+		friend_source_flags: Option<FriendSourceFlags>,
 	},
 	/// Update to the logged-in user's server-specific notification settings
 	UserServerSettingsUpdate(UserServerSettings),
@@ -1039,6 +1114,10 @@ pub enum Event {
 		server_id: Option<ServerId>,
 		roles: Option<Vec<RoleId>>,
 	},
+	/// The precense list of the user's friends should be replaced entirely
+	PresencesReplace(Vec<Presence>),
+	RelationshipAdd(Relationship),
+	RelationshipRemove(UserId, RelationshipType),
 
 	MessageCreate(Message),
 	/// A message has been edited, either by the user or the system
@@ -1122,6 +1201,9 @@ impl Event {
 		}
 
 		let kind = try!(remove(&mut value, "t").and_then(into_string));
+		if kind == "PRESENCES_REPLACE" {
+			return Ok(Event::PresencesReplace(try!(remove(&mut value, "d").and_then(|v| decode_array(v, Presence::decode)))));
+		}
 		let mut value = try!(remove(&mut value, "d").and_then(into_map));
 		if kind == "READY" {
 			warn_json!(@"Event::Ready", value, Event::Ready(ReadyEvent {
@@ -1131,8 +1213,9 @@ impl Event {
 				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
-				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
+				relationships: try!(remove(&mut value, "relationships").and_then(|v| decode_array(v, Relationship::decode))),
+				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
@@ -1150,6 +1233,8 @@ impl Event {
 				show_current_game: remove(&mut value, "show_current_game").ok().and_then(|v| v.as_boolean()),
 				theme: try!(opt(&mut value, "theme", into_string)),
 				convert_emoticons: remove(&mut value, "convert_emoticons").ok().and_then(|v| v.as_boolean()),
+				allow_email_friend_request: remove(&mut value, "allow_email_friend_request").ok().and_then(|v| v.as_boolean()),
+				friend_source_flags: try!(opt(&mut value, "friend_source_flags", FriendSourceFlags::decode)),
 			})
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
 			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
@@ -1177,6 +1262,13 @@ impl Event {
 				roles: roles,
 				presence: presence,
 			})
+		} else if kind == "RELATIONSHIP_ADD" {
+			Relationship::decode(Value::Object(value)).map(Event::RelationshipAdd)
+		} else if kind == "RELATIONSHIP_REMOVE" {
+			warn_json!(value, Event::RelationshipRemove(
+				try!(remove(&mut value, "id").and_then(UserId::decode)),
+				try!(remove(&mut value, "type").and_then(RelationshipType::decode)),
+			))
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
