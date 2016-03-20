@@ -27,6 +27,32 @@ impl State {
 		}
 	}
 
+	/// Count the total number of server members not yet downloaded.
+	pub fn unknown_members(&self) -> u64 {
+		let mut total = 0;
+		for srv in &self.servers {
+			let members = srv.members.len() as u64;
+			if srv.member_count > members {
+				total += srv.member_count - members;
+			} else if srv.member_count < members {
+				warn!("Inconsistent member count for {:?}: {} < {}", srv.id, srv.member_count, members);
+			}
+		}
+		total
+	}
+
+	/// Requests a download of all member information for large servers.
+	///
+	/// The members lists are cleared on call, and then refilled as chunks are received. When
+	/// `unknown_members()` returns 0, the download has completed.
+	pub fn download_all_members(&mut self, connection: &::Connection) {
+		if self.unknown_members() == 0 { return }
+		connection.__download_members(&self.servers.iter_mut()
+			.filter(|s| s.large)
+			.map(|s| { s.members.clear(); s.id })
+			.collect::<Vec<_>>());
+	}
+
 	/// Update the state according to the changes described in the given event.
 	pub fn update(&mut self, event: &Event) {
 		match *event {
@@ -128,6 +154,11 @@ impl State {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
 					srv.member_count -= 1;
 					srv.members.retain(|m| m.user.id != user.id);
+				});
+			}
+			Event::ServerMembersChunk(server_id, ref members) => {
+				self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
+					srv.members.extend_from_slice(members);
 				});
 			}
 			Event::ServerRoleCreate(ref server_id, ref role) => {

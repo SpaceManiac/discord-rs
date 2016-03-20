@@ -136,6 +136,19 @@ impl Connection {
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
 		Ok(())
 	}
+
+	#[doc(hidden)]
+	pub fn __download_members(&self, servers: &[ServerId]) {
+		let msg = ObjectBuilder::new()
+			.insert("op", 8)
+			.insert_object("d", |o| o
+				.insert_array("guild_id", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
+				.insert("query", "")
+				.insert("limit", 0)
+			)
+			.unwrap();
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+	}
 }
 
 fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {

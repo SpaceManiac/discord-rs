@@ -29,10 +29,13 @@ macro_rules! warn_json {
 // Discord identifier types
 
 fn decode_id(value: Value) -> Result<u64> {
-	let value = try!(into_string(value));
-	match value.parse::<u64>() {
-		Ok(num) => Ok(num),
-		Err(_) => Err(Error::Decode("Expected numeric string", Value::String(value)))
+	match value {
+		Value::U64(num) => Ok(num),
+		Value::String(text) => match text.parse::<u64>() {
+			Ok(num) => Ok(num),
+			Err(_) => Err(Error::Decode("Expected numeric ID", Value::String(text)))
+		},
+		value => Err(Error::Decode("Expected numeric ID", value))
 	}
 }
 
@@ -456,7 +459,7 @@ impl Message {
 		warn_json!(value, Message {
 			id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			nonce: try!(opt(&mut value, "nonce", into_string)),
+			nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 			content: try!(remove(&mut value, "content").and_then(into_string)),
 			tts: req!(try!(remove(&mut value, "tts")).as_boolean()),
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
@@ -1072,6 +1075,7 @@ pub enum Event {
 		user: User,
 	},
 	ServerMemberRemove(ServerId, User),
+	ServerMembersChunk(ServerId, Vec<Member>),
 
 	ServerRoleCreate(ServerId, Role),
 	ServerRoleUpdate(ServerId, Role),
@@ -1177,7 +1181,7 @@ impl Event {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				content: try!(opt(&mut value, "content", into_string)),
-				nonce: try!(opt(&mut value, "nonce", into_string)),
+				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_boolean()),
 				timestamp: try!(opt(&mut value, "timestamp", into_string)),
 				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
@@ -1218,6 +1222,11 @@ impl Event {
 			warn_json!(value, Event::ServerMemberRemove(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "user").and_then(User::decode)),
+			))
+		} else if kind == "GUILD_MEMBERS_CHUNK" {
+			warn_json!(value, Event::ServerMembersChunk(
+				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				try!(remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))),
 			))
 		} else if kind == "GUILD_ROLE_CREATE" {
 			warn_json!(value, Event::ServerRoleCreate(
