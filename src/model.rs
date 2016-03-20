@@ -668,11 +668,13 @@ impl Game {
 pub struct Presence {
 	pub user_id: UserId,
 	pub status: OnlineStatus,
+	pub last_modified: Option<u64>,
 	pub game: Option<Game>,
+	pub user: Option<User>,
 }
 
 impl Presence {
-	pub fn decode(value: Value) -> Result<(Presence, Option<User>)> {
+	pub fn decode(value: Value) -> Result<Presence> {
 		let mut value = try!(into_map(value));
 		let mut user_map = try!(remove(&mut value, "user").and_then(into_map));
 
@@ -683,14 +685,16 @@ impl Presence {
 			(try!(remove(&mut user_map, "id").and_then(UserId::decode)), None)
 		};
 
-		warn_json!(@"Presence", value, (Presence {
+		warn_json!(@"Presence", value, Presence {
 			user_id: user_id,
 			status: try!(remove(&mut value, "status").and_then(into_string).and_then(OnlineStatus::from_str_err)),
+			last_modified: try!(opt(&mut value, "last_modified", |v| Ok(req!(v.as_u64())))),
 			game: match value.remove("game") {
 				None | Some(Value::Null) => None,
 				Some(val) => try!(Game::decode(val)),
 			},
-		}, user))
+			user: user,
+		})
 	}
 }
 
@@ -812,7 +816,7 @@ impl LiveServer {
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			// these presences don't contain a whole User, so discard that
-			presences: try!(decode_array(try!(remove(&mut value, "presences")), |v| Presence::decode(v).map(|x| x.0))),
+			presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 			member_count: req!(try!(remove(&mut value, "member_count")).as_u64()),
 			members: try!(decode_array(try!(remove(&mut value, "members")), Member::decode)),
 			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
@@ -988,6 +992,7 @@ pub struct ReadyEvent {
 	pub user_settings: Option<UserSettings>,
 	pub read_state: Vec<ReadState>,
 	pub private_channels: Vec<PrivateChannel>,
+	pub presences: Vec<Presence>,
 	pub servers: Vec<LiveServer>,
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
@@ -1030,11 +1035,9 @@ pub enum Event {
 	},
 	/// A member's presence state (or username or avatar) has changed
 	PresenceUpdate {
-		server_id: ServerId,
 		presence: Presence,
-		roles: Vec<RoleId>,
-		/// User information if the username or avatar has changed
-		user: Option<User>,
+		server_id: Option<ServerId>,
+		roles: Option<Vec<RoleId>>,
 	},
 
 	MessageCreate(Message),
@@ -1129,6 +1132,7 @@ impl Event {
 				read_state: try!(decode_array(try!(remove(&mut value, "read_state")), ReadState::decode)),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
+				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
@@ -1165,14 +1169,13 @@ impl Event {
 				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
 			})
 		} else if kind == "PRESENCE_UPDATE" {
-			let server_id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
-			let roles = try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode));
-			let (presence, user) = try!(Presence::decode(Value::Object(value)));
+			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
+			let roles = try!(opt(&mut value, "roles", |v| decode_array(v, RoleId::decode)));
+			let presence = try!(Presence::decode(Value::Object(value)));
 			Ok(Event::PresenceUpdate {
 				server_id: server_id,
 				roles: roles,
 				presence: presence,
-				user: user,
 			})
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)

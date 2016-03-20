@@ -7,6 +7,7 @@ pub struct State {
 	settings: Option<UserSettings>,
 	server_settings: Option<Vec<UserServerSettings>>,
 	session_id: String,
+	presences: Vec<Presence>,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
 }
@@ -24,6 +25,7 @@ impl State {
 			session_id: ready.session_id,
 			private_channels: ready.private_channels,
 			servers: ready.servers,
+			presences: ready.presences,
 		}
 	}
 
@@ -100,26 +102,20 @@ impl State {
 					}
 				});
 			}
-			Event::PresenceUpdate { ref server_id, ref presence, ref user, roles: _ } => {
-				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
-					// If the user was modified, update the member list
-					if let &Some(ref user) = user {
-						srv.members.iter_mut().find(|u| u.user.id == user.id).map(|member| {
-							member.user.clone_from(&user);
-						});
-					}
-					if presence.status == OnlineStatus::Offline {
-						// Remove the user from the presence list
-						srv.presences.retain(|u| u.user_id != presence.user_id);
-					} else {
-						// Update or add to the presence list
-						match srv.presences.iter_mut().find(|u| u.user_id == presence.user_id) {
-							Some(srv_presence) => { srv_presence.clone_from(presence); return }
-							None => {}
+			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
+				if let Some(server_id) = server_id {
+					self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
+						// If the user was modified, update the member list
+						if let Some(user) = presence.user.as_ref() {
+							srv.members.iter_mut().find(|u| u.user.id == user.id).map(|member| {
+								member.user.clone_from(&user);
+							});
 						}
-						srv.presences.push(presence.clone());
-					}
-				});
+						update_presence(&mut srv.presences, presence);
+					});
+				} else {
+					update_presence(&mut self.presences, presence);
+				}
 			}
 			Event::ServerCreate(ref server) => self.servers.push(server.clone()),
 			Event::ServerUpdate(ref server) => {
@@ -271,6 +267,29 @@ impl State {
 			}
 		}
 		None
+	}
+}
+
+fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {
+	if presence.status == OnlineStatus::Offline {
+		// Remove the user from the presence list
+		vec.retain(|u| u.user_id != presence.user_id);
+	} else {
+		// Update or add to the presence list
+		match vec.iter_mut().find(|u| u.user_id == presence.user_id) {
+			Some(srv_presence) => {
+				if presence.user.is_none() {
+					let user = srv_presence.user.clone();
+					srv_presence.clone_from(presence);
+					srv_presence.user = user;
+				} else {
+					srv_presence.clone_from(presence);
+				}
+				return
+			}
+			None => {}
+		}
+		vec.push(presence.clone());
 	}
 }
 
