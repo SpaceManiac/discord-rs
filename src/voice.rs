@@ -62,15 +62,19 @@ pub trait AudioSource: Send {
 pub trait AudioReceiver: Send {
 	/// Called when a user's currently-speaking state has updated.
 	///
-	/// This method is the only way to know the `ssrc` to `user_id` mapping.
+	/// This method is the only way to know the `ssrc` to `user_id` mapping, but is unreliable and
+	/// only a hint for when users are actually speaking, due both to latency differences and that
+	/// it is possible for a user to leave `speaking` true even when they are not sending audio.
 	fn speaking_update(&mut self, ssrc: u32, user_id: &UserId, speaking: bool);
 
 	/// Called when a voice packet is received.
 	///
-	/// The sequence number and timestamp usually increase regularly over time, but packets may
-	/// be received out of order depending on network conditions. The length of the `data` slice
-	/// will be 960 for mono audio and twice that for stereo audio (with samples interleaved).
-	fn voice_packet(&mut self, ssrc: u32, sequence: u16, timestamp: u32, data: &[i16]);
+	/// The sequence number increases by one per packet sent, and can be used to reorder packets
+	/// if they have been received out of order. The timestamp increases at 48000Hz (typically by
+	/// 960 per 20ms frame). If `stereo` is true, the length of the `data` slice is doubled and
+	/// samples have been interleaved. The typical length of `data` is 960 or 1920 for a 20ms frame,
+	/// but may be larger or smaller in some situations.
+	fn voice_packet(&mut self, ssrc: u32, sequence: u16, timestamp: u32, stereo: bool, data: &[i16]);
 }
 
 impl VoiceConnection {
@@ -605,8 +609,9 @@ impl InternalConnection {
 							let len = try!(self.decoder_map.entry((ssrc, channels))
 								.or_insert_with(|| opus::Decoder::new(SAMPLE_RATE, channels).unwrap())
 								.decode(&decrypted, &mut audio_buffer, false));
-							let len = if channels == opus::Channels::Stereo { len * 2 } else { len };
-							receiver.voice_packet(ssrc, sequence, timestamp, &audio_buffer[..len]);
+							let stereo = channels == opus::Channels::Stereo;
+							receiver.voice_packet(ssrc, sequence, timestamp,
+								stereo, &audio_buffer[..if stereo { len * 2 } else { len }]);
 						}
 					},
 				}
