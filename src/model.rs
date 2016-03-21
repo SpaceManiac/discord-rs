@@ -1137,12 +1137,13 @@ pub enum Event {
 	},
 	/// Another logged-in device acknowledged this message
 	MessageAck {
-		message_id: MessageId,
 		channel_id: ChannelId,
+		/// May be `None` if a private channel with no messages has closed.
+		message_id: Option<MessageId>,
 	},
 	MessageDelete {
-		message_id: MessageId,
 		channel_id: ChannelId,
+		message_id: MessageId,
 	},
 
 	ServerCreate(LiveServer),
@@ -1288,13 +1289,13 @@ impl Event {
 			})
 		} else if kind == "MESSAGE_ACK" {
 			warn_json!(value, Event::MessageAck {
-				message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				message_id: try!(opt(&mut value, "message_id", MessageId::decode)),
 			})
 		} else if kind == "MESSAGE_DELETE" {
 			warn_json!(value, Event::MessageDelete {
-				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
 			LiveServer::decode(Value::Object(value)).map(Event::ServerCreate)
