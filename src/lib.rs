@@ -5,9 +5,9 @@
 //! connection over which state updates are received, and the voice calling
 //! system.
 //!
-//! Log in to Discord with `Discord::new`. The resulting value can be used to
-//! make REST API calls to post messages and manipulate Discord state. Calling
-//! `connect()` will open a websocket connection, through which events can be
+//! Log in to Discord with `Discord::new`, `new_cache`, or `from_bot_token` as appropriate.
+//! The resulting value can be used to make REST API calls to post messages and manipulate Discord
+//! state. Calling `connect()` will open a websocket connection, through which events can be
 //! received. These two channels are enough to write a simple chatbot which can
 //! read and respond to messages.
 //!
@@ -15,10 +15,9 @@
 //! the `ReadyEvent` obtained when opening a `Connection` and kept updated with
 //! the events received over it.
 //!
-//! To use the voice call system, initialize a `VoiceConnection` with the user id
-//! received in the `ReadyEvent`, call `voice_connect` on the `Connection`, and
-//! pass events to `VoiceConnection::update`. Once the connection has been
-//! established, the `play` and `stop` methods can be used to control playback.
+//! To join voice servers, call `Connection::voice` to get a `VoiceConnection` and use `connect`
+//! to join a channel, then `play` and `stop` to control playback. Manipulating deaf/mute state
+//! and receiving audio are also possible.
 //!
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
@@ -514,6 +513,8 @@ impl Discord {
 	}
 
 	/// Edit the logged-in user's profile. See `EditProfile` for editable fields.
+	///
+	/// This method requires mutable access because editing the profile generates a new token.
 	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&mut self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = try!(self.request(||
@@ -576,6 +577,9 @@ impl Discord {
 }
 
 /// Read an image from a file into a string suitable for upload.
+///
+/// If the file's extension is `.png`, the claimed media type will be `image/png`, or `image/jpg`
+/// otherwise. Note that Discord may convert the image to JPEG or another format after upload.
 pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 	use std::io::Read;
 	let path = path.as_ref();

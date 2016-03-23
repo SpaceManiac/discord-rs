@@ -2,7 +2,7 @@ extern crate discord;
 
 use std::env;
 use discord::{Discord, State};
-use discord::voice::{VoiceConnection, AudioReceiver};
+use discord::voice::AudioReceiver;
 use discord::model::{Event, UserId};
 
 // A simple voice listener example.
@@ -17,8 +17,8 @@ impl AudioReceiver for VoiceTest {
 		println!("[{}] is {:?} -> {}", ssrc, user_id, speaking);
 	}
 
-	fn voice_packet(&mut self, ssrc: u32, sequence: u16, timestamp: u32, data: &[i16]) {
-		println!("[{}] ({}, {}) stereo = {}", ssrc, sequence, timestamp, data.len() == 1920);
+	fn voice_packet(&mut self, ssrc: u32, sequence: u16, timestamp: u32, stereo: bool, _data: &[i16]) {
+		println!("[{}] ({}, {}) stereo = {}", ssrc, sequence, timestamp, stereo);
 	}
 }
 
@@ -34,9 +34,7 @@ pub fn main() {
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
 	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
-	let mut voice = VoiceConnection::new(ready.user.id.clone());
 	let mut state = State::new(ready);
-	let mut current_channel = None;
 
 	// receive events forever
 	loop {
@@ -55,7 +53,6 @@ pub fn main() {
 			},
 		};
 		state.update(&event);
-		voice.update(&event);
 
 		match event {
 			Event::Closed(n) => {
@@ -75,40 +72,29 @@ pub fn main() {
 				let argument = split.next().unwrap_or("");
 
 				if first_word.eq_ignore_ascii_case("!listen") {
+					let voice_channel = state.find_voice_user(message.author.id);
 					if argument.eq_ignore_ascii_case("quit") || argument.eq_ignore_ascii_case("stop") {
-						connection.voice_disconnect();
+						if let Some((server_id, _)) = voice_channel {
+							connection.drop_voice(server_id);
+						}
 					} else {
-						let output = (|| {
-							for server in state.servers() {
-								for vstate in &server.voice_states {
-									if vstate.user_id == message.author.id {
-										if let Some(ref chan) = vstate.channel_id {
-											connection.voice_connect(&server.id, chan);
-											voice.set_receiver(Box::new(VoiceTest));
-											return String::new()
-										}
-									}
-								}
-							}
-							"You must be in a voice channel to use !listen".into()
-						})();
-						if output.len() > 0 {
-							warn(discord.send_message(&message.channel_id, &output, "", false));
+						if let Some((server_id, channel_id)) = voice_channel {
+							let voice = connection.voice(server_id);
+							voice.connect(channel_id);
+							voice.set_receiver(Box::new(VoiceTest));
+						} else {
+							warn(discord.send_message(&message.channel_id, "You must be in a voice channel.", "", false));
 						}
 					}
 				}
 			}
-			Event::VoiceStateUpdate(server_id, voice_state) => {
-				if voice_state.user_id == state.user().id {
-					current_channel = voice_state.channel_id.map(|c| (server_id, c));
-				} else if let Some((ref cur_server, ref cur_channel)) = current_channel {
-					// If we are in a voice channel, && someone on our server moves/hangs up,
-					if *cur_server == server_id {
-						// && our current voice channel is empty, disconnect from voice
-						if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-							if srv.voice_states.iter().filter(|vs| vs.channel_id.as_ref() == Some(cur_channel)).count() <= 1 {
-								connection.voice_disconnect();
-							}
+			Event::VoiceStateUpdate(server_id, _) => {
+				// If someone moves/hangs up, and we are in a voice channel,
+				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
+					// and our current voice channel is empty, disconnect from voice
+					if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
+						if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
+							connection.drop_voice(server_id);
 						}
 					}
 				}

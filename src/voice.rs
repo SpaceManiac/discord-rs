@@ -1,4 +1,7 @@
 //! Voice communication module.
+//!
+//! A `VoiceConnection` for a server is obtained from a `Connection`. It can then be used to
+//! join a channel, change mute/deaf status, and play and receive audio.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -95,7 +98,7 @@ impl VoiceConnection {
 		}
 	}
 
-	/// Connect to the specified voice channel. Any previous channel will be
+	/// Connect to the specified voice channel. Any previous channel on this server will be
 	/// disconnected from.
 	#[inline]
 	pub fn connect(&mut self, channel_id: ChannelId) {
@@ -111,6 +114,9 @@ impl VoiceConnection {
 	}
 
 	/// Set the mute status of the voice connection.
+	///
+	/// Note that enabling mute client-side is cosmetic and does not prevent the sending of audio;
+	/// to fully mute, you must manually silence the audio source.
 	#[inline]
 	pub fn set_mute(&mut self, mute: bool) {
 		self.mute = mute;
