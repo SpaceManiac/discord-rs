@@ -16,10 +16,6 @@ fn main() {
 	println!("Ready.");
 	loop {
 		match connection.recv_event() {
-			Ok(Event::Closed(n)) => {
-				println!("Discord closed on us with status {}", n);
-				break
-			}
 			Ok(Event::MessageCreate(message)) => {
 				println!("{} says: {}", message.author.name, message.content);
 				if message.content == "!test" {
@@ -30,6 +26,10 @@ fn main() {
 				}
 			}
 			Ok(_) => {}
+			Err(discord::Error::Closed(code, body)) => {
+				println!("Gateway closed on us with code {:?}: {}", code, String::from_utf8_lossy(&body));
+				break
+			}
 			Err(err) => println!("Receive error: {:?}", err)
 		}
 	}

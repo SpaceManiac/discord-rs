@@ -24,6 +24,8 @@ pub enum Error {
 	Io(IoError),
 	/// An error in the Opus library, with the function name and error code
 	Opus(OpusError),
+	/// A websocket connection was closed, possibly with a message
+	Closed(Option<u16>, Vec<u8>),
 	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, Value),
 	/// A generic non-success response from the REST API
@@ -112,6 +114,7 @@ impl StdError for Error {
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
 			Error::Opus(ref inner) => inner.description(),
+			Error::Closed(_, _) => "Connection closed",
 			Error::Decode(msg, _) => msg,
 			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::RateLimited(_) => "Rate limited",

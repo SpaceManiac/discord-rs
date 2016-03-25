@@ -1182,8 +1182,6 @@ pub enum Event {
 
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
-	/// A websocket "close" frame with the given status
-	Closed(u16),
 }
 
 impl Event {

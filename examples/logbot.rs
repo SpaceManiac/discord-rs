@@ -27,6 +27,10 @@ fn main() {
 		// Receive an event and update the state with it
 		let event = match connection.recv_event() {
 			Ok(event) => event,
+			Err(discord::Error::Closed(code, body)) => {
+				println!("[Error] Connection closed with status {:?}: {}", code, String::from_utf8_lossy(&body));
+				break
+			}
 			Err(err) => {
 				println!("[Warning] Receive error: {:?}", err);
 				continue
@@ -36,10 +40,6 @@ fn main() {
 
 		// Log messages
 		match event {
-			Event::Closed(n) => {
-				println!("[Error] Connection closed with status: {}", n);
-				break
-			},
 			Event::MessageCreate(message) => {
 				match state.find_channel(&message.channel_id) {
 					Some(ChannelRef::Public(server, channel)) => {

@@ -1,12 +1,8 @@
-use super::{Result, Error};
-
 use std::sync::mpsc;
 use std::collections::HashMap;
 
-use websocket::ws::sender::Sender as SenderTrait;
 use websocket::client::{Client, Sender, Receiver};
 use websocket::stream::WebSocketStream;
-use websocket::message::{Message as WsMessage, Type as MessageType};
 
 use serde_json;
 use serde_json::builder::ObjectBuilder;
@@ -14,6 +10,7 @@ use serde_json::builder::ObjectBuilder;
 use model::*;
 use internal::Status;
 use voice::VoiceConnection;
+use {Result, Error, SenderExt, ReceiverExt};
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
@@ -58,10 +55,10 @@ impl Connection {
 				.insert("v", ::GATEWAY_VERSION)
 			)
 			.unwrap();
-		try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
+		try!(sender.send_json(&map));
 
 		// read the Ready event
-		let event = try!(recv_message(&mut receiver));
+		let event = try!(receiver.recv_json(Event::decode));
 		let ready = match event {
 			Event::Ready(ready) => ready,
 			_ => return Err(Error::Protocol("First event was not Ready"))
@@ -113,7 +110,7 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		match recv_message(&mut self.receiver) {
+		match self.receiver.recv_json(Event::decode) {
 			Ok(Event::_ChangeGateway(url)) => {
 				let (conn, ready) = try!(Connection::new(&url, &self.token));
 				try!(::std::mem::replace(self, conn).shutdown());
@@ -151,28 +148,6 @@ impl Connection {
 	}
 }
 
-fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<Event> {
-	use websocket::ws::receiver::Receiver;
-	let message: WsMessage = try!(receiver.recv_message());
-	if message.opcode == MessageType::Close {
-		Ok(Event::Closed(message.cd_status_code.unwrap_or(0xffff)))
-	} else if message.opcode != MessageType::Text {
-		warn!("Unexpected message: {:?}", message);
-		Ok(Event::Closed(0xfffe))
-	} else {
-		let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));
-		let original = format!("{:?}", json);
-		match Event::decode(json) {
-			Ok(event) => Ok(event),
-			Err(err) => {
-				// If there was a decode failure, print the original json for debugging
-				warn!("Error decoding: {}", original);
-				Err(err)
-			}
-		}
-	}
-}
-
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
 	let mut game = None;
 	let mut timer = ::Timer::new(interval);
@@ -187,13 +162,9 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 					timer.immediately();
 				},
 				Ok(Status::SendMessage(val)) => {
-					let json = match serde_json::to_string(&val) {
-						Ok(json) => json,
-						Err(e) => return warn!("Error encoding message: {:?}", e)
-					};
-					match sender.send_message(&WsMessage::text(json)) {
+					match sender.send_json(&val) {
 						Ok(()) => {},
-						Err(e) => return warn!("Error sending message: {:?}", e)
+						Err(e) => warn!("Error sending gateway message: {:?}", e)
 					}
 				},
 				Err(mpsc::TryRecvError::Empty) => break,
@@ -214,13 +185,9 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 					}
 				})
 				.unwrap();
-			let json = match serde_json::to_string(&map) {
-				Ok(json) => json,
-				Err(e) => return warn!("Error encoding keepalive: {:?}", e)
-			};
-			match sender.send_message(&WsMessage::text(json)) {
+			match sender.send_json(&map) {
 				Ok(()) => {},
-				Err(e) => return warn!("Error sending keepalive: {:?}", e)
+				Err(e) => warn!("Error sending gateway keeaplive: {:?}", e)
 			}
 		}
 	}

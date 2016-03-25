@@ -13,13 +13,11 @@ use opus;
 use serde_json;
 use serde_json::builder::ObjectBuilder;
 use sodiumoxide::crypto::secretbox as crypto;
-use websocket::ws::sender::Sender as SenderTrait;
-use websocket::client::{Client, Sender, Receiver};
+use websocket::client::{Client, Sender};
 use websocket::stream::WebSocketStream;
-use websocket::message::{Message as WsMessage, Type as MessageType};
 
 use model::*;
-use {Result, Error};
+use {Result, Error, SenderExt, ReceiverExt};
 
 /// An active or inactive voice connection, obtained from `Connection::voice`.
 pub struct VoiceConnection {
@@ -469,10 +467,10 @@ impl InternalConnection {
 				.insert("token", token)
 			)
 			.unwrap();
-		try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
+		try!(sender.send_json(&map));
 
 		// read the first websocket message
-		let (interval, port, ssrc, modes) = match try!(recv_message(&mut receiver)) {
+		let (interval, port, ssrc, modes) = match try!(receiver.recv_json(VoiceEvent::decode)) {
 			VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
 			_ => return Err(Error::Protocol("First voice event was not Handshake"))
 		};
@@ -516,13 +514,13 @@ impl InternalConnection {
 					)
 				)
 				.unwrap();
-			try!(sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))));
+			try!(sender.send_json(&map));
 		}
 
 		// discard websocket messages until we get the Ready
 		let encryption_key;
 		loop {
-			match try!(recv_message(&mut receiver)) {
+			match try!(receiver.recv_json(VoiceEvent::decode)) {
 				VoiceEvent::Ready { mode, secret_key } => {
 					encryption_key = crypto::Key::from_slice(&secret_key).expect("failed to create key");
 					if mode != "xsalsa20_poly1305" {
@@ -544,7 +542,7 @@ impl InternalConnection {
 			let udp_clone = try!(udp.try_clone());
 			try!(::std::thread::Builder::new()
 				.name(format!("{} (WS reader)", thread_name))
-				.spawn(move || while let Ok(msg) = recv_message(&mut receiver) {
+				.spawn(move || while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
 					match tx1.send(RecvStatus::Websocket(msg)) {
 						Ok(()) => {},
 						Err(_) => return
@@ -633,8 +631,7 @@ impl InternalConnection {
 				.insert("op", 3)
 				.insert("d", serde_json::Value::Null)
 				.unwrap();
-			let json = try!(serde_json::to_string(&map));
-			try!(self.sender.send_message(&WsMessage::text(json)));
+			try!(self.sender.send_json(&map));
 		}
 
 		// Send the UDP keepalive if needed
@@ -717,7 +714,7 @@ impl InternalConnection {
 				.insert("delay", 0)
 			)
 			.unwrap();
-		self.sender.send_message(&WsMessage::text(try!(serde_json::to_string(&map)))).map_err(From::from)
+		self.sender.send_json(&map)
 	}
 }
 
@@ -732,20 +729,4 @@ impl Drop for InternalConnection {
 enum RecvStatus {
 	Websocket(VoiceEvent),
 	Udp(Vec<u8>),
-}
-
-fn recv_message(receiver: &mut Receiver<WebSocketStream>) -> Result<VoiceEvent> {
-	use websocket::ws::receiver::Receiver;
-	let message: WsMessage = try!(receiver.recv_message());
-	if message.opcode != MessageType::Text {
-		warn!("Closed on with code {:?} {:?}", message.cd_status_code, ::std::str::from_utf8(&message.payload));
-		return Err(Error::Protocol("Voice websocket message was not Text"))
-	}
-	let json: serde_json::Value = try!(serde_json::from_reader(&message.payload[..]));
-	let original = format!("{:?}", json);
-	VoiceEvent::decode(json).map_err(|err| {
-		// If there was a decode failure, print the original json for debugging
-		warn!("Error vdecoding: {}", original);
-		err
-	})
 }

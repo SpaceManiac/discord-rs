@@ -37,16 +37,15 @@ pub fn main() {
 					state = State::new(ready);
 					println!("[Ready] Reconnected successfully.");
 				}
+				if let discord::Error::Closed(..) = err {
+					break
+				}
 				continue
 			},
 		};
 		state.update(&event);
 
 		match event {
-			Event::Closed(n) => {
-				println!("[Error] Connection closed with status: {}", n);
-				break
-			},
 			Event::MessageCreate(message) => {
 				use std::ascii::AsciiExt;
 				// safeguard: stop if the message is from us
