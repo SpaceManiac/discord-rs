@@ -170,8 +170,7 @@ impl Discord {
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
 		Ok(Discord {
 			client: hyper::Client::new(),
-			// TODO: use "Bot {}" when the gateway bug is fixed
-			token: format!("{}", token),
+			token: format!("Bot {}", token),
 		})
 	}
 
