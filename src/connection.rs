@@ -83,7 +83,17 @@ impl Connection {
 
 	/// Change the game information that this client reports as playing.
 	pub fn set_game(&self, game: Option<Game>) {
-		let _ = self.keepalive_channel.send(Status::SetGame(game));
+		let msg = ObjectBuilder::new()
+			.insert("op", 3)
+			.insert_object("d", move |mut object| {
+				object = object.insert("idle_since", serde_json::Value::Null);
+				match game {
+					Some(game) => object.insert_object("game", move |o| o.insert("name", game.name)),
+					None => object.insert("game", serde_json::Value::Null),
+				}
+			})
+			.unwrap();
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
 	/// Set the client to be playing this game, with defaults used for any
@@ -149,7 +159,6 @@ impl Connection {
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
-	let mut game = None;
 	let mut timer = ::Timer::new(interval);
 
 	'outer: loop {
@@ -157,10 +166,6 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 
 		loop {
 			match channel.try_recv() {
-				Ok(Status::SetGame(new_game)) => {
-					game = new_game;
-					timer.immediately();
-				},
 				Ok(Status::SendMessage(val)) => {
 					match sender.send_json(&val) {
 						Ok(()) => {},
@@ -174,16 +179,8 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 
 		if timer.check_tick() {
 			let map = ObjectBuilder::new()
-				.insert("op", 3)
-				.insert_object("d", |mut object| {
-					object = object.insert("idle_since", serde_json::Value::Null);
-					match game {
-						Some(ref game) => object.insert_object("game", |object| object
-							.insert("name", &game.name)
-						),
-						None => object.insert("game", serde_json::Value::Null),
-					}
-				})
+				.insert("op", 1)
+				.insert("d", ::time::get_time().sec)
 				.unwrap();
 			match sender.send_json(&map) {
 				Ok(()) => {},

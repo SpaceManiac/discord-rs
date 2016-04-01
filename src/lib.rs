@@ -703,6 +703,7 @@ impl Timer {
 		}
 	}
 
+	#[allow(dead_code)]
 	fn immediately(&mut self) {
 		self.next_tick_at = time::get_time();
 	}
@@ -768,7 +769,7 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 
 mod internal {
 	pub enum Status {
-		SetGame(Option<::model::Game>),
+		//SetGame(Option<::model::Game>),
 		SendMessage(::serde_json::Value),
 	}
 }
