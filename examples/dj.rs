@@ -12,12 +12,7 @@ use discord::model::Event;
 
 pub fn main() {
 	// log in to the API
-	let args: Vec<_> = env::args().collect();
-	let discord = Discord::new_cache(
-		"tokens.txt",
-		args.get(1).expect("No email specified"),
-		args.get(2).map(|x| &**x),
-	).expect("Login failed");
+	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Bad DISCORD_TOKEN")).expect("Login failed");
 
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
@@ -59,28 +54,26 @@ pub fn main() {
 				let argument = split.next().unwrap_or("");
 
 				if first_word.eq_ignore_ascii_case("!dj") {
+					let vchan = state.find_voice_user(message.author.id);
 					if argument.eq_ignore_ascii_case("stop") {
-						if let Some((server_id, _)) = state.find_voice_user(message.author.id) {
-							connection.voice(server_id).stop();
-						}
+						vchan.map(|(sid, _)| connection.voice(sid).stop());
 					} else if argument.eq_ignore_ascii_case("quit") {
-						if let Some((server_id, _)) = state.find_voice_user(message.author.id) {
-							connection.voice(server_id).disconnect();
-						}
+						vchan.map(|(sid, _)| connection.drop_voice(sid));
 					} else {
-						let output = (|| {
-							if let Some((server_id, channel_id)) = state.find_voice_user(message.author.id) {
-								let stream = match discord::voice::open_ytdl_stream(&argument) {
-									Ok(stream) => stream,
-									Err(error) => return format!("Error: {}", error),
-								};
-								let voice = connection.voice(server_id);
-								voice.connect(channel_id);
-								voice.play(stream);
-								return String::new()
+						let output = if let Some((server_id, channel_id)) = vchan {
+							match discord::voice::open_ytdl_stream(&argument) {
+								Ok(stream) => {
+									let voice = connection.voice(server_id);
+									voice.set_deaf(true);
+									voice.connect(channel_id);
+									voice.play(stream);
+									String::new()
+								},
+								Err(error) => format!("Error: {}", error),
 							}
-							"You must be in a voice channel to DJ".into()
-						})();
+						} else {
+							"You must be in a voice channel to DJ".to_owned()
+						};
 						if output.len() > 0 {
 							warn(discord.send_message(&message.channel_id, &output, "", false));
 						}
