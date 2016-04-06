@@ -834,6 +834,33 @@ impl LiveServer {
 	}
 }
 
+/// A server which may be unavailable
+#[derive(Debug, Clone)]
+pub enum PossibleServer {
+	/// An offline server, the ID of which is known
+	Offline(ServerId),
+	/// An online server, for which a `LiveServer` is available
+	Online(LiveServer),
+}
+
+impl PossibleServer {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		if remove(&mut value, "unavailable").ok().and_then(|v| v.as_boolean()).unwrap_or(false) {
+			remove(&mut value, "id").and_then(ServerId::decode).map(PossibleServer::Offline)
+		} else {
+			LiveServer::decode(Value::Object(value)).map(PossibleServer::Online)
+		}
+	}
+
+	pub fn id(&self) -> ServerId {
+		match *self {
+			PossibleServer::Offline(id) => id,
+			PossibleServer::Online(ref ls) => ls.id,
+		}
+	}
+}
+
 /// Information about the logged-in user
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
@@ -1066,7 +1093,7 @@ pub struct ReadyEvent {
 	pub private_channels: Vec<PrivateChannel>,
 	pub presences: Vec<Presence>,
 	pub relationships: Vec<Relationship>,
-	pub servers: Vec<LiveServer>,
+	pub servers: Vec<PossibleServer>,
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
 }
@@ -1146,7 +1173,7 @@ pub enum Event {
 		message_id: MessageId,
 	},
 
-	ServerCreate(LiveServer),
+	ServerCreate(PossibleServer),
 	ServerUpdate(Server),
 	ServerDelete(Server),
 
@@ -1214,7 +1241,7 @@ impl Event {
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 				relationships: try!(remove(&mut value, "relationships").and_then(|v| decode_array(v, Relationship::decode))),
-				servers: try!(decode_array(try!(remove(&mut value, "guilds")), LiveServer::decode)),
+				servers: try!(decode_array(try!(remove(&mut value, "guilds")), PossibleServer::decode)),
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
@@ -1296,7 +1323,7 @@ impl Event {
 				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
-			LiveServer::decode(Value::Object(value)).map(Event::ServerCreate)
+			PossibleServer::decode(Value::Object(value)).map(Event::ServerCreate)
 		} else if kind == "GUILD_UPDATE" {
 			Server::decode(Value::Object(value)).map(Event::ServerUpdate)
 		} else if kind == "GUILD_DELETE" {

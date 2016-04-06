@@ -9,6 +9,7 @@ pub struct State {
 	session_id: String,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
+	unavailable_servers: Vec<ServerId>,
 	presences: Vec<Presence>,
 	relationships: Vec<Relationship>
 }
@@ -19,13 +20,22 @@ impl State {
 		if ready.version != ::GATEWAY_VERSION {
 			warn!("Got protocol version {} instead of {}", ready.version, ::GATEWAY_VERSION);
 		}
+		let mut servers = Vec::new();
+		let mut unavailable = Vec::new();
+		for server in ready.servers {
+			match server {
+				PossibleServer::Offline(id) => unavailable.push(id),
+				PossibleServer::Online(id) => servers.push(id),
+			}
+		}
 		State {
 			user: ready.user,
 			settings: ready.user_settings,
 			server_settings: ready.user_server_settings,
 			session_id: ready.session_id,
 			private_channels: ready.private_channels,
-			servers: ready.servers,
+			servers: servers,
+			unavailable_servers: unavailable,
 			presences: ready.presences,
 			relationships: ready.relationships,
 		}
@@ -136,7 +146,16 @@ impl State {
 			Event::RelationshipRemove(user_id, _) => {
 				self.relationships.retain(|r| r.id != user_id);
 			}
-			Event::ServerCreate(ref server) => self.servers.push(server.clone()),
+			Event::ServerCreate(PossibleServer::Offline(server_id)) => {
+				self.servers.retain(|s| s.id != server_id);
+				if !self.unavailable_servers.contains(&server_id) {
+					self.unavailable_servers.push(server_id);
+				}
+			}
+			Event::ServerCreate(PossibleServer::Online(ref server)) => {
+				self.unavailable_servers.retain(|&id| id != server.id);
+				self.servers.push(server.clone())
+			}
 			Event::ServerUpdate(ref server) => {
 				self.servers.iter_mut().find(|s| s.id == server.id).map(|srv| {
 					srv.name.clone_from(&server.name);

@@ -13,15 +13,13 @@ fn main() {
 
 	// Establish the websocket connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
-	let channel_count: usize = ready.servers.iter()
+	let mut state = State::new(ready);
+	let channel_count: usize = state.servers().iter()
 		.map(|srv| srv.channels.iter()
 			.filter(|chan| chan.kind == ChannelType::Text)
 			.count()
 		).fold(0, |v, s| v + s);
-	println!("[Ready] {} logging {} servers with {} text channels", ready.user.username, ready.servers.len(), channel_count);
-
-	// Initialize the state
-	let mut state = State::new(ready);
+	println!("[Ready] {} logging {} servers with {} text channels", state.user().username, state.servers().len(), channel_count);
 
 	loop {
 		// Receive an event and update the state with it
