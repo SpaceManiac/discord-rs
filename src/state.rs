@@ -17,9 +17,6 @@ pub struct State {
 impl State {
 	/// Create a new state from an initial `ReadyEvent`.
 	pub fn new(ready: ReadyEvent) -> State {
-		if ready.version != ::GATEWAY_VERSION {
-			warn!("Got protocol version {} instead of {}", ready.version, ::GATEWAY_VERSION);
-		}
 		let mut servers = Vec::new();
 		let mut unavailable = Vec::new();
 		for server in ready.servers {

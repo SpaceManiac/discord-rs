@@ -32,7 +32,7 @@ impl Connection {
 	pub fn new(url: &str, token: &str) -> Result<(Connection, ReadyEvent)> {
 		debug!("Gateway: {}", url);
 		// establish the websocket connection
-		let url = match ::websocket::client::request::Url::parse(url) {
+		let url = match ::websocket::client::request::Url::parse(&format!("{}?v={}", url, ::GATEWAY_VERSION)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in Connection::new()"))
 		};
@@ -41,28 +41,27 @@ impl Connection {
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the handshake
-		let map = ObjectBuilder::new()
-			.insert("op", 2)
-			.insert_object("d", |object| object
-				.insert("token", token)
-				.insert_object("properties", |object| object
-					.insert("$os", ::std::env::consts::OS)
-					.insert("$browser", "Discord library for Rust")
-					.insert("$device", "discord-rs")
-					.insert("$referring_domain", "")
-					.insert("$referrer", "")
-				)
-				.insert("v", ::GATEWAY_VERSION)
-			)
-			.unwrap();
-		try!(sender.send_json(&map));
+		let identify = identify(token);
+		try!(sender.send_json(&identify));
 
 		// read the Ready event
-		let event = try!(receiver.recv_json(Event::decode));
-		let ready = match event {
-			Event::Ready(ready) => ready,
-			_ => return Err(Error::Protocol("First event was not Ready"))
-		};
+		let ready;
+		loop {
+			match try!(receiver.recv_json(GatewayEvent::decode)) {
+				GatewayEvent::Dispatch(_, Event::Ready(event)) => { ready = event; break },
+				GatewayEvent::InvalidateSession => {
+					debug!("Session invalidated, reidentifying");
+					try!(sender.send_json(&identify))
+				}
+				other => {
+					debug!("Unexpected event: {:?}", other);
+					return Err(Error::Protocol("Unexpected event during connection open"))
+				}
+			}
+		}
+		if ready.version != ::GATEWAY_VERSION {
+			warn!("Got protocol version {} instead of {}", ready.version, ::GATEWAY_VERSION);
+		}
 		let heartbeat_interval = ready.heartbeat_interval;
 
 		// spawn the keepalive thread
@@ -120,21 +119,41 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		match self.receiver.recv_json(Event::decode) {
-			Ok(Event::_ChangeGateway(url)) => {
+		match self.receiver.recv_json(GatewayEvent::decode) {
+			Err(error) => Err(error),
+			Ok(GatewayEvent::Dispatch(_sequence, event)) => {
+				// TODO sequence num
+				Ok(match event {
+					Event::VoiceStateUpdate(server_id, voice_state) => {
+						self.voice(server_id).__update_state(&voice_state);
+						Event::VoiceStateUpdate(server_id, voice_state)
+					}
+					Event::VoiceServerUpdate { server_id, endpoint, token } => {
+						self.voice(server_id).__update_server(&endpoint, &token);
+						Event::VoiceServerUpdate { server_id: server_id, endpoint: endpoint, token: token }
+					}
+					other => other
+				})
+			}
+			Ok(GatewayEvent::Heartbeat(sequence)) => {
+				debug!("Heartbeat received with seq {}", sequence);
+				let map = ObjectBuilder::new()
+					.insert("op", 1)
+					.insert("d", sequence)
+					.unwrap();
+				let _ = self.keepalive_channel.send(Status::SendMessage(map));
+				self.recv_event()
+			}
+			Ok(GatewayEvent::Reconnect(url)) => {
 				let (conn, ready) = try!(Connection::new(&url, &self.token));
 				try!(::std::mem::replace(self, conn).shutdown());
 				Ok(Event::GatewayChanged(url, ready))
 			}
-			Ok(Event::VoiceStateUpdate(server_id, voice_state)) => {
-				self.voice(server_id).__update_state(&voice_state);
-				Ok(Event::VoiceStateUpdate(server_id, voice_state))
+			Ok(GatewayEvent::InvalidateSession) => {
+				debug!("Session invalidated, reidentifying");
+				let _ = self.keepalive_channel.send(Status::SendMessage(identify(&self.token)));
+				self.recv_event()
 			}
-			Ok(Event::VoiceServerUpdate { server_id, endpoint, token }) => {
-				self.voice(server_id).__update_server(&endpoint, &token);
-				Ok(Event::VoiceServerUpdate { server_id: server_id, endpoint: endpoint, token: token })
-			}
-			other => other
 		}
 	}
 
@@ -156,6 +175,23 @@ impl Connection {
 			.unwrap();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
+}
+
+fn identify(token: &str) -> serde_json::Value {
+	ObjectBuilder::new()
+		.insert("op", 2)
+		.insert_object("d", |object| object
+			.insert("token", token)
+			.insert_object("properties", |object| object
+				.insert("$os", ::std::env::consts::OS)
+				.insert("$browser", "Discord library for Rust")
+				.insert("$device", "discord-rs")
+				.insert("$referring_domain", "")
+				.insert("$referrer", "")
+			)
+			.insert("v", ::GATEWAY_VERSION)
+		)
+		.unwrap()
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {

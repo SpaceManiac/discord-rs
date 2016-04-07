@@ -1201,36 +1201,22 @@ pub enum Event {
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
 
-	// Used by Connection internally and turned into GatewayChanged
-	#[doc(hidden)]
-	_ChangeGateway(String),
 	/// The connection's gateway has changed and a new Ready is available
 	GatewayChanged(String, ReadyEvent),
 
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
+	// Any other event. Should never be used directly.
+	#[doc(hidden)]
+	__Nonexhaustive,
 }
 
 impl Event {
-	pub fn decode(value: Value) -> Result<Event> {
-		let mut value = try!(into_map(value));
-
-		let op = req!(req!(value.remove("op")).as_u64());
-		if op == 7 {
-			let mut value = try!(remove(&mut value, "d").and_then(into_map));
-			return warn_json!(value, Event::_ChangeGateway(
-				try!(remove(&mut value, "url").and_then(into_string))
-			))
-		} else if op != 0 {
-			value.insert("op".into(), Value::U64(op));
-			return Err(Error::Decode("Expected opcode 7 or 0", Value::Object(value)))
-		}
-
-		let kind = try!(remove(&mut value, "t").and_then(into_string));
+	fn decode(kind: String, value: Value) -> Result<Event> {
 		if kind == "PRESENCES_REPLACE" {
-			return Ok(Event::PresencesReplace(try!(remove(&mut value, "d").and_then(|v| decode_array(v, Presence::decode)))));
+			return decode_array(value, Presence::decode).map(Event::PresencesReplace);
 		}
-		let mut value = try!(remove(&mut value, "d").and_then(into_map));
+		let mut value = try!(into_map(value));
 		if kind == "READY" {
 			warn_json!(@"Event::Ready", value, Event::Ready(ReadyEvent {
 				version: req!(try!(remove(&mut value, "v")).as_u64()),
@@ -1391,6 +1377,44 @@ impl Event {
 			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
 		} else {
 			Ok(Event::Unknown(kind, value))
+		}
+	}
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub enum GatewayEvent {
+	Dispatch(u64, Event),
+	Heartbeat(u64),
+	Reconnect(String),
+	InvalidateSession,
+}
+
+impl GatewayEvent {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+
+		let op = req!(value.get("op").and_then(|x| x.as_u64()));
+		if op == 0 {
+			Ok(GatewayEvent::Dispatch(
+				req!(try!(remove(&mut value, "s")).as_u64()),
+				try!(Event::decode(
+					try!(remove(&mut value, "t").and_then(into_string)),
+					try!(remove(&mut value, "d"))
+				))
+			))
+		} else if op == 1 {
+			Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64())))
+		} else if op == 7 {
+			debug!("For op7, sequence = {:?}", value.get("s"));
+			let mut value = try!(remove(&mut value, "d").and_then(into_map));
+			return warn_json!(value, GatewayEvent::Reconnect(
+				try!(remove(&mut value, "url").and_then(into_string))
+			))
+		} else if op == 9 {
+			Ok(GatewayEvent::InvalidateSession)
+		} else {
+			Err(Error::Decode("Unexpected opcode", Value::Object(value)))
 		}
 	}
 }
