@@ -429,6 +429,7 @@ struct InternalConnection {
 	sequence: u16,
 	timestamp: u32,
 	speaking: bool,
+	silence_frames: u8,
 	decoder_map: HashMap<(u32, opus::Channels), opus::Decoder>,
 	encoder: opus::Encoder,
 	encoder_stereo: bool,
@@ -575,6 +576,7 @@ impl InternalConnection {
 			sequence: 0,
 			timestamp: 0,
 			speaking: false,
+			silence_frames: 0,
 
 			decoder_map: HashMap::new(),
 			encoder: try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::CodingMode::Audio)),
@@ -664,9 +666,18 @@ impl InternalConnection {
 		if len == 0 {
 			// stop speaking, don't send any audio
 			try!(self.set_speaking(false));
-			audio_timer.sleep_until_tick();
-			return Ok(());
-		} else if len < audio_buffer.len() {
+			if self.silence_frames > 0 {
+				// send a few frames of silence; could be optimized to be pre-encoded
+				self.silence_frames -= 1;
+				for value in &mut audio_buffer[..] {
+					*value = 0;
+				}
+			} else {
+				audio_timer.sleep_until_tick();
+				return Ok(());
+			}
+		} else {
+			self.silence_frames = 5;
 			// zero-fill the rest of the buffer
 			for value in &mut audio_buffer[len..] {
 				*value = 0;
