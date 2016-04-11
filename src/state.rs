@@ -68,7 +68,6 @@ impl State {
 	pub fn update(&mut self, event: &Event) {
 		match *event {
 			Event::Ready(ref ready) => *self = State::new(ready.clone()),
-			Event::GatewayChanged(_, ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => self.user = user.clone(),
 			Event::UserSettingsUpdate {
 				ref enable_tts_command, ref inline_attachment_media,

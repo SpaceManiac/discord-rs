@@ -1096,13 +1096,23 @@ pub struct ReadyEvent {
 	pub servers: Vec<PossibleServer>,
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
+	/// The trace of servers involved in this connection.
+	pub trace: Vec<String>,
 }
 
 /// Event received over a websocket connection
 #[derive(Debug, Clone)]
 pub enum Event {
-	/// The first event in a connection, containing the initial state
+	/// The first event in a connection, containing the initial state.
+	///
+	/// May also be received at a later time in the event of a reconnect.
 	Ready(ReadyEvent),
+	/// The connection has successfully resumed after a disconnect.
+	Resumed {
+		heartbeat_interval: u64,
+		trace: Vec<String>,
+	},
+
 	/// Update to the logged-in user's information
 	UserUpdate(CurrentUser),
 	/// Update to the logged-in user's preferences or client settings
@@ -1201,9 +1211,6 @@ pub enum Event {
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
 
-	/// The connection's gateway has changed and a new Ready is available
-	GatewayChanged(String, ReadyEvent),
-
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
 	// Any other event. Should never be used directly.
@@ -1231,7 +1238,13 @@ impl Event {
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
+				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, into_string))),
 			}))
+		} else if kind == "RESUMED" {
+			warn_json!(value, Event::Resumed {
+				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
+				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, into_string))),
+			})
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else if kind == "USER_SETTINGS_UPDATE" {
@@ -1386,7 +1399,7 @@ impl Event {
 pub enum GatewayEvent {
 	Dispatch(u64, Event),
 	Heartbeat(u64),
-	Reconnect(String),
+	Reconnect,
 	InvalidateSession,
 }
 
@@ -1406,11 +1419,7 @@ impl GatewayEvent {
 		} else if op == 1 {
 			Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64())))
 		} else if op == 7 {
-			debug!("For op7, sequence = {:?}", value.get("s"));
-			let mut value = try!(remove(&mut value, "d").and_then(into_map));
-			return warn_json!(value, GatewayEvent::Reconnect(
-				try!(remove(&mut value, "url").and_then(into_string))
-			))
+			Ok(GatewayEvent::Reconnect)
 		} else if op == 9 {
 			Ok(GatewayEvent::InvalidateSession)
 		} else {

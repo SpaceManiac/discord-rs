@@ -300,6 +300,7 @@ impl Discord {
 		};
 		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
 		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
+		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
 		let mut request = try!(multipart::client::Multipart::from_request(request));
 		try!(request.write_text("content", text));
 		try!(request.write_stream("file", &mut file, Some(filename), None));
@@ -769,7 +770,9 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 
 mod internal {
 	pub enum Status {
-		//SetGame(Option<::model::Game>),
 		SendMessage(::serde_json::Value),
+		Sequence(u64),
+		ChangeInterval(u64),
+		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
 	}
 }
