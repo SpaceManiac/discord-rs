@@ -151,6 +151,7 @@ impl VoiceConnection {
 	#[doc(hidden)]
 	pub fn __update_state(&mut self, voice_state: &VoiceState) {
 		if voice_state.user_id == self.user_id {
+			self.channel_id = voice_state.channel_id;
 			if voice_state.channel_id.is_some() {
 				let session_id = voice_state.session_id.clone();
 				if let Some((endpoint, token)) = self.endpoint_token.take() {
