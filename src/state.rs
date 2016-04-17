@@ -142,7 +142,8 @@ impl State {
 			Event::RelationshipRemove(user_id, _) => {
 				self.relationships.retain(|r| r.id != user_id);
 			}
-			Event::ServerCreate(PossibleServer::Offline(server_id)) => {
+			Event::ServerCreate(PossibleServer::Offline(server_id)) |
+			Event::ServerDelete(PossibleServer::Offline(server_id)) => {
 				self.servers.retain(|s| s.id != server_id);
 				if !self.unavailable_servers.contains(&server_id) {
 					self.unavailable_servers.push(server_id);
@@ -151,6 +152,9 @@ impl State {
 			Event::ServerCreate(PossibleServer::Online(ref server)) => {
 				self.unavailable_servers.retain(|&id| id != server.id);
 				self.servers.push(server.clone())
+			}
+			Event::ServerDelete(PossibleServer::Online(ref server)) => {
+				self.servers.retain(|s| s.id != server.id);
 			}
 			Event::ServerUpdate(ref server) => {
 				self.servers.iter_mut().find(|s| s.id == server.id).map(|srv| {
@@ -165,7 +169,6 @@ impl State {
 					srv.verification_level = server.verification_level;
 				});
 			}
-			Event::ServerDelete(ref server) => self.servers.retain(|s| s.id != server.id),
 			Event::ServerMemberAdd(ref server_id, ref member) => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
 					srv.member_count += 1;

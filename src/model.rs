@@ -836,20 +836,38 @@ impl LiveServer {
 
 /// A server which may be unavailable
 #[derive(Debug, Clone)]
-pub enum PossibleServer {
+pub enum PossibleServer<T> {
 	/// An offline server, the ID of which is known
 	Offline(ServerId),
-	/// An online server, for which a `LiveServer` is available
-	Online(LiveServer),
+	/// An online server, for which more information is available
+	Online(T),
 }
 
-impl PossibleServer {
+impl PossibleServer<LiveServer> {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
 		if remove(&mut value, "unavailable").ok().and_then(|v| v.as_boolean()).unwrap_or(false) {
 			remove(&mut value, "id").and_then(ServerId::decode).map(PossibleServer::Offline)
 		} else {
 			LiveServer::decode(Value::Object(value)).map(PossibleServer::Online)
+		}
+	}
+
+	pub fn id(&self) -> ServerId {
+		match *self {
+			PossibleServer::Offline(id) => id,
+			PossibleServer::Online(ref ls) => ls.id,
+		}
+	}
+}
+
+impl PossibleServer<Server> {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		if remove(&mut value, "unavailable").ok().and_then(|v| v.as_boolean()).unwrap_or(false) {
+			remove(&mut value, "id").and_then(ServerId::decode).map(PossibleServer::Offline)
+		} else {
+			Server::decode(Value::Object(value)).map(PossibleServer::Online)
 		}
 	}
 
@@ -1093,7 +1111,7 @@ pub struct ReadyEvent {
 	pub private_channels: Vec<PrivateChannel>,
 	pub presences: Vec<Presence>,
 	pub relationships: Vec<Relationship>,
-	pub servers: Vec<PossibleServer>,
+	pub servers: Vec<PossibleServer<LiveServer>>,
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
 	/// The trace of servers involved in this connection.
@@ -1183,9 +1201,9 @@ pub enum Event {
 		message_id: MessageId,
 	},
 
-	ServerCreate(PossibleServer),
+	ServerCreate(PossibleServer<LiveServer>),
 	ServerUpdate(Server),
-	ServerDelete(Server),
+	ServerDelete(PossibleServer<Server>),
 
 	ServerMemberAdd(ServerId, Member),
 	/// A member's roles have changed
@@ -1234,7 +1252,7 @@ impl Event {
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 				relationships: try!(remove(&mut value, "relationships").and_then(|v| decode_array(v, Relationship::decode))),
-				servers: try!(decode_array(try!(remove(&mut value, "guilds")), PossibleServer::decode)),
+				servers: try!(decode_array(try!(remove(&mut value, "guilds")), PossibleServer::<LiveServer>::decode)),
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
@@ -1322,11 +1340,11 @@ impl Event {
 				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
-			PossibleServer::decode(Value::Object(value)).map(Event::ServerCreate)
+			PossibleServer::<LiveServer>::decode(Value::Object(value)).map(Event::ServerCreate)
 		} else if kind == "GUILD_UPDATE" {
 			Server::decode(Value::Object(value)).map(Event::ServerUpdate)
 		} else if kind == "GUILD_DELETE" {
-			Server::decode(Value::Object(value)).map(Event::ServerDelete)
+			PossibleServer::<Server>::decode(Value::Object(value)).map(Event::ServerDelete)
 		} else if kind == "GUILD_MEMBER_ADD" {
 			Ok(Event::ServerMemberAdd(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
