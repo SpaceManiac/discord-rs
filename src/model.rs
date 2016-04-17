@@ -1097,7 +1097,7 @@ pub struct ReadyEvent {
 	pub user_server_settings: Option<Vec<UserServerSettings>>,
 	pub tutorial: Option<Tutorial>,
 	/// The trace of servers involved in this connection.
-	pub trace: Vec<String>,
+	pub trace: Vec<Option<String>>,
 }
 
 /// Event received over a websocket connection
@@ -1110,7 +1110,7 @@ pub enum Event {
 	/// The connection has successfully resumed after a disconnect.
 	Resumed {
 		heartbeat_interval: u64,
-		trace: Vec<String>,
+		trace: Vec<Option<String>>,
 	},
 
 	/// Update to the logged-in user's information
@@ -1238,12 +1238,12 @@ impl Event {
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
-				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, into_string))),
+				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			}))
 		} else if kind == "RESUMED" {
 			warn_json!(value, Event::Resumed {
 				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
-				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, into_string))),
+				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			})
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
