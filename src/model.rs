@@ -182,6 +182,7 @@ pub struct Role {
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
+	pub mentionable: bool,
 	pub permissions: Permissions,
 }
 
@@ -196,6 +197,7 @@ impl Role {
 			hoist: req!(try!(remove(&mut value, "hoist")).as_boolean()),
 			managed: req!(try!(remove(&mut value, "managed")).as_boolean()),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
+			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
 		})
 	}
 }
@@ -234,6 +236,7 @@ impl User {
 pub struct Member {
 	pub user: User,
 	pub roles: Vec<RoleId>,
+	pub nick: Option<String>,
 	pub joined_at: String,
 	pub mute: bool,
 	pub deaf: bool,
@@ -245,10 +248,19 @@ impl Member {
 		warn_json!(value, Member {
 			user: try!(remove(&mut value, "user").and_then(User::decode)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
+			nick: try!(opt(&mut value, "nick", into_string)),
 			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
 			mute: req!(try!(remove(&mut value, "mute")).as_boolean()),
 			deaf: req!(try!(remove(&mut value, "deaf")).as_boolean()),
 		})
+	}
+
+	pub fn display_name(&self) -> &str {
+		if let Some(name) = self.nick.as_ref() {
+			name
+		} else {
+			&self.user.name
+		}
 	}
 }
 
@@ -370,6 +382,10 @@ pub mod permissions {
 			const MANAGE_CHANNELS = 1 << 4,
 			/// Change the server's name or move regions
 			const MANAGE_SERVER = 1 << 5,
+			/// Change their own nickname
+			const CHANGE_NICKNAMES = 1 << 26,
+			/// Change the nickname of other users
+			const MANAGE_NICKNAMES = 1 << 27,
 
 			const READ_MESSAGES = 1 << 10,
 			const SEND_MESSAGES = 1 << 11,
@@ -447,6 +463,7 @@ pub struct Message {
 	pub author: User,
 	pub mention_everyone: bool,
 	pub mentions: Vec<User>,
+	pub mention_roles: Vec<RoleId>,
 
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
@@ -466,6 +483,7 @@ impl Message {
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
+			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
 			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
 			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
@@ -671,6 +689,7 @@ pub struct Presence {
 	pub last_modified: Option<u64>,
 	pub game: Option<Game>,
 	pub user: Option<User>,
+	pub nick: Option<String>,
 }
 
 impl Presence {
@@ -694,6 +713,7 @@ impl Presence {
 				Some(val) => try!(Game::decode(val)),
 			},
 			user: user,
+			nick: try!(opt(&mut value, "nick", into_string)),
 		})
 	}
 }
@@ -803,6 +823,7 @@ pub struct LiveServer {
 	pub emojis: Vec<Emoji>,
 	pub features: Vec<String>,
 	pub splash: Option<String>,
+	pub default_message_notifications: u64,
 }
 
 impl LiveServer {
@@ -829,6 +850,7 @@ impl LiveServer {
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
+			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			id: id,
 		})
 	}
@@ -1187,6 +1209,7 @@ pub enum Event {
 		author: Option<User>,
 		mention_everyone: Option<bool>,
 		mentions: Option<Vec<User>>,
+		mention_roles: Option<Vec<RoleId>>,
 		attachments: Option<Vec<Attachment>>,
 		embeds: Option<Vec<Value>>,
 	},
@@ -1211,6 +1234,7 @@ pub enum Event {
 		server_id: ServerId,
 		roles: Vec<RoleId>,
 		user: User,
+		nick: Option<String>,
 	},
 	ServerMemberRemove(ServerId, User),
 	ServerMembersChunk(ServerId, Vec<Member>),
@@ -1326,6 +1350,7 @@ impl Event {
 				author: try!(opt(&mut value, "author", User::decode)),
 				mention_everyone: remove(&mut value, "mention_everyone").ok().and_then(|v| v.as_boolean()),
 				mentions: try!(opt(&mut value, "mentions", |v| decode_array(v, User::decode))),
+				mention_roles: try!(opt(&mut value, "mention_roles", |v| decode_array(v, RoleId::decode))),
 				attachments: try!(opt(&mut value, "attachments", |v| decode_array(v, Attachment::decode))),
 				embeds: try!(opt(&mut value, "embeds", |v| decode_array(v, Ok))),
 			})
@@ -1355,6 +1380,7 @@ impl Event {
 				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
 				user: try!(remove(&mut value, "user").and_then(User::decode)),
+				nick: try!(opt(&mut value, "nick", into_string)),
 			})
 		} else if kind == "GUILD_MEMBER_REMOVE" {
 			warn_json!(value, Event::ServerMemberRemove(

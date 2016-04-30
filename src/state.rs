@@ -175,11 +175,12 @@ impl State {
 					srv.members.push(member.clone());
 				});
 			}
-			Event::ServerMemberUpdate { ref server_id, ref roles, ref user } => {
+			Event::ServerMemberUpdate { ref server_id, ref roles, ref user, ref nick } => {
 				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
 					srv.members.iter_mut().find(|m| m.user.id == user.id).map(|member| {
 						member.user.clone_from(user);
 						member.roles.clone_from(roles);
+						member.nick.clone_from(nick);
 					})
 				});
 			}
