@@ -659,13 +659,44 @@ impl OnlineStatus {
 	}
 }
 
+/// A type of game being played.
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum GameType {
+	Playing,
+	Streaming,
+}
+
+impl GameType {
+	pub fn from_num(num: u64) -> Option<Self> {
+		match num {
+			0 => Some(GameType::Playing),
+			1 => Some(GameType::Streaming),
+			_ => None,
+		}
+	}
+
+	fn decode(value: Value) -> Result<Self> {
+		value.as_u64().and_then(GameType::from_num).ok_or(Error::Decode("Expected valid GameType", value))
+	}
+}
+
 /// Information about a game being played
 #[derive(Debug, Clone)]
 pub struct Game {
 	pub name: String,
+	pub url: Option<String>,
+	pub kind: GameType,
 }
 
 impl Game {
+	pub fn playing(name: String) -> Game {
+		Game { kind: GameType::Playing, name: name, url: None }
+	}
+
+	pub fn streaming(name: String, url: String) -> Game {
+		Game { kind: GameType::Streaming, name: name, url: Some(url) }
+	}
+
 	pub fn decode(value: Value) -> Result<Option<Game>> {
 		let mut value = try!(into_map(value));
 		let name = match value.remove("name") {
@@ -677,6 +708,8 @@ impl Game {
 		}
 		warn_json!(@"Game", value, Some(Game {
 			name: name,
+			kind: try!(opt(&mut value, "type", GameType::decode)).unwrap_or(GameType::Playing),
+			url: try!(opt(&mut value, "url", into_string)),
 		}))
 	}
 }

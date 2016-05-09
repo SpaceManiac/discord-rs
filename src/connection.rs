@@ -110,7 +110,7 @@ impl Connection {
 	/// Set the client to be playing this game, with defaults used for any
 	/// extended information.
 	pub fn set_game_name(&self, name: String) {
-		self.set_game(Some(Game { name: name }));
+		self.set_game(Some(Game::playing(name)));
 	}
 
 	/// Get a handle to the voice connection for a server.
