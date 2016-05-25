@@ -442,27 +442,36 @@ impl PublicChannel {
 	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
-/// A channel-specific permission overwrite for a role or member
+/// The type of edit being made to a Channel's permissions.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum PermissionOverwriteType {
+	Member(UserId),
+	Role(RoleId),
+}
+
+/// A channel-specific permission overwrite for a role or member.
 #[derive(Debug, Clone)]
-pub enum PermissionOverwrite {
-	Role { id: RoleId, allow: Permissions, deny: Permissions },
-	Member { id: UserId, allow: Permissions, deny: Permissions },
+pub struct PermissionOverwrite {
+	pub kind: PermissionOverwriteType,
+	pub allow: Permissions,
+	pub deny: Permissions,
 }
 
 impl PermissionOverwrite {
 	pub fn decode(value: Value) -> Result<PermissionOverwrite> {
 		let mut value = try!(into_map(value));
-		let kind = try!(remove(&mut value, "type").and_then(into_string));
 		let id = try!(remove(&mut value, "id").and_then(decode_id));
-		let allow = try!(remove(&mut value, "allow").and_then(Permissions::decode));
-		let deny = try!(remove(&mut value, "deny").and_then(Permissions::decode));
-		if kind == "role" {
-			warn_json!(value, PermissionOverwrite::Role { id: RoleId(id), allow: allow, deny: deny })
-		} else if kind == "member" {
-			warn_json!(value, PermissionOverwrite::Member { id: UserId(id), allow: allow, deny: deny })
-		} else {
-			Err(Error::Decode("Expected valid PermissionOverwrite type", Value::String(kind)))
-		}
+		let kind = try!(remove(&mut value, "type").and_then(into_string));
+		let kind = match &*kind {
+			"member" => PermissionOverwriteType::Member(UserId(id)),
+			"role" => PermissionOverwriteType::Role(RoleId(id)),
+			_ => return Err(Error::Decode("Expected valid PermissionOverwrite type", Value::String(kind))),
+		};
+		warn_json!(value, PermissionOverwrite {
+			kind: kind,
+			allow: try!(remove(&mut value, "allow").and_then(Permissions::decode)),
+			deny: try!(remove(&mut value, "deny").and_then(Permissions::decode)),
+		})
 	}
 }
 

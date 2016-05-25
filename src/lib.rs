@@ -404,11 +404,90 @@ impl Discord {
 		Ok(())
 	}
 
-	// TODO: the remaining API calls
-	/*
-	pub fn create_role_permission(&self, channel: &ChannelId, role: &RoleId, allow: Permissions, deny: Permissions, type: Role|Member)
-	pub fn delete_permission(&self, channel: &ChannelId, role: &RoleId);
-	*/
+	/// Create permissions for a `Channel` for a `Member` or `Role`.
+	///
+	/// # Examples
+	///
+	/// An example of creating channel role permissions for a `Member`:
+	///
+	/// ```ignore
+	/// use discord::model::{PermissionOverwriteType, permissions};
+	///
+	/// // Assuming that a `Discord` instance, member, and channel have already
+	/// // been defined previously.
+	/// let target = PermissionOverwrite {
+	///     kind: PermissionOverwriteType::Member(member.user.id),
+	///     allow: permissions::VOICE_CONNECT | permissions::VOICE_SPEAK,
+	///     deny: permissions::VOICE_MUTE_MEMBERS | permissions::VOICE_MOVE_MEMBERS,
+	/// };
+	/// let result = discord.create_permission(channel.id, target);
+	/// ```
+	///
+	/// The same can similarly be accomplished for a `Role`:
+	///
+	/// ```ignore
+	/// use discord::model::{PermissionOverwriteType, permissions};
+	///
+	/// // Assuming that a `Discord` instance, role, and channel have already
+	/// // been defined previously.
+	/// let target = PermissionOverwrite {
+	///	    kind: PermissionOverwriteType::Role(role.id),
+	///	    allow: permissions::VOICE_CONNECT | permissions::VOICE_SPEAK,
+	///	    deny: permissions::VOICE_MUTE_MEMBERS | permissions::VOICE_MOVE_MEMBERS,
+	///	};
+	/// let result = discord.create_permission(channel.id, target);
+	/// ```
+	pub fn create_permission(&self, channel: ChannelId, target: PermissionOverwrite) -> Result<()> {
+		let (id, kind) = match target.kind {
+			PermissionOverwriteType::Member(id) => (id.0, "member"),
+			PermissionOverwriteType::Role(id) => (id.0, "role"),
+		};
+		let map = ObjectBuilder::new()
+			.insert("id", id)
+			.insert("allow", target.allow.bits())
+			.insert("deny", target.deny.bits())
+			.insert("type", kind)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(|| self.client.put(
+			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)).body(&body)));
+		Ok(())
+	}
+
+	/// Delete a `Member` or `Role`'s permissions for a `Channel`.
+	///
+	/// # Examples
+	///
+	/// Delete a `Member`'s permissions for a `Channel`:
+	///
+	/// ```ignore
+	/// use discord::model::PermissionOverwriteType;
+	///
+	/// // Assuming that a `Discord` instance, channel, and member have already
+	/// // been previously defined.
+	/// let target = PermissionOverwriteType::Member(member.user.id);
+	/// let response = discord.delete_permission(channel.id, target);
+	/// ```
+	///
+	/// The same can be accomplished for a `Role` similarly:
+	///
+	/// ```ignore
+	/// use discord::model::PermissionOverwriteType;
+	///
+	/// // Assuming that a `Discord` instance, channel, and role have already
+	/// // been previously defined.
+	/// let target = PermissionOverwriteType::Role(role.id);
+	/// let response = discord.delete_permission(channel.id, target);
+	/// ```
+	pub fn delete_permission(&self, channel: ChannelId, permission_type: PermissionOverwriteType) -> Result<()> {
+		let id = match permission_type {
+			PermissionOverwriteType::Member(id) => id.0,
+			PermissionOverwriteType::Role(id) => id.0,
+		};
+		try!(self.request(|| self.client.delete(
+			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id))));
+		Ok(())
+	}
 
 	/// Get the list of servers this user knows about.
 	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
