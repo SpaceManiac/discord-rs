@@ -318,6 +318,41 @@ impl Discord {
 		Ok(())
 	}
 
+	/// Bulk deletes a list of `MessageId`s from a given channel.
+	///
+	/// A minimum of 2 unique messages and a maximum of 100 unique messages may
+	/// be supplied, otherwise an `Error::Other` will be returned.
+	///
+	/// Each MessageId *should* be unique as duplicates will be removed from the
+	/// array before being sent to the Discord API.
+	///
+	/// Only bots can use this endpoint. Regular user accounts can not use this
+	/// endpoint under any circumstance.
+	///
+	/// Requires that either the message was posted by this user, or this user
+	/// has permission to manage other members' messages.
+	pub fn delete_messages(&self, channel: ChannelId, messages: &[MessageId]) -> Result<()> {
+		// Create a Vec of the underlying u64's of the message ids, then remove
+		// duplicates in it.
+		let mut ids: Vec<u64> = messages.into_iter().map(|m| m.0).collect();
+		ids.sort();
+		ids.dedup();
+
+		if ids.len() < 2 {
+			return Err(Error::Other("A minimum of 2 message ids must be supplied"));
+		} else if ids.len() > 100 {
+			return Err(Error::Other("A maximum of 100 message ids may be supplied"));
+		}
+
+		let map = ObjectBuilder::new()
+			.insert("messages", ids)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(|| self.client.post(
+			&format!("{}/channels/{}/messages/bulk_delete", API_BASE, channel.0)).body(&body)));
+		Ok(())
+	}
+
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
