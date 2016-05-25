@@ -561,6 +561,32 @@ impl Discord {
 		Ok(())
 	}
 
+	/// Start a prune operation, kicking members who have been inactive for the
+	/// specified number of days. Members with a role assigned will never be
+	/// pruned.
+	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
+		let map = ObjectBuilder::new()
+			.insert("days", days)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(|| self.client.post(
+			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		ServerPrune::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Get the number of members who have been inactive for the specified
+	/// number of days and would be pruned by a prune operation. Members with a
+	/// role assigned will never be pruned.
+	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
+		let map = ObjectBuilder::new()
+			.insert("days", days)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		ServerPrune::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the

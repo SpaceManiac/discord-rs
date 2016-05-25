@@ -172,6 +172,22 @@ impl Server {
 	}
 }
 
+/// Representation of the number of member that would be pruned by a server
+/// prune operation.
+#[derive(Debug, Clone)]
+pub struct ServerPrune {
+	pub pruned: u64,
+}
+
+impl ServerPrune {
+	pub fn decode(value: Value) -> Result<ServerPrune> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, ServerPrune {
+			pruned: req!(try!(remove(&mut value, "pruned")).as_u64()),
+		})
+	}
+}
+
 /// Information about a role
 #[derive(Debug, Clone)]
 pub struct Role {
