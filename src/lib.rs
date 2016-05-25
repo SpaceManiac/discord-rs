@@ -461,7 +461,12 @@ impl Discord {
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// Get members
+	/// Retrieve a member object for a server given the member's user id.
+	pub fn get_member(&self, server: ServerId, user: UserId) -> Result<Member> {
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
+		Member::decode(try!(serde_json::from_reader(response)))
+	}
 
 	/// Edit the list of roles assigned to a member of a server.
 	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
