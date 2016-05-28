@@ -316,6 +316,7 @@ pub struct PublicChannel {
 	pub position: i64,
 	pub last_message_id: Option<MessageId>,
 	pub bitrate: Option<u64>,
+	pub user_limit: Option<u64>,
 }
 
 impl PublicChannel {
@@ -338,6 +339,7 @@ impl PublicChannel {
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
+			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 		})
 	}
 }
