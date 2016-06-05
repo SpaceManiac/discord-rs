@@ -460,7 +460,48 @@ impl Discord {
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// Get members
+	/// Retrieves a list of all of the members of a server.
+	///
+	///
+	/// # Examples
+	///
+	/// Retrieve the first 500 members:
+	///
+	/// ```ignore
+	/// let members = discord.get_member_list(&server.id, 500, 0);
+	/// ```
+	///
+	/// Retrieve the 501-1000th members:
+	///
+	/// ```ignore
+	/// let members = discord.get_member_list(&server.id, 500, 500);
+	/// ```
+	pub fn get_member_list(&self, server: &ServerId, limit: u64, offset: u64) -> Result<Vec<Member>> {
+		let mut map = ObjectBuilder::new();
+
+		// Default value is 1. Only send it as a param if it is greater than 1.
+		if limit > 1 {
+			map = map.insert("limit", limit);
+		}
+
+		// Default value is 0. Only send it as a a param if it is greater than
+		// 0.
+		if offset > 0 {
+			map = map.insert("offset", offset);
+		}
+
+		let body = try!(serde_json::to_string(&map.unwrap()));
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/members", API_BASE, server.0)).body(&body)));
+		decode_array(try!(serde_json::from_reader(response)), Member::decode)
+	}
+
+	/// Retrieve a member object for a server given the member's user id.
+	pub fn get_member(&self, server: &ServerId, user: &UserId) -> Result<Member> {
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
+		Member::decode(try!(serde_json::from_reader(response)))
+	}
 
 	/// Edit the list of roles assigned to a member of a server.
 	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[&RoleId]) -> Result<()> {
