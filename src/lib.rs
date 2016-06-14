@@ -652,6 +652,21 @@ impl Discord {
 		ServerPrune::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Sets a note for the user that is readable only to the currently logged
+	/// in user.
+	///
+	/// This endpoint is only available for users, and so does not work for
+	/// bots.
+	pub fn edit_note(&self, user: UserId, note: &str) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("note", note)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(||
+			self.client.put(&format!("{}/users/@me/notes/{}", API_BASE, user.0)).body(&body)));
+		Ok(())
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use super::model::*;
 
 /// Known state composed from received events.
@@ -11,7 +12,8 @@ pub struct State {
 	servers: Vec<LiveServer>,
 	unavailable_servers: Vec<ServerId>,
 	presences: Vec<Presence>,
-	relationships: Vec<Relationship>
+	relationships: Vec<Relationship>,
+	notes: Option<BTreeMap<UserId, String>>,
 }
 
 impl State {
@@ -35,6 +37,7 @@ impl State {
 			unavailable_servers: unavailable,
 			presences: ready.presences,
 			relationships: ready.relationships,
+			notes: ready.notes,
 		}
 	}
 
@@ -69,6 +72,11 @@ impl State {
 		match *event {
 			Event::Ready(ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => self.user = user.clone(),
+			Event::UserNoteUpdate(ref user_id, ref note) => {
+				if let Some(notes) = self.notes.as_mut() {
+					notes.insert(UserId(user_id.0), note.clone());
+				}
+			},
 			Event::UserSettingsUpdate {
 				ref enable_tts_command, ref inline_attachment_media,
 				ref inline_embed_media, ref locale,
@@ -306,6 +314,9 @@ impl State {
 		}
 		None
 	}
+
+	/// Get the map of notes that have been made by this user.
+	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
 }
 
 fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {

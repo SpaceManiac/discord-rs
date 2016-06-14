@@ -1295,6 +1295,7 @@ pub struct ReadyEvent {
 	pub tutorial: Option<Tutorial>,
 	/// The trace of servers involved in this connection.
 	pub trace: Vec<Option<String>>,
+	pub notes: Option<BTreeMap<UserId, String>>,
 }
 
 /// Event received over a websocket connection
@@ -1312,6 +1313,8 @@ pub enum Event {
 
 	/// Update to the logged-in user's information
 	UserUpdate(CurrentUser),
+	/// Update to a note that the logged-in user has set for another user.
+	UserNoteUpdate(UserId, String),
 	/// Update to the logged-in user's preferences or client settings
 	UserSettingsUpdate {
 		enable_tts_command: Option<bool>,
@@ -1438,6 +1441,7 @@ impl Event {
 				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
+				notes: try!(opt(&mut value, "notes", decode_notes)),
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			}))
 		} else if kind == "RESUMED" {
@@ -1447,6 +1451,11 @@ impl Event {
 			})
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
+		} else if kind == "USER_NOTE_UPDATE" {
+			warn_json!(value, Event::UserNoteUpdate(
+				try!(remove(&mut value, "id").and_then(UserId::decode)),
+				try!(remove(&mut value, "note").and_then(into_string)),
+			))
 		} else if kind == "USER_SETTINGS_UPDATE" {
 			warn_json!(value, Event::UserSettingsUpdate {
 				enable_tts_command: remove(&mut value, "enable_tts_command").ok().and_then(|v| v.as_boolean()),
@@ -1712,6 +1721,33 @@ fn decode_discriminator(value: Value) -> Result<String> {
 		Value::U64(v) => Ok(v.to_string()),
 		other => Err(Error::Decode("Expected string or u64", other))
 	}
+}
+
+fn decode_notes(value: Value) -> Result<BTreeMap<UserId, String>> {
+	let notes = match value.as_object() {
+		Some(object) => {
+			let mut notes: BTreeMap<UserId, String> = BTreeMap::new();
+
+			for (key, value) in object.into_iter() {
+				let user_id = match key.parse::<u64>() {
+					Ok(user_id) => user_id,
+					Err(_) => return Err(Error::Other("Error decoding user id")),
+				};
+
+				let note = match value.as_string() {
+					Some(note) => String::from(note),
+					None => return Err(Error::Other("Error decoding note")),
+				};
+
+				notes.insert(UserId(user_id), note);
+			}
+
+			Some(notes)
+		},
+		None => None,
+	};
+
+	notes.ok_or(Error::Decode("Error decoding notes", value))
 }
 
 fn into_string(value: Value) -> Result<String> {
