@@ -233,6 +233,12 @@ impl Discord {
 		Ok(())
 	}
 
+	/// Get a single message by ID from a given channel.
+	pub fn get_message(&self, channel: ChannelId, message: MessageId) -> Result<Message> {
+		let response = try!(self.request(|| self.client.get(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0))));
+		Message::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Get messages in the backlog for a given channel.
 	///
 	/// The `what` argument should be one of the options in the `GetMessages`
