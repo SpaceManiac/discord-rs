@@ -463,7 +463,7 @@ impl Discord {
 	// Get members
 
 	/// Edit the list of roles assigned to a member of a server.
-	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[&RoleId]) -> Result<()> {
+	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert_array("roles", |ab| roles.iter().fold(ab, |ab, id| ab.push(id.0)))
 			.unwrap();
