@@ -52,6 +52,7 @@ use model::*;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
 const API_BASE: &'static str = "https://discordapp.com/api";
+const STATUS_BASE: &'static str = "https://status.discordapp.com";
 const GATEWAY_VERSION: u64 = 4;
 
 /// Client for the Discord REST API.
@@ -541,9 +542,6 @@ impl Discord {
 		CurrentUser::decode(serde_json::Value::Object(json))
 	}
 
-	// Get active maintenances
-	// Get upcoming maintenances
-
 	/// Get the list of available voice regions for a server.
 	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/voice/regions", API_BASE))));
@@ -615,6 +613,32 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 		if path.extension() == Some("png".as_ref()) { "png" } else { "jpg" },
 		base64::encode(&vec),
 	))
+}
+
+/// Retrieves the active maintenance statuses.
+pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
+	let client = hyper::Client::new();
+	let response = try!(retry(|| client.get(
+		&format!("{}/api/v2/scheduled-maintenances/active.json", STATUS_BASE))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("scheduled_maintenances") {
+		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+		None => Ok(vec![]),
+	}
+}
+
+/// Retrieves the upcoming maintenance statuses.
+pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
+	let client = hyper::Client::new();
+	let response = try!(retry(|| client.get(
+		&format!("{}/api/v2/scheduled-maintenances/upcoming.json", STATUS_BASE))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("scheduled_maintenances") {
+		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+		None => Ok(vec![]),
+	}
 }
 
 /// Patch content for the `edit_server` call.

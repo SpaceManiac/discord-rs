@@ -1172,6 +1172,31 @@ impl Tutorial {
 	}
 }
 
+/// Discord status maintenance message.
+///
+/// This can be either for active maintenances or scheduled maintenances.
+#[derive(Debug, Clone)]
+pub struct Maintenance {
+	pub description: String,
+	pub id: String,
+	pub name: String,
+	pub start: String,
+	pub stop: String,
+}
+
+impl Maintenance {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Maintenance {
+			description: try!(remove(&mut value, "description").and_then(into_string)),
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			start: try!(remove(&mut value, "start").and_then(into_string)),
+			stop: try!(remove(&mut value, "stop").and_then(into_string)),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
