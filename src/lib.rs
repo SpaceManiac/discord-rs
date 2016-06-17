@@ -251,6 +251,32 @@ impl Discord {
 		values.into_iter().map(Message::decode).collect()
 	}
 
+	/// Gets the pinned messages for a given channel.
+	pub fn get_pinned_messages(&self, channel: ChannelId) -> Result<Vec<Message>> {
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/channels/{}/pins", API_BASE, channel.0))));
+		let value = try!(serde_json::from_reader(response));
+		decode_array(value, Message::decode)
+	}
+
+	/// Pin the given message to the given channel.
+	///
+	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
+	pub fn pin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
+		try!(self.request(|| self.client.put(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
+		Ok(())
+	}
+
+	/// Removes the given message from being pinned to the given channel.
+	///
+	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
+	pub fn unpin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
+		try!(self.request(|| self.client.delete(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
+		Ok(())
+	}
+
 	/// Send a message to a given channel.
 	///
 	/// The `nonce` will be returned in the result and also transmitted to other

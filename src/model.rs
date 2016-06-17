@@ -477,6 +477,7 @@ pub struct Message {
 	pub tts: bool,
 	pub timestamp: String,
 	pub edited_timestamp: Option<String>,
+	pub pinned: bool,
 
 	pub author: User,
 	pub mention_everyone: bool,
@@ -499,6 +500,7 @@ impl Message {
 			tts: req!(try!(remove(&mut value, "tts")).as_boolean()),
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
+			pinned: req!(try!(remove(&mut value, "pinned")).as_boolean()),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
