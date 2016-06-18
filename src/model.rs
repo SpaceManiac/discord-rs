@@ -971,6 +971,7 @@ pub struct CurrentUser {
 	pub email: Option<String>,
 	pub verified: bool,
 	pub bot: bool,
+	pub mfa_enabled: bool,
 }
 
 impl CurrentUser {
@@ -984,6 +985,7 @@ impl CurrentUser {
 			avatar: try!(opt(&mut value, "avatar", into_string)),
 			verified: req!(try!(remove(&mut value, "verified")).as_boolean()),
 			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
+			mfa_enabled: req!(try!(remove(&mut value, "mfa_enabled")).as_boolean()),
 		})
 	}
 }
