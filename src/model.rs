@@ -824,6 +824,15 @@ impl VerificationLevel {
 		}
 	}
 
+	pub fn to_num(self) -> u64 {
+		match self {
+			VerificationLevel::None => 0,
+			VerificationLevel::Low => 1,
+			VerificationLevel::Medium => 2,
+			VerificationLevel::High => 3,
+		}
+	}
+
 	fn decode(value: Value) -> Result<VerificationLevel> {
 		value.as_u64().and_then(VerificationLevel::from_num).ok_or(Error::Decode("Expected valid VerificationLevel", value))
 	}

@@ -671,6 +671,24 @@ impl EditServer {
 	pub fn afk_timeout(self, timeout: u64) -> Self {
 		EditServer(self.0.insert("afk_timeout", timeout))
 	}
+
+	/// Transfer ownership of the server to a new owner.
+	pub fn owner(self, owner: UserId) -> Self {
+		EditServer(self.0.insert("owner_id", owner.0))
+	}
+
+	/// Edit the verification level of the server.
+	pub fn verification_level(self, verification_level: VerificationLevel) -> Self {
+		EditServer(self.0.insert("verification_level", verification_level.to_num()))
+	}
+
+	/// Edit the server's splash. Use `None` to remove the splash.
+	pub fn splash(self, splash: Option<&str>) -> Self {
+		EditServer(match splash {
+			Some(splash) => self.0.insert("splash", splash),
+			None => self.0.insert("splash", serde_json::Value::Null),
+		})
+	}
 }
 
 /// Patch content for the `edit_profile` call.
