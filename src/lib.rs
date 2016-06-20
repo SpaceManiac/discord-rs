@@ -473,6 +473,17 @@ impl Discord {
 		Ok(())
 	}
 
+	/// Edits a server member's nickname.
+	pub fn edit_member_nickname(&self, server: ServerId, user: UserId, nickname: &str) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("nick", nickname)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(|| self.client.patch(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
+		Ok(())
+	}
+
 	/// Kick a member from a server.
 	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
 		try!(self.request(|| self.client.delete(
