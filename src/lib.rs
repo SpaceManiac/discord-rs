@@ -180,11 +180,7 @@ impl Discord {
 
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
-		let map = ObjectBuilder::new().insert("token", &self.token).unwrap();
-		let body = try!(serde_json::to_string(&map));
-		try!(retry(|| self.client.post(&format!("{}/auth/logout", API_BASE))
-			.header(hyper::header::ContentType::json())
-			.body(&body)));
+		try!(self.request(|| self.client.post(&format!("{}/auth/logout", API_BASE))));
 		Ok(())
 	}
 
