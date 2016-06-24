@@ -1293,6 +1293,7 @@ pub enum Event {
 		content: Option<String>,
 		nonce: Option<String>,
 		tts: Option<bool>,
+		pinned: Option<bool>,
 		timestamp: Option<String>,
 		edited_timestamp: Option<String>,
 		author: Option<User>,
@@ -1434,6 +1435,7 @@ impl Event {
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_boolean()),
+				pinned: remove(&mut value, "pinned").ok().and_then(|v| v.as_boolean()),
 				timestamp: try!(opt(&mut value, "timestamp", into_string)),
 				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 				author: try!(opt(&mut value, "author", User::decode)),
