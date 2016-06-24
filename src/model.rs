@@ -216,6 +216,11 @@ impl Role {
 			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
 		})
 	}
+
+	/// Returns a string that mentions the role.
+	pub fn mention(&self) -> String {
+		format!("<@&{}>", self.id.0)
+	}
 }
 
 /// Broadly-applicable user information
@@ -244,6 +249,11 @@ impl User {
 	pub fn decode_ban(value: Value) -> Result<User> {
 		let mut value = try!(into_map(value));
 		warn_json!(@"Ban", value, try!(remove(&mut value, "user").and_then(User::decode)))
+	}
+
+	/// Returns a string that mentions the user.
+	pub fn mention(&self) -> String {
+		format!("<@{}>", self.id.0)
 	}
 }
 
@@ -357,6 +367,11 @@ impl PublicChannel {
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 		})
+	}
+
+	/// Returns a string that mentions the channel.
+	pub fn mention(&self) -> String {
+		format!("<#{}>", self.id.0)
 	}
 }
 
