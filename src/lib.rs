@@ -52,6 +52,7 @@ use model::*;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
 const API_BASE: &'static str = "https://discordapp.com/api";
+const STATUS_BASE: &'static str = "https://status.discordapp.com";
 const GATEWAY_VERSION: u64 = 4;
 
 /// Client for the Discord REST API.
@@ -255,6 +256,32 @@ impl Discord {
 		let response = try!(self.request(|| self.client.get(&url)));
 		let values: Vec<serde_json::Value> = try!(serde_json::from_reader(response));
 		values.into_iter().map(Message::decode).collect()
+	}
+
+	/// Gets the pinned messages for a given channel.
+	pub fn get_pinned_messages(&self, channel: ChannelId) -> Result<Vec<Message>> {
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/channels/{}/pins", API_BASE, channel.0))));
+		let value = try!(serde_json::from_reader(response));
+		decode_array(value, Message::decode)
+	}
+
+	/// Pin the given message to the given channel.
+	///
+	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
+	pub fn pin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
+		try!(self.request(|| self.client.put(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
+		Ok(())
+	}
+
+	/// Removes the given message from being pinned to the given channel.
+	///
+	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
+	pub fn unpin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
+		try!(self.request(|| self.client.delete(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
+		Ok(())
 	}
 
 	/// Send a message to a given channel.
@@ -467,10 +494,15 @@ impl Discord {
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
-	// Get members
+	/// Retrieve a member object for a server given the member's user id.
+	pub fn get_member(&self, server: ServerId, user: UserId) -> Result<Member> {
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
+		Member::decode(try!(serde_json::from_reader(response)))
+	}
 
 	/// Edit the list of roles assigned to a member of a server.
-	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[&RoleId]) -> Result<()> {
+	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert_array("roles", |ab| roles.iter().fold(ab, |ab, id| ab.push(id.0)))
 			.unwrap();
@@ -548,9 +580,6 @@ impl Discord {
 		CurrentUser::decode(serde_json::Value::Object(json))
 	}
 
-	// Get active maintenances
-	// Get upcoming maintenances
-
 	/// Get the list of available voice regions for a server.
 	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/voice/regions", API_BASE))));
@@ -566,6 +595,32 @@ impl Discord {
 		try!(self.request(||
 			self.client.patch(&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
 		Ok(())
+	}
+
+	/// Start a prune operation, kicking members who have been inactive for the
+	/// specified number of days. Members with a role assigned will never be
+	/// pruned.
+	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
+		let map = ObjectBuilder::new()
+			.insert("days", days)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(|| self.client.post(
+			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		ServerPrune::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Get the number of members who have been inactive for the specified
+	/// number of days and would be pruned by a prune operation. Members with a
+	/// role assigned will never be pruned.
+	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
+		let map = ObjectBuilder::new()
+			.insert("days", days)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		let response = try!(self.request(|| self.client.get(
+			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		ServerPrune::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Establish a websocket connection over which events can be received.
@@ -598,6 +653,32 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 	))
 }
 
+/// Retrieves the active maintenance statuses.
+pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
+	let client = hyper::Client::new();
+	let response = try!(retry(|| client.get(
+		&format!("{}/api/v2/scheduled-maintenances/active.json", STATUS_BASE))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("scheduled_maintenances") {
+		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+		None => Ok(vec![]),
+	}
+}
+
+/// Retrieves the upcoming maintenance statuses.
+pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
+	let client = hyper::Client::new();
+	let response = try!(retry(|| client.get(
+		&format!("{}/api/v2/scheduled-maintenances/upcoming.json", STATUS_BASE))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("scheduled_maintenances") {
+		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
+		None => Ok(vec![]),
+	}
+}
+
 /// Patch content for the `edit_server` call.
 pub struct EditServer(ObjectBuilder);
 
@@ -627,6 +708,24 @@ impl EditServer {
 	/// Edit the server's AFK timeout.
 	pub fn afk_timeout(self, timeout: u64) -> Self {
 		EditServer(self.0.insert("afk_timeout", timeout))
+	}
+
+	/// Transfer ownership of the server to a new owner.
+	pub fn owner(self, owner: UserId) -> Self {
+		EditServer(self.0.insert("owner_id", owner.0))
+	}
+
+	/// Edit the verification level of the server.
+	pub fn verification_level(self, verification_level: VerificationLevel) -> Self {
+		EditServer(self.0.insert("verification_level", verification_level.to_num()))
+	}
+
+	/// Edit the server's splash. Use `None` to remove the splash.
+	pub fn splash(self, splash: Option<&str>) -> Self {
+		EditServer(match splash {
+			Some(splash) => self.0.insert("splash", splash),
+			None => self.0.insert("splash", serde_json::Value::Null),
+		})
 	}
 }
 

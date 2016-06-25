@@ -4,6 +4,7 @@
 use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub use self::permissions::Permissions;
 
@@ -77,6 +78,61 @@ id! {
 	RoleId;
 	/// An identifier for an Emoji
 	EmojiId;
+}
+
+/// A mention targeted at a specific user, channel, or other entity.
+///
+/// A mention can be constructed by calling `.mention()` on a mentionable item
+/// or an ID type which refers to it, and can be formatted into a string using
+/// the `format!` macro:
+///
+/// ```ignore
+/// let message = format!("Hey, {}, ping!", user.mention());
+/// ```
+///
+/// If a `String` is required, call `mention.to_string()`.
+pub struct Mention {
+	prefix: &'static str,
+	id: u64,
+}
+
+impl fmt::Display for Mention {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		try!(f.write_str(self.prefix));
+		try!(fmt::Display::fmt(&self.id, f));
+		fmt::Write::write_char(f, '>')
+	}
+}
+
+impl UserId {
+	/// Return a `Mention` which will ping this user.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<@", id: self.0 }
+	}
+}
+
+impl RoleId {
+	/// Return a `Mention` which will ping members of this role.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<@&", id: self.0 }
+	}
+}
+
+impl ChannelId {
+	/// Return a `Mention` which will link to this channel.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<#", id: self.0 }
+	}
+}
+
+#[test]
+fn mention_test() {
+	assert_eq!(UserId(1234).mention().to_string(), "<@1234>");
+	assert_eq!(RoleId(1234).mention().to_string(), "<@&1234>");
+	assert_eq!(ChannelId(1234).mention().to_string(), "<#1234>");
 }
 
 //=================
@@ -172,6 +228,22 @@ impl Server {
 	}
 }
 
+/// Representation of the number of member that would be pruned by a server
+/// prune operation.
+#[derive(Debug, Clone)]
+pub struct ServerPrune {
+	pub pruned: u64,
+}
+
+impl ServerPrune {
+	pub fn decode(value: Value) -> Result<ServerPrune> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, ServerPrune {
+			pruned: req!(try!(remove(&mut value, "pruned")).as_u64()),
+		})
+	}
+}
+
 /// Information about a role
 #[derive(Debug, Clone)]
 pub struct Role {
@@ -200,6 +272,10 @@ impl Role {
 			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
 		})
 	}
+
+	/// Return a `Mention` which will ping members of this role.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// Broadly-applicable user information
@@ -229,6 +305,10 @@ impl User {
 		let mut value = try!(into_map(value));
 		warn_json!(@"Ban", value, try!(remove(&mut value, "user").and_then(User::decode)))
 	}
+
+	/// Return a `Mention` which will ping this user.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// Information about a member of a server
@@ -316,6 +396,7 @@ pub struct PublicChannel {
 	pub position: i64,
 	pub last_message_id: Option<MessageId>,
 	pub bitrate: Option<u64>,
+	pub user_limit: Option<u64>,
 }
 
 impl PublicChannel {
@@ -338,8 +419,13 @@ impl PublicChannel {
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
+			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 		})
 	}
+
+	/// Return a `Mention` which will link to this channel.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// A channel-specific permission overwrite for a role or member
@@ -459,6 +545,7 @@ pub struct Message {
 	pub tts: bool,
 	pub timestamp: String,
 	pub edited_timestamp: Option<String>,
+	pub pinned: bool,
 
 	pub author: User,
 	pub mention_everyone: bool,
@@ -481,6 +568,7 @@ impl Message {
 			tts: req!(try!(remove(&mut value, "tts")).as_boolean()),
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
+			pinned: req!(try!(remove(&mut value, "pinned")).as_boolean()),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
@@ -806,6 +894,15 @@ impl VerificationLevel {
 		}
 	}
 
+	pub fn to_num(self) -> u64 {
+		match self {
+			VerificationLevel::None => 0,
+			VerificationLevel::Low => 1,
+			VerificationLevel::Medium => 2,
+			VerificationLevel::High => 3,
+		}
+	}
+
 	fn decode(value: Value) -> Result<VerificationLevel> {
 		value.as_u64().and_then(VerificationLevel::from_num).ok_or(Error::Decode("Expected valid VerificationLevel", value))
 	}
@@ -944,6 +1041,7 @@ pub struct CurrentUser {
 	pub email: Option<String>,
 	pub verified: bool,
 	pub bot: bool,
+	pub mfa_enabled: bool,
 }
 
 impl CurrentUser {
@@ -957,6 +1055,7 @@ impl CurrentUser {
 			avatar: try!(opt(&mut value, "avatar", into_string)),
 			verified: req!(try!(remove(&mut value, "verified")).as_boolean()),
 			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
+			mfa_enabled: req!(try!(remove(&mut value, "mfa_enabled")).as_boolean()),
 		})
 	}
 }
@@ -1154,6 +1253,31 @@ impl Tutorial {
 	}
 }
 
+/// Discord status maintenance message.
+///
+/// This can be either for active maintenances or scheduled maintenances.
+#[derive(Debug, Clone)]
+pub struct Maintenance {
+	pub description: String,
+	pub id: String,
+	pub name: String,
+	pub start: String,
+	pub stop: String,
+}
+
+impl Maintenance {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Maintenance {
+			description: try!(remove(&mut value, "description").and_then(into_string)),
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			start: try!(remove(&mut value, "start").and_then(into_string)),
+			stop: try!(remove(&mut value, "stop").and_then(into_string)),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
@@ -1237,6 +1361,7 @@ pub enum Event {
 		content: Option<String>,
 		nonce: Option<String>,
 		tts: Option<bool>,
+		pinned: Option<bool>,
 		timestamp: Option<String>,
 		edited_timestamp: Option<String>,
 		author: Option<User>,
@@ -1378,6 +1503,7 @@ impl Event {
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_boolean()),
+				pinned: remove(&mut value, "pinned").ok().and_then(|v| v.as_boolean()),
 				timestamp: try!(opt(&mut value, "timestamp", into_string)),
 				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 				author: try!(opt(&mut value, "author", User::decode)),
