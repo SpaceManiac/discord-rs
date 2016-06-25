@@ -235,20 +235,21 @@ impl Discord {
 
 	/// Get messages in the backlog for a given channel.
 	///
-	/// Before and after limits can be specified to narrow the results. A
-	/// message count limit can also be specified, defaulting to 50. Newer
-	/// messages appear first in the list.
-	pub fn get_messages(&self, channel: &ChannelId, before: Option<&MessageId>, after: Option<&MessageId>, limit: Option<u64>) -> Result<Vec<Message>> {
+	/// The `what` argument should be one of the options in the `GetMessages`
+	/// enum, and will determine which messages will be returned. A message
+	/// limit can also be specified, and defaults to 50. More recent messages
+	/// will appear first in the list.
+	pub fn get_messages(&self, channel: ChannelId, what: GetMessages, limit: Option<u64>) -> Result<Vec<Message>> {
+		use std::fmt::Write;
 		let mut url = format!("{}/channels/{}/messages?limit={}", API_BASE, channel.0, limit.unwrap_or(50));
-		if let Some(id) = before {
-			url.push_str(&format!("&before={}", id.0));
-		}
-		if let Some(id) = after {
-			url.push_str(&format!("&after={}", id.0));
+		match what {
+			GetMessages::MostRecent => {},
+			GetMessages::Before(id) => { let _ = write!(url, "&before={}", id.0); },
+			GetMessages::After(id) => { let _ = write!(url, "&after={}", id.0); },
+			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id.0); },
 		}
 		let response = try!(self.request(|| self.client.get(&url)));
-		let values: Vec<serde_json::Value> = try!(serde_json::from_reader(response));
-		values.into_iter().map(Message::decode).collect()
+		decode_array(try!(serde_json::from_reader(response)), Message::decode)
 	}
 
 	/// Gets the pinned messages for a given channel.
@@ -670,6 +671,18 @@ pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
 		None => Ok(vec![]),
 	}
+}
+
+/// Argument to `get_messages` to specify the desired message retrieval.
+pub enum GetMessages {
+	/// Get the N most recent messages.
+	MostRecent,
+	/// Get the first N messages before the specified message.
+	Before(MessageId),
+	/// Get the first N messages after the specified message.
+	After(MessageId),
+	/// Get N/2 messages before, N/2 messages after, and the specified message.
+	Around(MessageId),
 }
 
 /// Patch content for the `edit_server` call.
