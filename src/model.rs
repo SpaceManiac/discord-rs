@@ -4,6 +4,7 @@
 use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub use self::permissions::Permissions;
 
@@ -77,6 +78,61 @@ id! {
 	RoleId;
 	/// An identifier for an Emoji
 	EmojiId;
+}
+
+/// A mention targeted at a specific user, channel, or other entity.
+///
+/// A mention can be constructed by calling `.mention()` on a mentionable item
+/// or an ID type which refers to it, and can be formatted into a string using
+/// the `format!` macro:
+///
+/// ```ignore
+/// let message = format!("Hey, {}, ping!", user.mention());
+/// ```
+///
+/// If a `String` is required, call `mention.to_string()`.
+pub struct Mention {
+	prefix: &'static str,
+	id: u64,
+}
+
+impl fmt::Display for Mention {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		try!(f.write_str(self.prefix));
+		try!(fmt::Display::fmt(&self.id, f));
+		fmt::Write::write_char(f, '>')
+	}
+}
+
+impl UserId {
+	/// Return a `Mention` which will ping this user.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<@", id: self.0 }
+	}
+}
+
+impl RoleId {
+	/// Return a `Mention` which will ping members of this role.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<@&", id: self.0 }
+	}
+}
+
+impl ChannelId {
+	/// Return a `Mention` which will link to this channel.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention {
+		Mention { prefix: "<#", id: self.0 }
+	}
+}
+
+#[test]
+fn mention_test() {
+	assert_eq!(UserId(1234).mention().to_string(), "<@1234>");
+	assert_eq!(RoleId(1234).mention().to_string(), "<@&1234>");
+	assert_eq!(ChannelId(1234).mention().to_string(), "<#1234>");
 }
 
 //=================
@@ -216,6 +272,10 @@ impl Role {
 			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_boolean())))).unwrap_or(false),
 		})
 	}
+
+	/// Return a `Mention` which will ping members of this role.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// Broadly-applicable user information
@@ -245,6 +305,10 @@ impl User {
 		let mut value = try!(into_map(value));
 		warn_json!(@"Ban", value, try!(remove(&mut value, "user").and_then(User::decode)))
 	}
+
+	/// Return a `Mention` which will ping this user.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// Information about a member of a server
@@ -358,6 +422,10 @@ impl PublicChannel {
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 		})
 	}
+
+	/// Return a `Mention` which will link to this channel.
+	#[inline(always)]
+	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// A channel-specific permission overwrite for a role or member
