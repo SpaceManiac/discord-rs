@@ -72,9 +72,13 @@ impl State {
 		match *event {
 			Event::Ready(ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => self.user = user.clone(),
-			Event::UserNoteUpdate(ref user_id, ref note) => {
+			Event::UserNoteUpdate(user_id, ref note) => {
 				if let Some(notes) = self.notes.as_mut() {
-					notes.insert(UserId(user_id.0), note.clone());
+					if note.is_empty() {
+						notes.remove(&user_id);
+					} else {
+						notes.insert(user_id, note.clone());
+					}
 				}
 			},
 			Event::UserSettingsUpdate {

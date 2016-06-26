@@ -1724,30 +1724,11 @@ fn decode_discriminator(value: Value) -> Result<String> {
 }
 
 fn decode_notes(value: Value) -> Result<BTreeMap<UserId, String>> {
-	let notes = match value.as_object() {
-		Some(object) => {
-			let mut notes: BTreeMap<UserId, String> = BTreeMap::new();
-
-			for (key, value) in object.into_iter() {
-				let user_id = match key.parse::<u64>() {
-					Ok(user_id) => user_id,
-					Err(_) => return Err(Error::Other("Error decoding user id")),
-				};
-
-				let note = match value.as_string() {
-					Some(note) => String::from(note),
-					None => return Err(Error::Other("Error decoding note")),
-				};
-
-				notes.insert(UserId(user_id), note);
-			}
-
-			Some(notes)
-		},
-		None => None,
-	};
-
-	notes.ok_or(Error::Decode("Error decoding notes", value))
+	// turn the String -> Value map into a UserId -> String map
+	try!(into_map(value)).into_iter().map(|(key, value)| Ok((
+		/* key */ UserId(try!(key.parse::<u64>().map_err(|_| Error::Other("Invalid user id in notes")))),
+		/* val */ try!(into_string(value))
+	))).collect()
 }
 
 fn into_string(value: Value) -> Result<String> {
