@@ -203,21 +203,40 @@ impl Discord {
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
-	/// Edit a channel's name.
-	pub fn edit_channel(&self, channel: &ChannelId,
-		name: Option<&str>,
-		position: Option<i64>,
-		topic: Option<&str>,
-	) -> Result<Channel> {
+	/// Get information about a channel.
+	pub fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/channels/{}", API_BASE, channel.0))));
+		Channel::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Edit a channel's details. See `EditChannel` for the editable fields.
+	///
+	/// ```ignore
+	/// // Edit a channel's name and topic
+	/// discord.edit_channel(channel_id, "general", |ch| ch
+	///     .topic("Welcome to the general chat!")
+	/// );
+	/// ```
+	pub fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(&self, channel: ChannelId, f: F) -> Result<PublicChannel> {
+		// Work around the fact that this supposed PATCH call actually requires all fields
+		let info = match try!(self.get_channel(channel)) {
+			Channel::Public(channel) => channel,
+			Channel::Private(_) => return Err(Error::Other("Can only edit public channels")),
+		};
 		let map = ObjectBuilder::new()
-			.insert("name", name)
-			.insert("topic", topic)
-			.insert("position", position)
-			.unwrap();
+			.insert("name", info.name)
+			.insert("position", info.position);
+		let map = match info.kind {
+			ChannelType::Text => map.insert("topic", info.topic),
+			ChannelType::Voice => map.insert("bitrate", info.bitrate).insert("user_limit", info.user_limit),
+		};
+		let map = f(EditChannel(map)).0.unwrap();
 		let body = try!(serde_json::to_string(&map));
+		println!("body being sent is: {}", body);
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/channels/{}", API_BASE, channel.0)).body(&body)));
-		Channel::decode(try!(serde_json::from_reader(response)))
+		PublicChannel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete a channel.
@@ -788,6 +807,32 @@ impl EditServer {
 			Some(splash) => self.0.insert("splash", splash),
 			None => self.0.insert("splash", serde_json::Value::Null),
 		})
+	}
+}
+
+/// Patch content for the `edit_channel` call.
+pub struct EditChannel(ObjectBuilder);
+
+impl EditChannel {
+	/// Edit the channel's name.
+	pub fn name(self, name: &str) -> Self {
+		EditChannel(self.0.insert("name", name))
+	}
+	/// Edit the text channel's topic.
+	pub fn topic(self, topic: &str) -> Self {
+		EditChannel(self.0.insert("topic", topic))
+	}
+	/// Edit the channel's position in the list.
+	pub fn position(self, position: u64) -> Self {
+		EditChannel(self.0.insert("position", position))
+	}
+	/// Edit the voice channel's bitrate.
+	pub fn bitrate(self, bitrate: u64) -> Self {
+		EditChannel(self.0.insert("bitrate", bitrate))
+	}
+	/// Edit the voice channel's user limit. Both `None` and `Some(0)` mean "unlimited".
+	pub fn user_limit(self, user_limit: u64) -> Self {
+		EditChannel(self.0.insert("user_limit", user_limit))
 	}
 }
 
