@@ -207,6 +207,11 @@ pub struct Server {
 	pub embed_channel_id: Option<ChannelId>,
 	pub owner_id: UserId,
 	pub verification_level: VerificationLevel,
+	pub emojis: Vec<Emoji>,
+	pub features: Vec<String>,
+	pub splash: Option<String>,
+	pub default_message_notifications: u64,
+	pub mfa_level: u64,
 }
 
 impl Server {
@@ -224,6 +229,11 @@ impl Server {
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
+			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
+			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
+			splash: try!(opt(&mut value, "splash", into_string)),
+			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
+			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
 		})
 	}
 }
@@ -954,6 +964,7 @@ pub struct LiveServer {
 	pub features: Vec<String>,
 	pub splash: Option<String>,
 	pub default_message_notifications: u64,
+	pub mfa_level: u64,
 }
 
 impl LiveServer {
@@ -981,6 +992,7 @@ impl LiveServer {
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
+			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
 			id: id,
 		})
 	}
