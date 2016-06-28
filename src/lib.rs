@@ -203,6 +203,13 @@ impl Discord {
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
+  /// Get channel information by channel id.
+  pub fn get_channel(&self, channel: &ChannelId) -> Result<Channel> {
+    let response = try!(self.request(||
+    self.client.get(&format!("{}/channels/{}", API_BASE, channel.0))));
+    Channel::decode(try!(serde_json::from_reader(response)))
+  }
+
 	/// Edit a channel's name.
 	pub fn edit_channel(&self, channel: &ChannelId,
 		name: Option<&str>,
