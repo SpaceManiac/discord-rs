@@ -1296,7 +1296,6 @@ pub struct ReadyEvent {
 	pub version: u64,
 	pub user: CurrentUser,
 	pub session_id: String,
-	pub heartbeat_interval: u64,
 	pub user_settings: Option<UserSettings>,
 	pub read_state: Option<Vec<ReadState>>,
 	pub private_channels: Vec<PrivateChannel>,
@@ -1444,7 +1443,6 @@ impl Event {
 				version: req!(try!(remove(&mut value, "v")).as_u64()),
 				user: try!(remove(&mut value, "user").and_then(CurrentUser::decode)),
 				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
-				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 				read_state: try!(opt(&mut value, "read_state", |v| decode_array(v, ReadState::decode))),
 				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
@@ -1625,29 +1623,31 @@ pub enum GatewayEvent {
 	Heartbeat(u64),
 	Reconnect,
 	InvalidateSession,
+	Hello(u64),
+	HeartbeatAck,
 }
 
 impl GatewayEvent {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
-
-		let op = req!(value.get("op").and_then(|x| x.as_u64()));
-		if op == 0 {
-			Ok(GatewayEvent::Dispatch(
+		match req!(value.get("op").and_then(|x| x.as_u64())) {
+			0 => Ok(GatewayEvent::Dispatch(
 				req!(try!(remove(&mut value, "s")).as_u64()),
 				try!(Event::decode(
 					try!(remove(&mut value, "t").and_then(into_string)),
 					try!(remove(&mut value, "d"))
 				))
-			))
-		} else if op == 1 {
-			Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64())))
-		} else if op == 7 {
-			Ok(GatewayEvent::Reconnect)
-		} else if op == 9 {
-			Ok(GatewayEvent::InvalidateSession)
-		} else {
-			Err(Error::Decode("Unexpected opcode", Value::Object(value)))
+			)),
+			1 => Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64()))),
+			7 => Ok(GatewayEvent::Reconnect),
+			9 => Ok(GatewayEvent::InvalidateSession),
+			10 => {
+				let mut data = try!(remove(&mut value, "d").and_then(into_map));
+				let interval = req!(try!(remove(&mut data, "heartbeat_interval")).as_u64());
+				Ok(GatewayEvent::Hello(interval))
+			},
+			11 => Ok(GatewayEvent::HeartbeatAck),
+			_ => Err(Error::Decode("Unexpected opcode", Value::Object(value))),
 		}
 	}
 }

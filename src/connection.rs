@@ -12,6 +12,8 @@ use internal::Status;
 use voice::VoiceConnection;
 use {Result, Error, SenderExt, ReceiverExt};
 
+const GATEWAY_VERSION: u64 = 5;
+
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
@@ -35,10 +37,7 @@ impl Connection {
 	pub fn new(base_url: &str, token: &str) -> Result<(Connection, ReadyEvent)> {
 		debug!("Gateway: {}", base_url);
 		// establish the websocket connection
-		let url = match ::websocket::client::request::Url::parse(&format!("{}?v={}", base_url, ::GATEWAY_VERSION)) {
-			Ok(url) => url,
-			Err(_) => return Err(Error::Other("Invalid URL in Connection::new()"))
-		};
+		let url = try!(build_gateway_url(base_url));
 		let response = try!(try!(Client::connect(url)).send());
 		try!(response.validate());
 		let (mut sender, mut receiver) = response.begin().split();
@@ -47,37 +46,52 @@ impl Connection {
 		let identify = identify(token);
 		try!(sender.send_json(&identify));
 
-		// read the Ready event
-		let sequence;
-		let ready;
-		loop {
-			match try!(receiver.recv_json(GatewayEvent::decode)) {
-				GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-					sequence = seq;
-					ready = event;
-					break
-				},
-				GatewayEvent::InvalidateSession => {
-					debug!("Session invalidated, reidentifying");
-					try!(sender.send_json(&identify))
-				}
-				other => {
-					debug!("Unexpected event: {:?}", other);
-					return Err(Error::Protocol("Unexpected event during connection open"))
-				}
+		// read the Hello and spawn the keepalive thread
+		let heartbeat_interval;
+		match try!(receiver.recv_json(GatewayEvent::decode)) {
+			GatewayEvent::Hello(interval) => heartbeat_interval = interval,
+			other => {
+				debug!("Unexpected event: {:?}", other);
+				return Err(Error::Protocol("Expected Hello during handshake"))
 			}
 		}
-		if ready.version != ::GATEWAY_VERSION {
-			warn!("Got protocol version {} instead of {}", ready.version, ::GATEWAY_VERSION);
-		}
-		let session_id = ready.session_id.clone();
-		let heartbeat_interval = ready.heartbeat_interval;
 
-		// spawn the keepalive thread
 		let (tx, rx) = mpsc::channel();
 		try!(::std::thread::Builder::new()
 			.name("Discord Keepalive".into())
 			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
+
+		// read the Ready event
+		let sequence;
+		let ready;
+		match try!(receiver.recv_json(GatewayEvent::decode)) {
+			GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
+				sequence = seq;
+				ready = event;
+			},
+			GatewayEvent::InvalidateSession => {
+				debug!("Session invalidated, reidentifying");
+				let _ = tx.send(Status::SendMessage(identify));
+				match try!(receiver.recv_json(GatewayEvent::decode)) {
+					GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
+						sequence = seq;
+						ready = event;
+					}
+					other => {
+						debug!("Unexpected event: {:?}", other);
+						return Err(Error::Protocol("Expected Ready during handshake"))
+					}
+				}
+			}
+			other => {
+				debug!("Unexpected event: {:?}", other);
+				return Err(Error::Protocol("Expected Ready or InvalidateSession during handshake"))
+			}
+		}
+		if ready.version != GATEWAY_VERSION {
+			warn!("Got protocol version {} instead of {}", ready.version, GATEWAY_VERSION);
+		}
+		let session_id = ready.session_id.clone();
 
 		// return the connection
 		Ok((Connection {
@@ -157,6 +171,10 @@ impl Connection {
 				self.reconnect().map(Event::Ready)
 			}
 			Err(error) => Err(error),
+			Ok(GatewayEvent::Hello(interval)) => {
+				debug!("Mysterious late-game hello: {}", interval);
+				self.recv_event()
+			}
 			Ok(GatewayEvent::Dispatch(sequence, event)) => {
 				self.last_sequence = sequence;
 				let _ = self.keepalive_channel.send(Status::Sequence(sequence));
@@ -179,6 +197,9 @@ impl Connection {
 					.insert("d", sequence)
 					.unwrap();
 				let _ = self.keepalive_channel.send(Status::SendMessage(map));
+				self.recv_event()
+			}
+			Ok(GatewayEvent::HeartbeatAck) => {
 				self.recv_event()
 			}
 			Ok(GatewayEvent::Reconnect) => {
@@ -220,10 +241,7 @@ impl Connection {
 		debug!("Resuming...");
 		// close connection and re-establish
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
-		let url = match ::websocket::client::request::Url::parse(&format!("{}?v={}", self.ws_url, ::GATEWAY_VERSION)) {
-			Ok(url) => url,
-			Err(_) => return Err(Error::Other("Invalid URL in Connection::resume()"))
-		};
+		let url = try!(build_gateway_url(&self.ws_url));
 		let response = try!(try!(Client::connect(url)).send());
 		try!(response.validate());
 		let (mut sender, mut receiver) = response.begin().split();
@@ -300,9 +318,15 @@ fn identify(token: &str) -> serde_json::Value {
 				.insert("$referring_domain", "")
 				.insert("$referrer", "")
 			)
-			.insert("v", ::GATEWAY_VERSION)
+			.insert("v", GATEWAY_VERSION)
 		)
 		.unwrap()
+}
+
+#[inline]
+fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
+	::websocket::client::request::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
+		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {

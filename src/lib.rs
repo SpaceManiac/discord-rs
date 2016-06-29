@@ -53,7 +53,6 @@ use model::*;
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
 const API_BASE: &'static str = "https://discordapp.com/api";
 const STATUS_BASE: &'static str = "https://status.discordapp.com";
-const GATEWAY_VERSION: u64 = 4;
 
 /// Client for the Discord REST API.
 ///
