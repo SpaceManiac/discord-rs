@@ -557,9 +557,14 @@ impl Discord {
 
 	/// Edit the list of roles assigned to a member of a server.
 	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
-		let map = ObjectBuilder::new()
-			.insert_array("roles", |ab| roles.iter().fold(ab, |ab, id| ab.push(id.0)))
-			.unwrap();
+		self.edit_member(*server, *user, |m| m.roles(roles))
+	}
+
+	/// Edit member information, including roles, nickname, and voice state.
+	///
+	/// See the `EditMember` struct for the editable fields.
+	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
+		let map = f(EditMember(ObjectBuilder::new())).0.unwrap();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(|| self.client.patch(
 			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
@@ -833,6 +838,33 @@ impl EditChannel {
 	/// Edit the voice channel's user limit. Both `None` and `Some(0)` mean "unlimited".
 	pub fn user_limit(self, user_limit: u64) -> Self {
 		EditChannel(self.0.insert("user_limit", user_limit))
+	}
+}
+
+/// Patch content for the `edit_member` call.
+pub struct EditMember(ObjectBuilder);
+
+impl EditMember {
+	/// Edit the member's nickname. Supply the empty string to remove a nickname.
+	pub fn nickname(self, nick: &str) -> Self {
+		EditMember(self.0.insert("nick", nick))
+	}
+	/// Edit whether the member is server-muted.
+	pub fn mute(self, mute: bool) -> Self {
+		EditMember(self.0.insert("mute", mute))
+	}
+	/// Edit whether the member is server-deafened.
+	pub fn deaf(self, deafen: bool) -> Self {
+		EditMember(self.0.insert("deaf", deafen))
+	}
+	/// Edit the member's assigned roles.
+	pub fn roles(self, roles: &[RoleId]) -> Self {
+		EditMember(self.0.insert_array("roles",
+			|ab| roles.iter().fold(ab, |ab, id| ab.push(id.0))))
+	}
+	/// Move the member to another voice channel.
+	pub fn channel(self, channel: ChannelId) -> Self {
+		EditMember(self.0.insert("channel_id", channel.0))
 	}
 }
 
