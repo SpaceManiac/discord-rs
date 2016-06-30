@@ -304,6 +304,15 @@ impl Connection {
 			.unwrap();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
+
+	#[doc(hidden)]
+	pub fn __guild_sync(&self, servers: &[ServerId]) {
+		let msg = ObjectBuilder::new()
+			.insert("op", 12)
+			.insert_array("d", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
+			.unwrap();
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+	}
 }
 
 fn identify(token: &str) -> serde_json::Value {

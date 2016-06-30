@@ -55,6 +55,15 @@ impl State {
 		total
 	}
 
+	/// Requests a download of online member lists.
+	///
+	/// It is recommended to avoid calling this method until the online member list
+	/// is actually needed, especially for large servers, in order to save bandwidth
+	/// and memory.
+	pub fn download_online_members(&mut self, connection: &::Connection) {
+		connection.__guild_sync(&self.servers.iter().map(|s| s.id).collect::<Vec<_>>());
+	}
+
 	/// Requests a download of all member information for large servers.
 	///
 	/// The members lists are cleared on call, and then refilled as chunks are received. When
@@ -205,6 +214,13 @@ impl State {
 			Event::ServerMembersChunk(server_id, ref members) => {
 				self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
 					srv.members.extend_from_slice(members);
+				});
+			}
+			Event::ServerSync { server_id, large, ref members, ref presences } => {
+				self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
+					srv.large = large;
+					srv.members.clone_from(members);
+					srv.presences.clone_from(presences);
 				});
 			}
 			Event::ServerRoleCreate(ref server_id, ref role) => {

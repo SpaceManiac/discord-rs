@@ -1410,6 +1410,12 @@ pub enum Event {
 	},
 	ServerMemberRemove(ServerId, User),
 	ServerMembersChunk(ServerId, Vec<Member>),
+	ServerSync {
+		server_id: ServerId,
+		large: bool,
+		members: Vec<Member>,
+		presences: Vec<Presence>,
+	},
 
 	ServerRoleCreate(ServerId, Role),
 	ServerRoleUpdate(ServerId, Role),
@@ -1570,6 +1576,13 @@ impl Event {
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				try!(remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))),
 			))
+		} else if kind == "GUILD_SYNC" {
+			warn_json!(value, Event::ServerSync {
+				server_id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
+				large: req!(try!(remove(&mut value, "large")).as_boolean()),
+				members: try!(remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))),
+				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
+			})
 		} else if kind == "GUILD_ROLE_CREATE" {
 			warn_json!(value, Event::ServerRoleCreate(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
