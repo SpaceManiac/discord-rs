@@ -232,7 +232,6 @@ impl Discord {
 		};
 		let map = f(EditChannel(map)).0.unwrap();
 		let body = try!(serde_json::to_string(&map));
-		println!("body being sent is: {}", body);
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/channels/{}", API_BASE, channel.0)).body(&body)));
 		PublicChannel::decode(try!(serde_json::from_reader(response)))
