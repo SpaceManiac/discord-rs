@@ -49,7 +49,7 @@ pub fn main() {
 				}
 
 				// reply to a command if there was one
-				let mut split = message.content.split(" ");
+				let mut split = message.content.split(' ');
 				let first_word = split.next().unwrap_or("");
 				let argument = split.next().unwrap_or("");
 
@@ -61,7 +61,7 @@ pub fn main() {
 						vchan.map(|(sid, _)| connection.drop_voice(sid));
 					} else {
 						let output = if let Some((server_id, channel_id)) = vchan {
-							match discord::voice::open_ytdl_stream(&argument) {
+							match discord::voice::open_ytdl_stream(argument) {
 								Ok(stream) => {
 									let voice = connection.voice(server_id);
 									voice.set_deaf(true);
@@ -74,7 +74,7 @@ pub fn main() {
 						} else {
 							"You must be in a voice channel to DJ".to_owned()
 						};
-						if output.len() > 0 {
+						if output.is_empty() {
 							warn(discord.send_message(&message.channel_id, &output, "", false));
 						}
 					}
