@@ -593,7 +593,6 @@ impl Message {
 #[derive(Debug, Clone)]
 pub struct Invite {
 	pub code: String,
-	pub xkcdpass: Option<String>,
 	pub server_id: ServerId,
 	pub server_name: String,
 	pub channel_type: ChannelType,
@@ -618,7 +617,6 @@ impl Invite {
 
 		warn_json!(value, Invite {
 			code: try!(remove(&mut value, "code").and_then(into_string)),
-			xkcdpass: try!(opt(&mut value, "xkcdpass", into_string)),
 			server_id: server_id,
 			server_name: server_name,
 			channel_type: channel_type,
@@ -632,7 +630,6 @@ impl Invite {
 #[derive(Debug, Clone)]
 pub struct RichInvite {
 	pub code: String,
-	pub xkcdpass: Option<String>,
 	pub server_id: ServerId,
 	pub server_name: String,
 	pub server_splash_hash: Option<String>,
@@ -666,7 +663,6 @@ impl RichInvite {
 
 		warn_json!(value, RichInvite {
 			code: try!(remove(&mut value, "code").and_then(into_string)),
-			xkcdpass: try!(opt(&mut value, "xkcdpass", into_string)),
 			server_id: server_id,
 			server_name: server_name,
 			server_splash_hash: server_splash_hash,

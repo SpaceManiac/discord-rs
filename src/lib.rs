@@ -519,18 +519,17 @@ impl Discord {
 
 	/// Create an invite to a channel.
 	///
-	/// Passing 0 for `max_age` or `max_uses` means no limit. `max_age` should be specified in
-	/// seconds. Enabling `xkcdpass` forces a 30-minute expiry.
+	/// Passing 0 for `max_age` or `max_uses` means no limit. `max_age` should
+	/// be specified in seconds.
 	pub fn create_invite(&self, channel: ChannelId,
 		max_age: u64, max_uses: u64,
-		temporary: bool, xkcdpass: bool
+		temporary: bool
 	) -> Result<RichInvite> {
 		let map = ObjectBuilder::new()
 			.insert("validate", serde_json::Value::Null)
 			.insert("max_age", max_age)
 			.insert("max_uses", max_uses)
 			.insert("temporary", temporary)
-			.insert("xkcdpass", xkcdpass)
 			.unwrap();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
