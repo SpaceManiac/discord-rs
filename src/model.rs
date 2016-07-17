@@ -293,7 +293,7 @@ impl Role {
 pub struct User {
 	pub id: UserId,
 	pub name: String,
-	pub discriminator: String,
+	pub discriminator: u16,
 	pub avatar: Option<String>,
 	pub bot: bool,
 }
@@ -1048,7 +1048,7 @@ impl PossibleServer<Server> {
 pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
-	pub discriminator: String,
+	pub discriminator: u16,
 	pub avatar: Option<String>,
 	pub email: Option<String>,
 	pub verified: bool,
@@ -1062,7 +1062,7 @@ impl CurrentUser {
 		warn_json!(value, CurrentUser {
 			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
 			username: try!(remove(&mut value, "username").and_then(into_string)),
-			discriminator: try!(remove(&mut value, "discriminator").and_then(into_string)),
+			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
 			email: try!(opt(&mut value, "email", into_string)),
 			avatar: try!(opt(&mut value, "avatar", into_string)),
 			verified: req!(try!(remove(&mut value, "verified")).as_boolean()),
@@ -1748,12 +1748,12 @@ fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut BTreeMap<String, Value>, key:
 	}
 }
 
-fn decode_discriminator(value: Value) -> Result<String> {
+fn decode_discriminator(value: Value) -> Result<u16> {
 	match value {
-		Value::String(s) => Ok(s),
-		Value::I64(v) => Ok(v.to_string()),
-		Value::U64(v) => Ok(v.to_string()),
-		other => Err(Error::Decode("Expected string or u64", other))
+		Value::I64(v) => Ok(v as u16),
+		Value::U64(v) => Ok(v as u16),
+		Value::String(s) => s.parse::<u16>().or(Err(Error::Other("Error parsing discriminator as u16"))),
+		value => Err(Error::Decode("Expected string or u64", value)),
 	}
 }
 
