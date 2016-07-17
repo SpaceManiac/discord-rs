@@ -380,6 +380,7 @@ pub struct PrivateChannel {
 	pub id: ChannelId,
 	pub recipient: User,
 	pub last_message_id: Option<MessageId>,
+	pub last_pin_timestamp: Option<String>,
 }
 
 impl PrivateChannel {
@@ -390,6 +391,7 @@ impl PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			recipient: try!(remove(&mut value, "recipient").and_then(User::decode)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 		})
 	}
 }
@@ -407,6 +409,7 @@ pub struct PublicChannel {
 	pub last_message_id: Option<MessageId>,
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
+	pub last_pin_timestamp: Option<String>,
 }
 
 impl PublicChannel {
@@ -430,6 +433,7 @@ impl PublicChannel {
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 		})
 	}
 
@@ -1426,6 +1430,10 @@ pub enum Event {
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
+	ChannelPinsUpdate {
+		channel_id: ChannelId,
+		last_pin_timestamp: Option<String>,
+	},
 
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
@@ -1619,6 +1627,11 @@ impl Event {
 			Channel::decode(Value::Object(value)).map(Event::ChannelUpdate)
 		} else if kind == "CHANNEL_DELETE" {
 			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
+		} else if kind == "CHANNEL_PINS_UPDATE" {
+			warn_json!(value, Event::ChannelPinsUpdate {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			})
 		} else {
 			Ok(Event::Unknown(kind, value))
 		}

@@ -274,6 +274,23 @@ impl State {
 					});
 				}
 			},
+			Event::ChannelPinsUpdate { ref channel_id, ref last_pin_timestamp } => {
+				for server in self.servers.iter_mut() {
+					for channel in server.channels.iter_mut() {
+						if channel.id == *channel_id {
+							channel.last_pin_timestamp = last_pin_timestamp.clone();
+							return
+						}
+					}
+				}
+
+				for channel in self.private_channels.iter_mut() {
+					if channel.id == *channel_id {
+						channel.last_pin_timestamp = last_pin_timestamp.clone();
+						return
+					}
+				}
+			}
 			_ => {}
 		}
 	}
