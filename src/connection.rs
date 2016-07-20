@@ -288,7 +288,15 @@ impl Connection {
 
 	/// Cleanly shut down the websocket connection. Optional.
 	pub fn shutdown(mut self) -> Result<()> {
-		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
+		use websocket::{Sender as S};
+		use std::io::Write;
+
+		// Hacky horror: get the WebSocketStream from the Receiver and formally close it
+		let stream = self.receiver.get_mut().get_mut();
+		try!(Sender::new(stream.by_ref(), true)
+			.send_message(&::websocket::message::Message::close_because(1000, "")));
+		try!(stream.flush());
+		try!(stream.shutdown(::std::net::Shutdown::Both));
 		Ok(())
 	}
 
