@@ -1358,6 +1358,9 @@ pub struct ReadyEvent {
 	/// The trace of servers involved in this connection.
 	pub trace: Vec<Option<String>>,
 	pub notes: Option<BTreeMap<UserId, String>>,
+	/// The shard info for this session; the shard id used and the total number
+	/// of shards.
+	pub shard: Option<[u8; 2]>,
 }
 
 /// Event received over a websocket connection
@@ -1514,6 +1517,7 @@ impl Event {
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
 				notes: try!(opt(&mut value, "notes", decode_notes)),
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
+				shard: try!(opt(&mut value, "shard", decode_shards)),
 			}))
 		} else if kind == "RESUMED" {
 			warn_json!(value, Event::Resumed {
@@ -1814,6 +1818,14 @@ fn decode_notes(value: Value) -> Result<BTreeMap<UserId, String>> {
 		/* key */ UserId(try!(key.parse::<u64>().map_err(|_| Error::Other("Invalid user id in notes")))),
 		/* val */ try!(into_string(value))
 	))).collect()
+}
+
+fn decode_shards(value: Value) -> Result<[u8; 2]> {
+	let array = try!(into_array(value));
+	Ok([
+		req!(try!(array.get(0).ok_or(Error::Other("Expected shard number"))).as_u64()) as u8,
+		req!(try!(array.get(1).ok_or(Error::Other("Expected total shard number"))).as_u64()) as u8
+	])
 }
 
 fn into_string(value: Value) -> Result<String> {

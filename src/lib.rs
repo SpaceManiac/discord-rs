@@ -784,14 +784,33 @@ impl Discord {
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
 	/// connection, which contains the initial state as seen by the client.
+	///
+	/// See `connect_sharded` if you want to use guild sharding.
 	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
+		self.__connect(None)
+	}
+
+	/// Establish a sharded websocket connection over which events can be
+	/// received.
+	///
+	/// The `shard_id` is indexed at 0 while `total_shards` is indexed at 1.
+	///
+	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
+	/// connection, which contains the initial state as seen by the client.
+	///
+	/// See `connect` if you do not want to use guild sharding.
+	pub fn connect_sharded(&self, shard_id: u8, total_shards: u8) -> Result<(Connection, ReadyEvent)> {
+		self.__connect(Some([shard_id, total_shards]))
+	}
+
+	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
 		let response = try!(self.request(|| self.client.get(&format!("{}/gateway", API_BASE))));
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let url = match value.get("url") {
 			Some(url) => url,
 			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
 		};
-		Connection::new(&url, &self.token)
+		Connection::new(&url, &self.token, shard_info)
 	}
 }
 
