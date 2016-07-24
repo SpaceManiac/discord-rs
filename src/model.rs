@@ -729,7 +729,7 @@ impl ReadState {
 		warn_json!(value, ReadState {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			mention_count: req!(try!(remove(&mut value, "mention_count")).as_u64()),
+			mention_count: try!(opt(&mut value, "mention_count", |v| Ok(req!(v.as_u64())))).unwrap_or(0),
 		})
 	}
 }
