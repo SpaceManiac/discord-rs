@@ -298,6 +298,12 @@ pub struct User {
 	pub bot: bool,
 }
 
+impl fmt::Display for UserId {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		f.write_str(&self.0.to_string())
+	}
+}
+
 impl User {
 	pub fn decode(value: Value) -> Result<User> {
 		let mut value = try!(into_map(value));
