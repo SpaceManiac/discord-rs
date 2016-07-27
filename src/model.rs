@@ -300,7 +300,7 @@ pub struct User {
 
 impl fmt::Display for UserId {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		f.write_str(&self.0.to_string())
+		write!(f, "{}", self.0)
 	}
 }
 
