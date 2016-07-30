@@ -25,4 +25,6 @@ and receiving audio are also possible.
 
 For further details, browse the [source](src/) or read
 [the documentation](http://wombat.platymuus.com/rustdoc/discord_master/).
-For examples, browse the [examples](examples/) directory.
+Refer to the [installation guide](https://github.com/SpaceManiac/discord-rs/wiki/Windows-Installation)
+if you are using Windows. For examples, browse the [examples](examples/)
+directory.
