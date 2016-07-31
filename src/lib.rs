@@ -848,7 +848,20 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 	))
 }
 
-/// Retrieves the active maintenance statuses.
+/// Retrieves the current unresolved incidents from the status page.
+pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
+	let client = hyper::Client::new();
+	let response = try!(retry(|| client.get(
+		&format!("{}/api/v2/incidents/unresolved.json", STATUS_BASE))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("incidents") {
+		Some(incidents) => decode_array(incidents, Incident::decode),
+		None => Ok(vec![]),
+	}
+}
+
+/// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(check_status(retry(|| client.get(
@@ -861,7 +874,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	}
 }
 
-/// Retrieves the upcoming maintenance statuses.
+/// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(check_status(retry(|| client.get(

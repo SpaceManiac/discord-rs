@@ -1577,6 +1577,75 @@ impl Maintenance {
 	}
 }
 
+/// An incident retrieved from the Discord status page.
+#[derive(Debug, Clone)]
+pub struct Incident {
+	pub id: String,
+	pub impact: String,
+	pub monitoring_at: Option<String>,
+	pub name: String,
+	pub page_id: String,
+	pub short_link: String,
+	pub status: String,
+
+	pub incident_updates: Vec<IncidentUpdate>,
+
+	pub created_at: String,
+	pub resolved_at: Option<String>,
+	pub updated_at: String,
+}
+
+impl Incident {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Incident {
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			impact: try!(remove(&mut value, "impact").and_then(into_string)),
+			monitoring_at: try!(opt(&mut value, "monitoring_at", into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			page_id: try!(remove(&mut value, "page_id").and_then(into_string)),
+			short_link: try!(remove(&mut value, "shortlink").and_then(into_string)),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
+			incident_updates: try!(decode_array(try!(remove(&mut value, "incident_updates")), IncidentUpdate::decode)),
+			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
+			resolved_at: try!(opt(&mut value, "resolved_at", into_string)),
+			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
+		})
+	}
+}
+
+/// An update to an incident from the Discord status page. This will typically
+/// state what new information has been discovered about an incident.
+#[derive(Debug, Clone)]
+pub struct IncidentUpdate {
+	pub body: String,
+	pub id: String,
+	pub incident_id: String,
+	pub status: String,
+
+	pub affected_components: Vec<Value>,
+
+	pub created_at: String,
+	pub display_at: String,
+	pub updated_at: String,
+}
+
+impl IncidentUpdate {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, IncidentUpdate {
+			body: try!(remove(&mut value, "body").and_then(into_string)),
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			incident_id: try!(remove(&mut value, "incident_id").and_then(into_string)),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
+			affected_components: try!(decode_array(try!(remove(&mut value, "affected_components")), Ok)),
+			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
+			display_at: try!(remove(&mut value, "display_at").and_then(into_string)),
+			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
