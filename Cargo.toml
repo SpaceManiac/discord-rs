@@ -11,15 +11,19 @@ keywords = ["discord", "chat", "bot", "api", "voice"]
 repository = "https://github.com/SpaceManiac/discord-rs"
 documentation = "http://wombat.platymuus.com/rustdoc/discord_0.6.0/"
 
+[features]
+default = ["voice"]
+voice = ["opus", "sodiumoxide"]
+
 [dependencies]
 hyper = "0.7"
 serde_json = "0.6"
 websocket = "0.15"
 bitflags = "0.3"
 byteorder = "0.4"
-opus = "0.1"
+opus = { version = "0.1", optional = true }
 time = "0.1"
 log = "0.3"
-sodiumoxide = { version = "0.0.9", features = [] }
+sodiumoxide = { version = "0.0.9", features = [], optional = true }
 multipart = { version = "0.5", features = ["hyper", "client"] }
 base64-rs = "0.1.0"

@@ -5,6 +5,7 @@ use hyper::Error as HyperError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use websocket::result::WebSocketError;
+#[cfg(feature="voice")]
 use opus::Error as OpusError;
 use byteorder::Error as BoError;
 
@@ -23,6 +24,7 @@ pub enum Error {
 	/// A `std::io` module error
 	Io(IoError),
 	/// An error in the Opus library, with the function name and error code
+	#[cfg(feature="voice")]
 	Opus(OpusError),
 	/// A websocket connection was closed, possibly with a message
 	Closed(Option<u16>, Vec<u8>),
@@ -78,6 +80,7 @@ impl From<WebSocketError> for Error {
 	}
 }
 
+#[cfg(feature="voice")]
 impl From<OpusError> for Error {
 	fn from(err: OpusError) -> Error {
 		Error::Opus(err)
@@ -100,6 +103,7 @@ impl Display for Error {
 			Error::Json(ref inner) => inner.fmt(f),
 			Error::WebSocket(ref inner) => inner.fmt(f),
 			Error::Io(ref inner) => inner.fmt(f),
+			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.fmt(f),
 			_ => f.write_str(self.description()),
 		}
@@ -113,6 +117,7 @@ impl StdError for Error {
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
+			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.description(),
 			Error::Closed(_, _) => "Connection closed",
 			Error::Decode(msg, _) => msg,
@@ -129,6 +134,7 @@ impl StdError for Error {
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
 			Error::Io(ref inner) => Some(inner),
+			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => Some(inner),
 			_ => None,
 		}

@@ -1,4 +1,5 @@
 use std::sync::mpsc;
+#[cfg(feature="voice")]
 use std::collections::HashMap;
 
 use websocket::client::{Client, Sender, Receiver};
@@ -9,16 +10,42 @@ use serde_json::builder::ObjectBuilder;
 
 use model::*;
 use internal::Status;
+#[cfg(feature="voice")]
 use voice::VoiceConnection;
 use {Result, Error, SenderExt, ReceiverExt};
 
 const GATEWAY_VERSION: u64 = 5;
 
+#[cfg(feature="voice")]
+macro_rules! finish_connection {
+	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
+		$($name1: $val1,)*
+		$($name2: $val2,)*
+	}}
+}
+#[cfg(not(feature="voice"))]
+macro_rules! finish_connection {
+	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
+		$($name1: $val1,)*
+	}}
+}
+
+#[cfg(feature="voice")]
+macro_rules! voice_only {
+	($b:block) => {$b}
+}
+#[cfg(not(feature="voice"))]
+macro_rules! voice_only {
+	($b:block) => {}
+}
+
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
+	#[cfg(feature="voice")]
 	voice_handles: HashMap<ServerId, VoiceConnection>,
+	#[cfg(feature="voice")]
 	user_id: UserId,
 	ws_url: String,
 	token: String,
@@ -94,16 +121,17 @@ impl Connection {
 		let session_id = ready.session_id.clone();
 
 		// return the connection
-		Ok((Connection {
+		Ok((finish_connection!(
 			keepalive_channel: tx,
 			receiver: receiver,
-			voice_handles: HashMap::new(),
-			user_id: ready.user.id,
 			ws_url: base_url.to_owned(),
 			token: token.to_owned(),
 			session_id: Some(session_id),
-			last_sequence: sequence,
-		}, ready))
+			last_sequence: sequence;
+			// voice only
+			user_id: ready.user.id,
+			voice_handles: HashMap::new(),
+		), ready))
 	}
 
 	/// Change the game information that this client reports as playing.
@@ -128,6 +156,7 @@ impl Connection {
 	}
 
 	/// Get a handle to the voice connection for a server.
+	#[cfg(feature="voice")]
 	pub fn voice(&mut self, server_id: ServerId) -> &mut VoiceConnection {
 		let Connection { ref mut voice_handles, user_id, ref keepalive_channel, .. } = *self;
 		voice_handles.entry(server_id).or_insert_with(||
@@ -139,6 +168,7 @@ impl Connection {
 	///
 	/// Calling `.voice(server_id).disconnect()` will disconnect from voice but retain the mute
 	/// and deaf status, audio source, and audio receiver.
+	#[cfg(feature="voice")]
 	pub fn drop_voice(&mut self, server_id: ServerId) {
 		self.voice_handles.remove(&server_id);
 	}
@@ -182,12 +212,14 @@ impl Connection {
 					debug!("Resumed successfully");
 					let _ = self.keepalive_channel.send(Status::ChangeInterval(heartbeat_interval));
 				}
-				if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
-					self.voice(server_id).__update_state(voice_state);
-				}
-				if let Event::VoiceServerUpdate { server_id, ref endpoint, ref token } = event {
-				   self.voice(server_id).__update_server(endpoint, token);
-				}
+				voice_only! {{
+					if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
+						self.voice(server_id).__update_state(voice_state);
+					}
+					if let Event::VoiceServerUpdate { server_id, ref endpoint, ref token } = event {
+						self.voice(server_id).__update_server(endpoint, token);
+					}
+				}}
 				Ok(event)
 			}
 			Ok(GatewayEvent::Heartbeat(sequence)) => {

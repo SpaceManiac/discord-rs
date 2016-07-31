@@ -15,6 +15,7 @@
 //! the `ReadyEvent` obtained when opening a `Connection` and kept updated with
 //! the events received over it.
 //!
+#![cfg_attr(not(feature="voice"), doc="*<b>NOTE</b>: The library has been compiled without voice support.*")]
 //! To join voice servers, call `Connection::voice` to get a `VoiceConnection` and use `connect`
 //! to join a channel, then `play` and `stop` to control playback. Manipulating deaf/mute state
 //! and receiving audio are also possible.
@@ -28,10 +29,12 @@ extern crate websocket;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
+#[cfg(feature="voice")]
 extern crate opus;
 extern crate time;
 #[macro_use]
 extern crate log;
+#[cfg(feature="voice")]
 extern crate sodiumoxide;
 extern crate multipart;
 extern crate base64;
@@ -42,6 +45,7 @@ use serde_json::builder::ObjectBuilder;
 mod error;
 mod connection;
 mod state;
+#[cfg(feature="voice")]
 pub mod voice;
 pub mod model;
 
@@ -937,6 +941,7 @@ struct Timer {
 	tick_len: time::Duration,
 }
 
+#[cfg_attr(not(feature="voice"), allow(dead_code))]
 impl Timer {
 	fn new(tick_len_ms: u64) -> Timer {
 		let tick_len = time::Duration::milliseconds(tick_len_ms as i64);
