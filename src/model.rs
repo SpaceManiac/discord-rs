@@ -44,6 +44,10 @@ macro_rules! id {
 	($(#[$attr:meta] $name:ident;)*) => {
 		$(
 			#[$attr]
+			///
+			/// Identifiers can be debug-printed using the `{:?}` specifier, or their
+			/// raw number value printed using the `{}` specifier.
+			/// Some identifiers have `mention()` methods as well.
 			#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
 			pub struct $name(pub u64);
 
@@ -59,6 +63,12 @@ macro_rules! id {
 				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
 				pub fn creation_date(&self) -> ::time::Timespec {
 					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				}
+			}
+
+			impl fmt::Display for $name {
+				fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+					write!(f, "{}", self.0)
 				}
 			}
 		)*
