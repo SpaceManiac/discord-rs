@@ -495,8 +495,10 @@ pub mod permissions {
 			const CREATE_INVITE = 1 << 0,
 			const KICK_MEMBERS = 1 << 1,
 			const BAN_MEMBERS = 1 << 2,
-			/// Implies all permissions
-			const MANAGE_ROLES = 1 << 3,
+			/// Grant all permissions, bypassing channel-specific permissions
+			const ADMINISTRATOR = 1 << 3,
+			/// Modify roles below their own
+			const MANAGE_ROLES = 1 << 28,
 			/// Create channels or edit existing ones
 			const MANAGE_CHANNELS = 1 << 4,
 			/// Change the server's name or move regions
@@ -510,13 +512,15 @@ pub mod permissions {
 			const SEND_MESSAGES = 1 << 11,
 			/// Send text-to-speech messages to those focused on the channel
 			const SEND_TTS_MESSAGES = 1 << 12,
-			/// Delete or edit messages by other users
+			/// Delete messages by other users
 			const MANAGE_MESSAGES = 1 << 13,
 			const EMBED_LINKS = 1 << 14,
 			const ATTACH_FILES = 1 << 15,
 			const READ_HISTORY = 1 << 16,
 			/// Trigger a push notification for an entire channel with "@everyone"
 			const MENTION_EVERYONE = 1 << 17,
+			/// Use emojis from other servers
+			const EXTERNAL_EMOJIS = 1 << 18,
 
 			const VOICE_CONNECT = 1 << 20,
 			const VOICE_SPEAK = 1 << 21,
