@@ -1095,6 +1095,34 @@ impl CurrentUser {
 	}
 }
 
+/// Information about the current application and the owner.
+#[derive(Debug, Clone)]
+pub struct ApplicationInfo {
+	pub description: String,
+	pub flags: u64,
+	pub icon: Option<String>,
+	pub id: UserId,
+	pub name: String,
+	pub rpc_origins: Vec<String>,
+
+	pub owner: User,
+}
+
+impl ApplicationInfo {
+	pub fn decode(value: Value) -> Result<ApplicationInfo> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, ApplicationInfo {
+			description: try!(remove(&mut value, "description").and_then(into_string)),
+			flags: req!(try!(remove(&mut value, "flags")).as_u64()),
+			icon: try!(opt(&mut value, "icon", into_string)),
+			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			owner: try!(remove(&mut value, "owner").and_then(User::decode)),
+			rpc_origins: try!(remove(&mut value, "rpc_origins").and_then(|v| decode_array(v, into_string))),
+		})
+	}
+}
+
 /// A type of relationship this user has with another.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum RelationshipType {

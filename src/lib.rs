@@ -773,6 +773,13 @@ impl Discord {
 		Ok(())
 	}
 
+	/// Retrieves information about the application and the owner.
+	pub fn get_application_info(&self) -> Result<ApplicationInfo> {
+		let response = try!(self.request(||
+			self.client.get(&format!("{}/oauth2/applications/@me", API_BASE))));
+		ApplicationInfo::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
