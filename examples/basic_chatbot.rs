@@ -5,10 +5,9 @@ use discord::model::Event;
 use std::env;
 
 fn main() {
-	// Log in to Discord using the email and password in the environment
-	let discord = Discord::new(
-		&env::var("DISCORD_EMAIL").expect("DISCORD_EMAIL"),
-		&env::var("DISCORD_PASSWORD").expect("DISCORD_PASSWORD")
+	// Log in to Discord using a bot token from the environment
+	let discord = Discord::from_bot_token(
+		&env::var("DISCORD_TOKEN").expect("Expected token"),
 	).expect("login failed");
 
 	// Establish and use a websocket connection

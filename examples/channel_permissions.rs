@@ -15,7 +15,7 @@ fn main() {
 	// Log in to Discord using a bot token from the environment
 	let discord = Discord::from_bot_token(
 		&env::var("DISCORD_TOKEN").expect("Expected token"),
-		).expect("login failed");
+	).expect("login failed");
 	println!("Ready.");
 
 	// Create bitflags of the permissions to allow and deny

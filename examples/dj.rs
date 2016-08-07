@@ -11,8 +11,10 @@ use discord::model::Event;
 // The bot will quit any voice channel it is the last user in.
 
 pub fn main() {
-	// log in to the API
-	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Bad DISCORD_TOKEN")).expect("Login failed");
+	// Log in to Discord using a bot token from the environment
+	let discord = Discord::from_bot_token(
+		&env::var("DISCORD_TOKEN").expect("Expected token"),
+	).expect("login failed");
 
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
