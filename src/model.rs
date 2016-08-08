@@ -151,20 +151,41 @@ fn mention_test() {
 /// The type of a channel
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
-	/// A text channel, through which `Message`s are transmitted
+	/// A group channel, separate from a server
+	Group,
+	/// A private channel with only one other person
+	Private,
+	/// A text channel in a server
 	Text,
 	/// A voice channel
 	Voice,
 }
 
 impl ChannelType {
+	/// Attempt to parse a ChannelType from a number
+	pub fn from_num(num: u64) -> Option<ChannelType> {
+		match num {
+			0 => Some(ChannelType::Text),
+			1 => Some(ChannelType::Private),
+			2 => Some(ChannelType::Voice),
+			3 => Some(ChannelType::Group),
+			_ => None,
+		}
+	}
+
 	/// Attempt to parse a ChannelType from a name
 	pub fn from_str(name: &str) -> Option<ChannelType> {
 		match name {
+			"group" => Some(ChannelType::Group),
+			"private" => Some(ChannelType::Private),
 			"text" => Some(ChannelType::Text),
 			"voice" => Some(ChannelType::Voice),
 			_ => None,
 		}
+	}
+
+	fn from_num_err(num: u64) -> Result<ChannelType> {
+		ChannelType::from_num(num).ok_or(Error::Decode("Expected valid ChannelType", Value::String(format!("{}", num))))
 	}
 
 	fn from_str_err(name: String) -> Result<ChannelType> {
@@ -174,8 +195,20 @@ impl ChannelType {
 	/// Get the name of this ChannelType
 	pub fn name(&self) -> &'static str {
 		match *self {
+			ChannelType::Group => "group",
+			ChannelType::Private => "private",
 			ChannelType::Text => "text",
 			ChannelType::Voice => "voice",
+		}
+	}
+
+	/// Get the number of this ChannelType
+	pub fn num(&self) -> u8 {
+		match *self {
+			ChannelType::Text => 0,
+			ChannelType::Private => 1,
+			ChannelType::Voice => 2,
+			ChannelType::Group => 3,
 		}
 	}
 }
@@ -367,6 +400,8 @@ impl Member {
 /// A private or public channel
 #[derive(Debug, Clone)]
 pub enum Channel {
+	/// A group channel separate from a server
+	Group(Group),
 	/// Text channel to another user
 	Private(PrivateChannel),
 	/// Voice or text channel within a server
@@ -375,12 +410,73 @@ pub enum Channel {
 
 impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
-		let mut value = try!(into_map(value));
-		if req!(try!(remove(&mut value, "is_private")).as_boolean()) {
-			PrivateChannel::decode(Value::Object(value)).map(Channel::Private)
-		} else {
-			PublicChannel::decode(Value::Object(value)).map(Channel::Public)
+		let map = try!(into_map(value));
+		match req!(map.get("type").and_then(|x| x.as_u64())) {
+			0 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
+			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
+			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
+			3 => Group::decode(Value::Object(map)).map(Channel::Group),
+			other => Err(Error::Decode("Expected value Channel type", Value::U64(other))),
 		}
+	}
+}
+
+/// A group channel, potentially including other users, separate from a server.
+#[derive(Debug, Clone)]
+pub struct Group {
+	pub channel_id: ChannelId,
+	pub icon: Option<String>,
+	pub last_message_id: Option<MessageId>,
+	pub last_pin_timestamp: Option<String>,
+	pub name: Option<String>,
+	pub owner_id: UserId,
+	pub recipients: Option<Vec<User>>,
+
+	pub call: Option<Call>,
+}
+
+impl Group {
+	pub fn decode(value: Value) -> Result<Group> {
+		let mut value = try!(into_map(value));
+		let recipients = match try!(opt(&mut value, "recipients", Ok)) {
+			Some(recipients) => Some(try!(decode_array(recipients, User::decode))),
+			None => None,
+		};
+		warn_json!(value, Group {
+			channel_id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
+			icon: try!(opt(&mut value, "icon", into_string)),
+			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			name: try!(opt(&mut value, "name", into_string)),
+			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
+			recipients: recipients,
+			call: None,
+		})
+	}
+}
+
+/// A call within a group
+#[derive(Debug, Clone)]
+pub struct Call {
+	pub channel_id: ChannelId,
+	pub message_id: MessageId,
+	pub region: String,
+	pub ringing: Vec<UserId>,
+	pub unavailable: bool,
+	pub voice_states: Vec<VoiceState>,
+}
+
+impl Call {
+	pub fn decode(value: Value) -> Result<Call> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Call {
+			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+			region: try!(remove(&mut value, "region").and_then(into_string)),
+			ringing: try!(decode_array(try!(remove(&mut value, "ringing")), UserId::decode)),
+			unavailable: req!(try!(remove(&mut value, "unavailable")).as_boolean()),
+			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
+		})
 	}
 }
 
@@ -388,6 +484,7 @@ impl Channel {
 #[derive(Debug, Clone)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
+	pub kind: ChannelType,
 	pub recipient: User,
 	pub last_message_id: Option<MessageId>,
 	pub last_pin_timestamp: Option<String>,
@@ -396,10 +493,10 @@ pub struct PrivateChannel {
 impl PrivateChannel {
 	pub fn decode(value: Value) -> Result<PrivateChannel> {
 		let mut value = try!(into_map(value));
-		value.remove("is_private"); // discard is_private
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			recipient: try!(remove(&mut value, "recipient").and_then(User::decode)),
+			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(ChannelType::from_num_err)),
+			recipient: try!(decode_array(try!(remove(&mut value, "recipients")), User::decode)).remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 		})
@@ -438,7 +535,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: try!(opt(&mut value, "topic", into_string)),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			kind: try!(remove(&mut value, "type").and_then(into_string).and_then(ChannelType::from_str_err)),
+			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(ChannelType::from_num_err)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
@@ -583,6 +680,7 @@ pub struct Message {
 	pub timestamp: String,
 	pub edited_timestamp: Option<String>,
 	pub pinned: bool,
+	pub kind: MessageType,
 
 	pub author: User,
 	pub mention_everyone: bool,
@@ -606,6 +704,7 @@ impl Message {
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 			pinned: req!(try!(remove(&mut value, "pinned")).as_boolean()),
+			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(MessageType::from_num_err)),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_boolean()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
@@ -613,6 +712,54 @@ impl Message {
 			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
 			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
 		})
+	}
+}
+
+/// The type of a message
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum MessageType {
+	/// A group call was created
+	GroupCallCreation,
+	/// A group icon was updated
+	GroupIconUpdate,
+	/// A group name was updated
+	GroupNameUpdate,
+	/// A recipient was added to the group
+	GroupRecipientAddition,
+	/// A recipient was removed from the group
+	GroupRecipientRemoval,
+	/// A regular, text-based message
+	Regular,
+}
+
+impl MessageType {
+	/// Attempt to parse a MessageType from a number
+	pub fn from_num(num: u64) -> Option<MessageType> {
+		match num {
+			0 => Some(MessageType::Regular),
+			1 => Some(MessageType::GroupRecipientAddition),
+			2 => Some(MessageType::GroupRecipientRemoval),
+			3 => Some(MessageType::GroupCallCreation),
+			4 => Some(MessageType::GroupNameUpdate),
+			5 => Some(MessageType::GroupIconUpdate),
+			_ => None,
+		}
+	}
+
+	pub fn from_num_err(num: u64) -> Result<MessageType> {
+		MessageType::from_num(num).ok_or(Error::Decode("Expected valid MessageType", Value::String(format!("{}", num))))
+	}
+
+	/// Get the number of this MessageType
+	pub fn num(&self) -> u8 {
+		match *self {
+			MessageType::Regular => 0,
+			MessageType::GroupRecipientAddition => 1,
+			MessageType::GroupRecipientRemoval => 2,
+			MessageType::GroupCallCreation => 3,
+			MessageType::GroupNameUpdate => 4,
+			MessageType::GroupIconUpdate => 5,
+		}
 	}
 }
 
@@ -869,6 +1016,64 @@ impl Presence {
 			user: user,
 			nick: try!(opt(&mut value, "nick", into_string)),
 		})
+	}
+}
+
+/// The type of channel that a state is for
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+pub enum VoiceType {
+	// The ChannelId is not received on a VoiceStateUpdate when a user leaves an
+	// active call.
+	Group(Option<ChannelId>),
+	Server(ServerId),
+}
+
+impl VoiceType {
+	pub fn decode(value: Value) -> Result<VoiceType> {
+		let mut value = try!(into_map(value));
+		if let Ok(server_id) = remove(&mut value, "guild_id") {
+			Ok(VoiceType::Server(try!(ServerId::decode(server_id))))
+		} else if let Ok(channel_id) = opt(&mut value, "channel_id", ChannelId::decode) {
+			Ok(VoiceType::Group(channel_id))
+		} else {
+			Err(Error::Other("Unknown voice state type"))
+		}
+	}
+}
+
+impl From<Option<ChannelId>> for VoiceType {
+	fn from(channel_id: Option<ChannelId>) -> VoiceType {
+		VoiceType::Group(channel_id)
+	}
+}
+
+impl From<ChannelId> for VoiceType {
+	fn from(channel_id: ChannelId) -> VoiceType {
+		VoiceType::Group(Some(channel_id))
+	}
+}
+
+impl From<ServerId> for VoiceType {
+	fn from(server_id: ServerId) -> VoiceType {
+		VoiceType::Server(server_id)
+	}
+}
+
+impl PartialEq<VoiceType> for ServerId {
+	fn eq(&self, other: &VoiceType) -> bool {
+		match *other {
+			VoiceType::Server(id) => *self == id,
+			_ => false,
+		}
+	}
+}
+
+impl PartialEq<ServerId> for VoiceType {
+	fn eq(&self, other: &ServerId) -> bool {
+		match *self {
+			VoiceType::Server(x) => x == *other,
+			_ => false,
+		}
 	}
 }
 
@@ -1277,7 +1482,7 @@ impl ChannelOverride {
 /// User settings which influence per-server notification behavior
 #[derive(Debug, Clone)]
 pub struct UserServerSettings {
-	pub server_id: ServerId,
+	pub server_id: Option<ServerId>,
 	pub message_notifications: NotificationLevel,
 	pub mobile_push: bool,
 	pub muted: bool,
@@ -1289,7 +1494,7 @@ impl UserServerSettings {
 	pub fn decode(value: Value) -> Result<UserServerSettings> {
 		let mut value = try!(into_map(value));
 		warn_json!(value, UserServerSettings {
-			server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+			server_id: try!(opt(&mut value, "guild_id", ServerId::decode)),
 			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
 			mobile_push: req!(try!(remove(&mut value, "mobile_push")).as_boolean()),
 			muted: req!(try!(remove(&mut value, "muted")).as_boolean()),
@@ -1349,7 +1554,7 @@ pub struct ReadyEvent {
 	pub session_id: String,
 	pub user_settings: Option<UserSettings>,
 	pub read_state: Option<Vec<ReadState>>,
-	pub private_channels: Vec<PrivateChannel>,
+	pub private_channels: Vec<Channel>,
 	pub presences: Vec<Presence>,
 	pub relationships: Vec<Relationship>,
 	pub servers: Vec<PossibleServer<LiveServer>>,
@@ -1397,13 +1602,29 @@ pub enum Event {
 	/// Update to the logged-in user's server-specific notification settings
 	UserServerSettingsUpdate(UserServerSettings),
 	/// A member's voice state has changed
-	VoiceStateUpdate(ServerId, VoiceState),
+	VoiceStateUpdate(VoiceType, VoiceState),
 	/// Voice server information is available
 	VoiceServerUpdate {
 		server_id: ServerId,
 		endpoint: Option<String>,
 		token: String,
 	},
+	/// A new group call has been created
+	CallCreate(Call),
+	/// A group call has been deleted (the call ended)
+	CallDelete(ChannelId),
+	/// A group call has been updated
+	CallUpdate {
+		channel_id: ChannelId,
+		message_id: MessageId,
+		region: String,
+		ringing: Vec<UserId>,
+	},
+	/// A user has been added to a group
+	ChannelRecipientAdd(ChannelId, User),
+	/// A user has been removed from a group
+	ChannelRecipientRemove(ChannelId, User),
+
 	/// A user is typing; considered to last 5 seconds
 	TypingStart {
 		channel_id: ChannelId,
@@ -1484,6 +1705,10 @@ pub enum Event {
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
+	ChannelPinsAck {
+		channel_id: ChannelId,
+		timestamp: String,
+	},
 	ChannelPinsUpdate {
 		channel_id: ChannelId,
 		last_pin_timestamp: Option<String>,
@@ -1508,7 +1733,7 @@ impl Event {
 				user: try!(remove(&mut value, "user").and_then(CurrentUser::decode)),
 				session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
 				read_state: try!(opt(&mut value, "read_state", |v| decode_array(v, ReadState::decode))),
-				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), PrivateChannel::decode)),
+				private_channels: try!(decode_array(try!(remove(&mut value, "private_channels")), Channel::decode)),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 				relationships: try!(remove(&mut value, "relationships").and_then(|v| decode_array(v, Relationship::decode))),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), PossibleServer::<LiveServer>::decode)),
@@ -1548,14 +1773,37 @@ impl Event {
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
 			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
-			let server_id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
-			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
+			let kind = try!(VoiceType::decode(Value::Object(value.clone())));
+
+			Ok(Event::VoiceStateUpdate(kind, match kind {
+				VoiceType::Group(_) => try!(VoiceState::decode(Value::Object(value))),
+				VoiceType::Server(_) => try!(VoiceState::decode(Value::Object(value))),
+			}))
 		} else if kind == "VOICE_SERVER_UPDATE" {
 			warn_json!(value, Event::VoiceServerUpdate {
 				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				endpoint: try!(opt(&mut value, "endpoint", into_string)),
 				token: try!(remove(&mut value, "token").and_then(into_string)),
 			})
+		} else if kind == "CALL_CREATE" {
+			Ok(Event::CallCreate(try!(Call::decode(Value::Object(value)))))
+		} else if kind == "CALL_DELETE" {
+			Ok(Event::CallDelete(try!(remove(&mut value, "channel_id").and_then(ChannelId::decode))))
+		} else if kind == "CALL_UPDATE" {
+			warn_json!(value, Event::CallUpdate {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+				region: try!(remove(&mut value, "region").and_then(into_string)),
+				ringing: try!(decode_array(try!(remove(&mut value, "ringing")), UserId::decode)),
+			})
+		} else if kind == "CHANNEL_RECIPIENT_ADD" {
+			let channel_id = try!(remove(&mut value, "channel_id").and_then(ChannelId::decode));
+			let user = try!(remove(&mut value, "user").and_then(User::decode));
+			Ok(Event::ChannelRecipientAdd(channel_id, user))
+		} else if kind == "CHANNEL_RECIPIENT_REMOVE" {
+			let channel_id = try!(remove(&mut value, "channel_id").and_then(ChannelId::decode));
+			let user = try!(remove(&mut value, "user").and_then(User::decode));
+			Ok(Event::ChannelRecipientRemove(channel_id, user))
 		} else if kind == "TYPING_START" {
 			warn_json!(value, Event::TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
@@ -1682,6 +1930,11 @@ impl Event {
 			Channel::decode(Value::Object(value)).map(Event::ChannelUpdate)
 		} else if kind == "CHANNEL_DELETE" {
 			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
+		} else if kind == "CHANNEL_PINS_ACK" {
+			warn_json!(value, Event::ChannelPinsAck {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
+			})
 		} else if kind == "CHANNEL_PINS_UPDATE" {
 			warn_json!(value, Event::ChannelPinsUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
@@ -1832,6 +2085,14 @@ fn into_string(value: Value) -> Result<String> {
 	match value {
 		Value::String(s) => Ok(s),
 		value => Err(Error::Decode("Expected string", value)),
+	}
+}
+
+fn into_u64(value: Value) -> Result<u64> {
+	match value {
+		Value::I64(v) => Ok(v as u64),
+		Value::U64(v) => Ok(v),
+		value => Err(Error::Decode("Expected u64 or i64", value)),
 	}
 }
 

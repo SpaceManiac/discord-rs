@@ -219,16 +219,20 @@ impl Discord {
 	/// ```
 	pub fn edit_channel<F: FnOnce(EditChannel) -> EditChannel>(&self, channel: ChannelId, f: F) -> Result<PublicChannel> {
 		// Work around the fact that this supposed PATCH call actually requires all fields
-		let info = match try!(self.get_channel(channel)) {
-			Channel::Public(channel) => channel,
-			Channel::Private(_) => return Err(Error::Other("Can only edit public channels")),
-		};
-		let map = ObjectBuilder::new()
-			.insert("name", info.name)
-			.insert("position", info.position);
-		let map = match info.kind {
-			ChannelType::Text => map.insert("topic", info.topic),
-			ChannelType::Voice => map.insert("bitrate", info.bitrate).insert("user_limit", info.user_limit),
+		let map = match try!(self.get_channel(channel)) {
+			Channel::Private(_) => return Err(Error::Other("Can not edit private channels")),
+			Channel::Public(channel) => {
+				let map = ObjectBuilder::new()
+					.insert("name", channel.name)
+					.insert("position", channel.position);
+
+				match channel.kind {
+					ChannelType::Text => map.insert("topic", channel.topic),
+					ChannelType::Voice => map.insert("bitrate", channel.bitrate).insert("user_limit", channel.user_limit),
+					_ => return Err(Error::Other(stringify!(format!("Unreachable channel type: {:?}", channel.kind)))),
+				}
+			},
+			Channel::Group(group) => ObjectBuilder::new().insert("name", group.name),
 		};
 		let map = f(EditChannel(map)).0.unwrap();
 		let body = try!(serde_json::to_string(&map));

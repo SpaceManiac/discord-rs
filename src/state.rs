@@ -8,6 +8,7 @@ pub struct State {
 	settings: Option<UserSettings>,
 	server_settings: Option<Vec<UserServerSettings>>,
 	session_id: String,
+	groups: BTreeMap<ChannelId, Group>,
 	private_channels: Vec<PrivateChannel>,
 	servers: Vec<LiveServer>,
 	unavailable_servers: Vec<ServerId>,
@@ -27,12 +28,26 @@ impl State {
 				PossibleServer::Online(id) => servers.push(id),
 			}
 		}
+		let mut groups: BTreeMap<ChannelId, Group> = BTreeMap::new();
+		let mut private_channels: Vec<PrivateChannel> = vec![];
+		for channel in &ready.private_channels {
+			match *channel {
+				Channel::Private(ref channel) => {
+					private_channels.push(channel.clone());
+				},
+				Channel::Group(ref group) => {
+					groups.insert(group.channel_id, group.clone());
+				},
+				_ => {},
+			}
+		}
 		State {
 			user: ready.user,
 			settings: ready.user_settings,
 			server_settings: ready.user_server_settings,
 			session_id: ready.session_id,
-			private_channels: ready.private_channels,
+			groups: groups,
+			private_channels: private_channels,
 			servers: servers,
 			unavailable_servers: unavailable,
 			presences: ready.presences,
@@ -120,20 +135,65 @@ impl State {
 					});
 				}
 			}
-			Event::VoiceStateUpdate(ref server, ref state) => {
-				self.servers.iter_mut().find(|s| s.id == *server).map(|srv| {
-					if !state.channel_id.is_some() {
-						// Remove the user from the voice state list
-						srv.voice_states.retain(|v| v.user_id != state.user_id);
-					} else {
-						// Update or add to the voice state list
-						match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-							Some(srv_state) => { srv_state.clone_from(state); return }
-							None => {}
+			Event::VoiceStateUpdate(ref kind, ref state) => {
+				match *kind {
+					VoiceType::Group(channel_id_opt) => {
+						if let Some(channel_id) = channel_id_opt {
+							if let Some(grp) = self.groups.get_mut(&channel_id) {
+								if grp.call.is_none() { return }
+								match grp.call.as_mut().unwrap().voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+									Some(grp_state) => { grp_state.clone_from(state); return }
+									None => {},
+								}
+
+								grp.call.as_mut().unwrap().voice_states.push(state.clone());
+							}
+							return
 						}
-						srv.voice_states.push(state.clone());
+						for (_channel_id, grp) in self.groups.iter_mut() {
+							if let Some(call) = grp.call.as_mut() {
+								let before = call.voice_states.len();
+								call.voice_states.retain(|u| u.user_id != state.user_id);
+								if call.voice_states.len() != before {
+									return
+								}
+							}
+						}
+					},
+					VoiceType::Server(server_id) => {
+						self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
+							if !state.channel_id.is_some() {
+								// Remove the user from the voice state list
+								srv.voice_states.retain(|v| v.user_id != state.user_id);
+							} else {
+								// Update or add to the voice state list
+								match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+									Some(srv_state) => { srv_state.clone_from(state); return }
+									None => {}
+								}
+								srv.voice_states.push(state.clone());
+							}
+						});
+					},
+				}
+			},
+			Event::CallCreate(ref call) => {
+				if let Some(group) = self.groups.get_mut(&call.channel_id) {
+					group.call = Some(call.clone());
+				}
+			}
+			Event::CallDelete(channel_id) => {
+				if let Some(group) = self.groups.get_mut(&channel_id) {
+					group.call = None;
+				}
+			}
+			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing} => {
+				if let Some(group) = self.groups.get_mut(&channel_id) {
+					if let Some(call) = group.call.as_mut() {
+						call.region.clone_from(region);
+						call.ringing.clone_from(ringing);
 					}
-				});
+				}
 			}
 			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
 				if let Some(server_id) = server_id {
@@ -164,12 +224,12 @@ impl State {
 				self.relationships.retain(|r| r.id != user_id);
 			}
 			Event::ServerCreate(PossibleServer::Offline(server_id)) |
-			Event::ServerDelete(PossibleServer::Offline(server_id)) => {
-				self.servers.retain(|s| s.id != server_id);
-				if !self.unavailable_servers.contains(&server_id) {
-					self.unavailable_servers.push(server_id);
+				Event::ServerDelete(PossibleServer::Offline(server_id)) => {
+					self.servers.retain(|s| s.id != server_id);
+					if !self.unavailable_servers.contains(&server_id) {
+						self.unavailable_servers.push(server_id);
+					}
 				}
-			}
 			Event::ServerCreate(PossibleServer::Online(ref server)) => {
 				self.unavailable_servers.retain(|&id| id != server.id);
 				self.servers.push(server.clone())
@@ -241,6 +301,9 @@ impl State {
 				});
 			}
 			Event::ChannelCreate(ref channel) => match *channel {
+				Channel::Group(ref group) => {
+					self.groups.insert(group.channel_id, group.clone());
+				}
 				Channel::Private(ref channel) => {
 					self.private_channels.push(channel.clone());
 				}
@@ -251,6 +314,9 @@ impl State {
 				}
 			},
 			Event::ChannelUpdate(ref channel) => match *channel {
+				Channel::Group(ref group) => {
+					self.groups.insert(group.channel_id, group.clone());
+				}
 				Channel::Private(ref channel) => {
 					self.private_channels.iter_mut().find(|c| c.id == channel.id).map(|chan| {
 						chan.clone_from(channel);
@@ -265,6 +331,9 @@ impl State {
 				}
 			},
 			Event::ChannelDelete(ref channel) => match *channel {
+				Channel::Group(ref group) => {
+					self.groups.remove(&group.channel_id);
+				}
 				Channel::Private(ref channel) => {
 					self.private_channels.retain(|c| c.id != channel.id);
 				}
@@ -290,6 +359,11 @@ impl State {
 						return
 					}
 				}
+
+				if let Some(group) = self.groups.get_mut(&channel_id) {
+					group.last_pin_timestamp = last_pin_timestamp.clone();
+					return
+				}
 			}
 			_ => {}
 		}
@@ -306,6 +380,10 @@ impl State {
 	/// Get the logged-in user's per-server notification settings. Will return `None` for bots.
 	#[inline]
 	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
+
+	/// Get the list of groups with other users.
+	#[inline]
+	pub fn groups(&self) -> &BTreeMap<ChannelId, Group> { &self.groups }
 
 	/// Get the websocket session ID.
 	#[inline]
@@ -336,15 +414,24 @@ impl State {
 		None
 	}
 
-	/// Look up the voice channel a user is in, if any.
+	/// Look up the voice channel or group call a user is in, if any.
 	///
 	/// For bot users which may be in multiple voice channels, the first found is returned.
-	pub fn find_voice_user(&self, user_id: UserId) -> Option<(ServerId, ChannelId)> {
+	pub fn find_voice_user(&self, user_id: UserId) -> Option<(Option<ServerId>, ChannelId)> {
 		for server in &self.servers {
 			for vstate in &server.voice_states {
 				if vstate.user_id == user_id {
 					if let Some(channel_id) = vstate.channel_id {
-						return Some((server.id, channel_id));
+						return Some((Some(server.id), channel_id));
+					}
+				}
+			}
+		}
+		for (channel_id, group) in &self.groups {
+			if let Some(call) = group.call.as_ref() {
+				for vstate in &call.voice_states {
+					if vstate.user_id == user_id {
+						return Some((None, *channel_id));
 					}
 				}
 			}

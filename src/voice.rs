@@ -22,7 +22,7 @@ use {Result, Error, SenderExt, ReceiverExt};
 /// An active or inactive voice connection, obtained from `Connection::voice`.
 pub struct VoiceConnection {
 	// primary WS send control
-	server_id: ServerId,
+	server_id: Option<ServerId>,
 	user_id: UserId,
 	main_ws: mpsc::Sender<::internal::Status>,
 	channel_id: Option<ChannelId>,
@@ -80,14 +80,26 @@ pub trait AudioReceiver: Send {
 
 impl VoiceConnection {
 	#[doc(hidden)]
-	pub fn __new(server_id: ServerId, user_id: UserId, main_ws: mpsc::Sender<::internal::Status>) -> Self {
+	pub fn __new(target: VoiceType, user_id: UserId, main_ws: mpsc::Sender<::internal::Status>) -> Self {
 		let (tx, rx) = mpsc::channel();
-		start_voice_thread(server_id, rx);
+		let server_id;
+		let channel_id;
+		match target {
+			VoiceType::Group(c_id) => {
+				channel_id = c_id;
+				server_id = None;
+			},
+			VoiceType::Server(s_id) => {
+				channel_id = None;
+				server_id = Some(s_id);
+			},
+		}
+		start_voice_thread(target, rx);
 		VoiceConnection {
 			server_id: server_id,
 			user_id: user_id,
 			main_ws: main_ws,
-			channel_id: None,
+			channel_id: channel_id,
 			mute: false,
 			deaf: false,
 			session_id: None,
@@ -139,7 +151,7 @@ impl VoiceConnection {
 		let _ = self.main_ws.send(::internal::Status::SendMessage(ObjectBuilder::new()
 			.insert("op", 4)
 			.insert_object("d", |object| object
-				.insert("guild_id", self.server_id.0)
+				.insert("guild_id", self.server_id.map(|s| s.0))
 				.insert("channel_id", self.channel_id.map(|c| c.0))
 				.insert("self_mute", self.mute)
 				.insert("self_deaf", self.deaf)
@@ -213,7 +225,14 @@ impl VoiceConnection {
 				self.sender = tx;
 				self.sender.send(status).unwrap(); // should be infallible
 				debug!("Restarting crashed voice thread...");
-				start_voice_thread(self.server_id, rx);
+				let target = if self.server_id.is_some() {
+					VoiceType::Server(self.server_id.unwrap())
+				} else if self.channel_id.is_some() {
+					VoiceType::Group(self.channel_id)
+				} else {
+					unreachable!("VoiceChannel has neither server_id nor channel_id");
+				};
+				start_voice_thread(target, rx);
 				self.send_connect();
 			}
 		}
@@ -363,9 +382,14 @@ enum Status {
 	Disconnect,
 }
 
-fn start_voice_thread(server_id: ServerId, rx: mpsc::Receiver<Status>) {
+fn start_voice_thread(target: VoiceType, rx: mpsc::Receiver<Status>) {
+	let text = match target {
+		VoiceType::Group(Some(channel_id)) => format!("channel {}", channel_id.0),
+		VoiceType::Server(server_id) => format!("server {}", server_id.0),
+		VoiceType::Group(None) => unreachable!("Tried starting voice thread without server/channel id"),
+	};
 	::std::thread::Builder::new()
-		.name(format!("discord voice (server {})", server_id.0))
+		.name(format!("discord voice ({})", text))
 		.spawn(move || voice_thread(rx))
 		.expect("Failed to start voice thread");
 }
@@ -413,7 +437,7 @@ fn voice_thread(channel: mpsc::Receiver<Status>) {
 }
 
 struct ConnStartInfo {
-	server_id: ServerId,
+	server_id: Option<ServerId>,
 	user_id: UserId,
 	endpoint: String,
 	session_id: String,
@@ -463,7 +487,7 @@ impl InternalConnection {
 		let map = ObjectBuilder::new()
 			.insert("op", 0)
 			.insert_object("d", |object| object
-				.insert("server_id", server_id.0)
+				.insert("server_id", server_id.map(|s| s.0))
 				.insert("user_id", user_id.0)
 				.insert("session_id", session_id)
 				.insert("token", token)
