@@ -345,6 +345,23 @@ impl Role {
 	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
+/// A banning of a user
+#[derive(Debug, Clone)]
+pub struct Ban {
+	reason: Option<String>,
+	user: User,
+}
+
+impl Ban {
+	pub fn decode(value: Value) -> Result<Ban> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Ban {
+			reason: try!(opt(&mut value, "reason", into_string)),
+			user: try!(remove(&mut value, "user").and_then(User::decode)),
+		})
+	}
+}
+
 /// Broadly-applicable user information
 #[derive(Debug, Clone)]
 pub struct User {
@@ -365,12 +382,6 @@ impl User {
 			avatar: try!(opt(&mut value, "avatar", into_string)),
 			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
 		})
-	}
-
-	#[doc(hidden)]
-	pub fn decode_ban(value: Value) -> Result<User> {
-		let mut value = try!(into_map(value));
-		warn_json!(@"Ban", value, try!(remove(&mut value, "user").and_then(User::decode)))
 	}
 
 	/// Return a `Mention` which will ping this user.

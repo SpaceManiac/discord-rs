@@ -543,9 +543,9 @@ impl Discord {
 	}
 
 	/// Get the ban list for the given server.
-	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> {
+	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
-		decode_array(try!(serde_json::from_reader(response)), User::decode_ban)
+		decode_array(try!(serde_json::from_reader(response)), Ban::decode)
 	}
 
 	/// Ban a user from the server, optionally deleting their recent messages.
