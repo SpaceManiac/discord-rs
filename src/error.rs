@@ -27,7 +27,7 @@ pub enum Error {
 	#[cfg(feature="voice")]
 	Opus(OpusError),
 	/// A websocket connection was closed, possibly with a message
-	Closed(Option<u16>, Vec<u8>),
+	Closed(Option<u16>, String),
 	/// A json decoding error, with a description and the offending value
 	Decode(&'static str, Value),
 	/// A generic non-success response from the REST API
@@ -36,6 +36,8 @@ pub enum Error {
 	RateLimited(u64),
 	/// A Discord protocol error, with a description
 	Protocol(&'static str),
+	/// A command execution failure, with a command name and output
+	Command(&'static str, ::std::process::Output),
 	/// A miscellaneous error, with a description
 	Other(&'static str),
 }
@@ -105,6 +107,7 @@ impl Display for Error {
 			Error::Io(ref inner) => inner.fmt(f),
 			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.fmt(f),
+			Error::Command(ref cmd, _) => write!(f, "Command failed: {}", cmd),
 			_ => f.write_str(self.description()),
 		}
 	}
@@ -124,6 +127,7 @@ impl StdError for Error {
 			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::RateLimited(_) => "Rate limited",
 			Error::Protocol(msg) => msg,
+			Error::Command(_, _) => "Command failed",
 			Error::Other(msg) => msg,
 		}
 	}

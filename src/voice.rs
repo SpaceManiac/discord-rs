@@ -348,7 +348,7 @@ pub fn open_ytdl_stream(url: &str) -> Result<Box<AudioSource>> {
 		.stdin(Stdio::null())
 		.output());
 	if !output.status.success() {
-		return Err(Error::Other("youtube-dl failed"))
+		return Err(Error::Command("youtube-dl", output));
 	}
 
 	let json: serde_json::Value = try!(serde_json::from_reader(&output.stdout[..]));

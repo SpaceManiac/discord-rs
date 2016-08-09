@@ -1094,9 +1094,9 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 		use websocket::ws::receiver::Receiver;
 		let message: Message = try!(self.recv_message());
 		if message.opcode == Type::Close {
-			Err(Error::Closed(message.cd_status_code, message.payload.into_owned()))
+			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode != Type::Text {
-			Err(Error::Closed(None, message.payload.into_owned()))
+			Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else {
 			serde_json::from_reader::<_, serde_json::Value>(&message.payload[..])
 				.map_err(From::from)

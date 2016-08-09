@@ -195,7 +195,7 @@ impl Connection {
 				self.reconnect().map(Event::Ready)
 			}
 			Err(Error::Closed(num, message)) => {
-				warn!("Closure, reconnecting: {:?}: {}", num, String::from_utf8_lossy(&message));
+				warn!("Closure, reconnecting: {:?}: {}", num, message);
 				// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
 				if num != Some(1000) && num != Some(4006) {
 					if let Some(session_id) = self.session_id.clone() {
