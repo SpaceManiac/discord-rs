@@ -5,13 +5,9 @@ use discord::{Discord, State};
 use discord::model::Event;
 
 // A simple DJ bot example.
-//
-// Use by issuing the command "!dj <youtube-link>" in PM or a visible text
-// channel.
-//
+// Use by issuing the command "!dj <youtube-link>" in PM or a visible text channel.
 // The bot will join the voice channel of the person issuing the command.
 // "!dj stop" will stop playing, and "!dj quit" will quit the voice channel.
-//
 // The bot will quit any voice channel it is the last user in.
 
 pub fn main() {
@@ -62,14 +58,14 @@ pub fn main() {
 				if first_word.eq_ignore_ascii_case("!dj") {
 					let vchan = state.find_voice_user(message.author.id);
 					if argument.eq_ignore_ascii_case("stop") {
-						vchan.map(|(sid, _)| connection.voice(sid.unwrap()).stop());
+						vchan.map(|(sid, _)| connection.voice(sid).stop());
 					} else if argument.eq_ignore_ascii_case("quit") {
-						vchan.map(|(sid, _)| connection.drop_voice(sid.unwrap()));
+						vchan.map(|(sid, _)| connection.drop_voice(sid));
 					} else {
 						let output = if let Some((server_id, channel_id)) = vchan {
 							match discord::voice::open_ytdl_stream(argument) {
 								Ok(stream) => {
-									let voice = connection.voice(server_id.unwrap());
+									let voice = connection.voice(server_id);
 									voice.set_deaf(true);
 									voice.connect(channel_id);
 									voice.play(stream);

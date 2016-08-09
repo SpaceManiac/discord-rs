@@ -6,10 +6,9 @@ use discord::voice::AudioReceiver;
 use discord::model::{Event, UserId};
 
 // A simple voice listener example.
-//
-// Use by issuing the "!listen" command in a PM. The bot will join your voice
-// channel and begin printing debug information about speaking in the channel.
-// "!listen quit" will cause the bot to leave the voice channel.
+// Use by issuing the "!listen" command in a PM. The bot will join your voice channel and begin
+// printing debug information about speaking in the channel. "!listen quit" will cause the bot
+// to leave the voice channel.
 
 struct VoiceTest;
 
@@ -73,11 +72,11 @@ pub fn main() {
 					let voice_channel = state.find_voice_user(message.author.id);
 					if argument.eq_ignore_ascii_case("quit") || argument.eq_ignore_ascii_case("stop") {
 						if let Some((server_id, _)) = voice_channel {
-							connection.drop_voice(server_id.unwrap());
+							connection.drop_voice(server_id);
 						}
 					} else {
 						if let Some((server_id, channel_id)) = voice_channel {
-							let voice = connection.voice(server_id.unwrap());
+							let voice = connection.voice(server_id);
 							voice.connect(channel_id);
 							voice.set_receiver(Box::new(VoiceTest));
 						} else {

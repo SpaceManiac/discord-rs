@@ -30,14 +30,10 @@ impl State {
 		}
 		let mut groups: BTreeMap<ChannelId, Group> = BTreeMap::new();
 		let mut private_channels: Vec<PrivateChannel> = vec![];
-		for channel in &ready.private_channels {
-			match *channel {
-				Channel::Private(ref channel) => {
-					private_channels.push(channel.clone());
-				},
-				Channel::Group(ref group) => {
-					groups.insert(group.channel_id, group.clone());
-				},
+		for channel in ready.private_channels {
+			match channel {
+				Channel::Private(channel) => private_channels.push(channel),
+				Channel::Group(group) => groups.insert(group.channel_id, group),
 				_ => {},
 			}
 		}
@@ -68,6 +64,13 @@ impl State {
 			}
 		}
 		total
+	}
+
+	/// Must be called on connect to get information about ongoing calls.
+	pub fn sync_calls(&mut self, conn: &::Connection) {
+		for &id in self.groups.keys() {
+			conn.__channel_sync(id);
+		}
 	}
 
 	/// Requests a download of online member lists.
@@ -135,48 +138,43 @@ impl State {
 					});
 				}
 			}
-			Event::VoiceStateUpdate(ref kind, ref state) => {
-				match *kind {
-					VoiceType::Group(channel_id_opt) => {
-						if let Some(channel_id) = channel_id_opt {
-							if let Some(grp) = self.groups.get_mut(&channel_id) {
-								if grp.call.is_none() { return }
-								match grp.call.as_mut().unwrap().voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-									Some(grp_state) => { grp_state.clone_from(state); return }
-									None => {},
-								}
-
-								grp.call.as_mut().unwrap().voice_states.push(state.clone());
+			Event::VoiceStateUpdate(None, ref state) => {
+				if let Some(channel) = state.channel_id {
+					// channel id available, insert voice state
+					if let Some(grp) = self.groups.get_mut(&channel) {
+						if let Some(call) = grp.call.as_mut() {
+							match call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+								Some(grp_state) => { grp_state.clone_from(state); return }
+								None => {},
 							}
+							call.voice_states.push(state.clone());
 							return
 						}
-						for (_channel_id, grp) in self.groups.iter_mut() {
-							if let Some(call) = grp.call.as_mut() {
-								let before = call.voice_states.len();
-								call.voice_states.retain(|u| u.user_id != state.user_id);
-								if call.voice_states.len() != before {
-									return
-								}
-							}
+					}
+				} else {
+					// delete this user from any group call containing them
+					for (_, grp) in self.groups.iter_mut() {
+						if let Some(call) = grp.call.as_mut() {
+							call.voice_states.retain(|u| u.user_id != state.user_id);
 						}
-					},
-					VoiceType::Server(server_id) => {
-						self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
-							if !state.channel_id.is_some() {
-								// Remove the user from the voice state list
-								srv.voice_states.retain(|v| v.user_id != state.user_id);
-							} else {
-								// Update or add to the voice state list
-								match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-									Some(srv_state) => { srv_state.clone_from(state); return }
-									None => {}
-								}
-								srv.voice_states.push(state.clone());
-							}
-						});
-					},
+					}
 				}
-			},
+			}
+			Event::VoiceStateUpdate(Some(server_id), ref state) => {
+				self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
+					if !state.channel_id.is_some() {
+						// Remove the user from the voice state list
+						srv.voice_states.retain(|v| v.user_id != state.user_id);
+					} else {
+						// Update or add to the voice state list
+						match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+							Some(srv_state) => { srv_state.clone_from(state); return }
+							None => {}
+						}
+						srv.voice_states.push(state.clone());
+					}
+				});
+			}
 			Event::CallCreate(ref call) => {
 				if let Some(group) = self.groups.get_mut(&call.channel_id) {
 					group.call = Some(call.clone());
@@ -187,7 +185,7 @@ impl State {
 					group.call = None;
 				}
 			}
-			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing} => {
+			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
 				if let Some(group) = self.groups.get_mut(&channel_id) {
 					if let Some(call) = group.call.as_mut() {
 						call.region.clone_from(region);

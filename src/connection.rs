@@ -44,7 +44,7 @@ pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
 	#[cfg(feature="voice")]
-	voice_handles: HashMap<VoiceType, VoiceConnection>,
+	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
 	#[cfg(feature="voice")]
 	user_id: UserId,
 	ws_url: String,
@@ -158,36 +158,26 @@ impl Connection {
 		self.set_game(Some(Game::playing(name)));
 	}
 
-	/// Get a handle to the voice connection for a server's channel or group.
+	/// Get a handle to the voice connection for a server.
 	///
-	/// # Examples
-	///
-	/// In addition to a `VoiceType`, you can pass the server's sole `ServerId`
-	/// or a group's sole `ChannelId`:
-	///
-	/// ```no_run
-	/// connection.voice(server.id);
-	/// // or
-	/// connection.voice(group.channel_id);
-	/// ```
+	/// Pass `None` to get the handle for group and one-on-one calls.
 	#[cfg(feature="voice")]
-	pub fn voice<V: Into<VoiceType>>(&mut self, target: V) -> &mut VoiceConnection {
+	pub fn voice(&mut self, server_id: Option<ServerId>) -> &mut VoiceConnection {
 		let Connection { ref mut voice_handles, user_id, ref keepalive_channel, .. } = *self;
-		let into = target.into();
-		voice_handles.entry(into).or_insert_with(||
-			VoiceConnection::__new(into, user_id, keepalive_channel.clone())
+		voice_handles.entry(server_id).or_insert_with(||
+			VoiceConnection::__new(server_id, user_id, keepalive_channel.clone())
 		)
 	}
 
-	/// Drop the voice connection for a server's voice channel or a group's
-	/// call, forgetting all settings.
+	/// Drop the voice connection for a server, forgetting all settings.
 	///
-	/// Calling `.voice(target).disconnect()` will
-	/// disconnect from voice but retain the mute and deaf status, audio source,
-	/// and audio receiver.
+	/// Calling `.voice(server_id).disconnect()` will disconnect from voice but retain the mute
+	/// and deaf status, audio source, and audio receiver.
+	///
+	/// Pass `None` to drop the connection for group and one-on-one calls.
 	#[cfg(feature="voice")]
-	pub fn drop_voice<V: Into<VoiceType>>(&mut self, target: V) {
-		self.voice_handles.remove(&target.into());
+	pub fn drop_voice(&mut self, server_id: Option<ServerId>) {
+		self.voice_handles.remove(&server_id);
 	}
 
 	/// Receive an event over the websocket, blocking until one is available.
@@ -230,15 +220,11 @@ impl Connection {
 					let _ = self.keepalive_channel.send(Status::ChangeInterval(heartbeat_interval));
 				}
 				voice_only! {{
-					if let Event::VoiceStateUpdate(ref kind, ref voice_state) = event {
-						match *kind {
-							VoiceType::Group(None) => self.drop_voice(*kind),
-							_ => self.voice(*kind).__update_state(voice_state),
-						}
+					if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
+						self.voice(server_id).__update_state(voice_state);
 					}
-					if let Event::VoiceServerUpdate { server_id, ref endpoint, ref token } = event {
-						self.voice(VoiceType::Server(server_id))
-							.__update_server(endpoint, token);
+					if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
+						self.voice(server_id).__update_server(endpoint, token);
 					}
 				}}
 				Ok(event)
@@ -371,6 +357,17 @@ impl Connection {
 		let msg = ObjectBuilder::new()
 			.insert("op", 12)
 			.insert_array("d", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
+			.unwrap();
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+	}
+
+	#[doc(hidden)]
+	pub fn __channel_sync(&self, channel: ChannelId) {
+		let msg = ObjectBuilder::new()
+			.insert("op", 13)
+			.insert_object("d", |o| o
+				.insert("channel_id", channel.0)
+			)
 			.unwrap();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}

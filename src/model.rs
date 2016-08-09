@@ -1019,64 +1019,6 @@ impl Presence {
 	}
 }
 
-/// The type of channel that a state is for
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub enum VoiceType {
-	// The ChannelId is not received on a VoiceStateUpdate when a user leaves an
-	// active call.
-	Group(Option<ChannelId>),
-	Server(ServerId),
-}
-
-impl VoiceType {
-	pub fn decode(value: Value) -> Result<VoiceType> {
-		let mut value = try!(into_map(value));
-		if let Ok(server_id) = remove(&mut value, "guild_id") {
-			Ok(VoiceType::Server(try!(ServerId::decode(server_id))))
-		} else if let Ok(channel_id) = opt(&mut value, "channel_id", ChannelId::decode) {
-			Ok(VoiceType::Group(channel_id))
-		} else {
-			Err(Error::Other("Unknown voice state type"))
-		}
-	}
-}
-
-impl From<Option<ChannelId>> for VoiceType {
-	fn from(channel_id: Option<ChannelId>) -> VoiceType {
-		VoiceType::Group(channel_id)
-	}
-}
-
-impl From<ChannelId> for VoiceType {
-	fn from(channel_id: ChannelId) -> VoiceType {
-		VoiceType::Group(Some(channel_id))
-	}
-}
-
-impl From<ServerId> for VoiceType {
-	fn from(server_id: ServerId) -> VoiceType {
-		VoiceType::Server(server_id)
-	}
-}
-
-impl PartialEq<VoiceType> for ServerId {
-	fn eq(&self, other: &VoiceType) -> bool {
-		match *other {
-			VoiceType::Server(id) => *self == id,
-			_ => false,
-		}
-	}
-}
-
-impl PartialEq<ServerId> for VoiceType {
-	fn eq(&self, other: &ServerId) -> bool {
-		match *self {
-			VoiceType::Server(x) => x == *other,
-			_ => false,
-		}
-	}
-}
-
 /// A member's state within a voice channel
 #[derive(Debug, Clone)]
 pub struct VoiceState {
@@ -1602,10 +1544,11 @@ pub enum Event {
 	/// Update to the logged-in user's server-specific notification settings
 	UserServerSettingsUpdate(UserServerSettings),
 	/// A member's voice state has changed
-	VoiceStateUpdate(VoiceType, VoiceState),
+	VoiceStateUpdate(Option<ServerId>, VoiceState),
 	/// Voice server information is available
 	VoiceServerUpdate {
-		server_id: ServerId,
+		server_id: Option<ServerId>,
+		channel_id: Option<ChannelId>,
 		endpoint: Option<String>,
 		token: String,
 	},
@@ -1773,15 +1716,12 @@ impl Event {
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
 			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
-			let kind = try!(VoiceType::decode(Value::Object(value.clone())));
-
-			Ok(Event::VoiceStateUpdate(kind, match kind {
-				VoiceType::Group(_) => try!(VoiceState::decode(Value::Object(value))),
-				VoiceType::Server(_) => try!(VoiceState::decode(Value::Object(value))),
-			}))
+			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
+			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
 		} else if kind == "VOICE_SERVER_UPDATE" {
 			warn_json!(value, Event::VoiceServerUpdate {
-				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
+				server_id: try!(opt(&mut value, "guild_id", ServerId::decode)),
+				channel_id: try!(opt(&mut value, "channel_id", ChannelId::decode)),
 				endpoint: try!(opt(&mut value, "endpoint", into_string)),
 				token: try!(remove(&mut value, "token").and_then(into_string)),
 			})
