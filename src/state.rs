@@ -383,6 +383,10 @@ impl State {
 	#[inline]
 	pub fn settings(&self) -> Option<&UserSettings> { self.settings.as_ref() }
 
+	/// Get the websocket session ID.
+	#[inline]
+	pub fn session_id(&self) -> &str { &self.session_id }
+
 	/// Get the logged-in user's per-server notification settings. Will return `None` for bots.
 	#[inline]
 	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
@@ -391,9 +395,9 @@ impl State {
 	#[inline]
 	pub fn groups(&self) -> &BTreeMap<ChannelId, Group> { &self.groups }
 
-	/// Get the websocket session ID.
+	/// Get the list of ongoing calls. May require a call to `sync_calls`.
 	#[inline]
-	pub fn session_id(&self) -> &str { &self.session_id }
+	pub fn calls(&self) -> &BTreeMap<ChannelId, Call> { &self.calls }
 
 	/// Get the list of private channels with other users.
 	#[inline]

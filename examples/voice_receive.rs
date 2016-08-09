@@ -24,7 +24,6 @@ impl AudioReceiver for VoiceTest {
 
 pub fn main() {
 	// log in to the API
-	let args: Vec<_> = env::args().collect();
 	let discord = Discord::from_bot_token(
 		&env::var("DISCORD_TOKEN").expect("Expected token"),
 	).expect("Login failed");
@@ -89,9 +88,16 @@ pub fn main() {
 				// If someone moves/hangs up, and we are in a voice channel,
 				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
 					// and our current voice channel is empty, disconnect from voice
-					if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-						if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
-							connection.drop_voice(server_id);
+					match server_id {
+						Some(server_id) => if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
+							if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
+								connection.voice(Some(server_id)).disconnect();
+							}
+						},
+						None => if let Some(call) = state.calls().get(&cur_channel) {
+							if call.voice_states.len() <= 1 {
+								connection.voice(server_id).disconnect();
+							}
 						}
 					}
 				}

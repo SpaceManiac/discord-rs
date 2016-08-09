@@ -20,6 +20,7 @@ pub fn main() {
 	let (mut connection, ready) = discord.connect().expect("connect failed");
 	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
 	let mut state = State::new(ready);
+	state.sync_calls(&connection);
 
 	// receive events forever
 	loop {
@@ -76,7 +77,7 @@ pub fn main() {
 						} else {
 							"You must be in a voice channel to DJ".to_owned()
 						};
-						if output.is_empty() {
+						if !output.is_empty() {
 							warn(discord.send_message(&message.channel_id, &output, "", false));
 						}
 					}
@@ -86,9 +87,16 @@ pub fn main() {
 				// If someone moves/hangs up, and we are in a voice channel,
 				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
 					// and our current voice channel is empty, disconnect from voice
-					if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-						if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
-							connection.voice(server_id).disconnect();
+					match server_id {
+						Some(server_id) => if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
+							if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
+								connection.voice(Some(server_id)).disconnect();
+							}
+						},
+						None => if let Some(call) = state.calls().get(&cur_channel) {
+							if call.voice_states.len() <= 1 {
+								connection.voice(server_id).disconnect();
+							}
 						}
 					}
 				}
