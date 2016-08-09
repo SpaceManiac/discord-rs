@@ -230,12 +230,12 @@ impl State {
 				self.relationships.retain(|r| r.id != user_id);
 			}
 			Event::ServerCreate(PossibleServer::Offline(server_id)) |
-				Event::ServerDelete(PossibleServer::Offline(server_id)) => {
-					self.servers.retain(|s| s.id != server_id);
-					if !self.unavailable_servers.contains(&server_id) {
-						self.unavailable_servers.push(server_id);
-					}
+			Event::ServerDelete(PossibleServer::Offline(server_id)) => {
+				self.servers.retain(|s| s.id != server_id);
+				if !self.unavailable_servers.contains(&server_id) {
+					self.unavailable_servers.push(server_id);
 				}
+			}
 			Event::ServerCreate(PossibleServer::Online(ref server)) => {
 				self.unavailable_servers.retain(|&id| id != server.id);
 				self.servers.push(server.clone())
@@ -383,13 +383,13 @@ impl State {
 	#[inline]
 	pub fn settings(&self) -> Option<&UserSettings> { self.settings.as_ref() }
 
-	/// Get the websocket session ID.
-	#[inline]
-	pub fn session_id(&self) -> &str { &self.session_id }
-
 	/// Get the logged-in user's per-server notification settings. Will return `None` for bots.
 	#[inline]
 	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
+
+	/// Get the websocket session ID.
+	#[inline]
+	pub fn session_id(&self) -> &str { &self.session_id }
 
 	/// Get the list of groups with other users.
 	#[inline]

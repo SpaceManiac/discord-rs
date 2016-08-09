@@ -185,7 +185,7 @@ impl ChannelType {
 	}
 
 	fn from_num_err(num: u64) -> Result<ChannelType> {
-		ChannelType::from_num(num).ok_or(Error::Decode("Expected valid ChannelType", Value::String(format!("{}", num))))
+		ChannelType::from_num(num).ok_or(Error::Decode("Expected valid ChannelType", Value::U64(num)))
 	}
 
 	fn from_str_err(name: String) -> Result<ChannelType> {
@@ -486,10 +486,14 @@ pub struct PrivateChannel {
 impl PrivateChannel {
 	pub fn decode(value: Value) -> Result<PrivateChannel> {
 		let mut value = try!(into_map(value));
+		let mut recipients = try!(decode_array(try!(remove(&mut value, "recipients")), User::decode));
+		if recipients.len() != 1 {
+			warn!("expected 1 recipient, found {}: {:?}", recipients.len(), recipients);
+		}
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(ChannelType::from_num_err)),
-			recipient: try!(decode_array(try!(remove(&mut value, "recipients")), User::decode)).remove(0),
+			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 		})
@@ -740,7 +744,7 @@ impl MessageType {
 	}
 
 	pub fn from_num_err(num: u64) -> Result<MessageType> {
-		MessageType::from_num(num).ok_or(Error::Decode("Expected valid MessageType", Value::String(format!("{}", num))))
+		MessageType::from_num(num).ok_or(Error::Decode("Expected valid MessageType", Value::U64(num)))
 	}
 
 	/// Get the number of this MessageType
