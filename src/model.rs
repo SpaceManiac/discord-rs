@@ -5,6 +5,7 @@ use super::{Error, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::borrow::Cow;
 
 pub use self::permissions::Permissions;
 
@@ -445,6 +446,24 @@ impl Group {
 			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
 			recipients: try!(remove(&mut value, "recipients").and_then(|r| decode_array(r, User::decode))),
 		})
+	}
+
+	/// Get this group's name, building a default if needed
+	pub fn name(&self) -> Cow<str> {
+		match self.name {
+			Some(ref name) => Cow::Borrowed(name),
+			None => {
+				if self.recipients.is_empty() {
+					return Cow::Borrowed("Empty Group");
+				}
+				let mut result = self.recipients[0].name.clone();
+				for user in &self.recipients[1..] {
+					use std::fmt::Write;
+					let _ = write!(result, ", {}", user.name);
+				}
+				Cow::Owned(result)
+			}
+		}
 	}
 }
 

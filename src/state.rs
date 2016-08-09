@@ -421,6 +421,9 @@ impl State {
 				return Some(ChannelRef::Private(channel))
 			}
 		}
+		if let Some(group) = self.groups.get(id) {
+			return Some(ChannelRef::Group(group))
+		}
 		None
 	}
 
@@ -474,11 +477,13 @@ fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {
 	}
 }
 
-/// A reference to a private or public channel
+/// A reference to a private or public channel.
 #[derive(Debug, Clone, Copy)]
 pub enum ChannelRef<'a> {
 	/// A private channel
 	Private(&'a PrivateChannel),
+	/// A group channel
+	Group(&'a Group),
 	/// A public channel and its server
 	Public(&'a LiveServer, &'a PublicChannel),
 }
