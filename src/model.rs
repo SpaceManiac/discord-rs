@@ -430,18 +430,12 @@ pub struct Group {
 	pub last_pin_timestamp: Option<String>,
 	pub name: Option<String>,
 	pub owner_id: UserId,
-	pub recipients: Option<Vec<User>>,
-
-	pub call: Option<Call>,
+	pub recipients: Vec<User>,
 }
 
 impl Group {
 	pub fn decode(value: Value) -> Result<Group> {
 		let mut value = try!(into_map(value));
-		let recipients = match try!(opt(&mut value, "recipients", Ok)) {
-			Some(recipients) => Some(try!(decode_array(recipients, User::decode))),
-			None => None,
-		};
 		warn_json!(value, Group {
 			channel_id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			icon: try!(opt(&mut value, "icon", into_string)),
@@ -449,8 +443,7 @@ impl Group {
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 			name: try!(opt(&mut value, "name", into_string)),
 			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
-			recipients: recipients,
-			call: None,
+			recipients: try!(remove(&mut value, "recipients").and_then(|r| decode_array(r, User::decode))),
 		})
 	}
 }
@@ -1554,8 +1547,6 @@ pub enum Event {
 	},
 	/// A new group call has been created
 	CallCreate(Call),
-	/// A group call has been deleted (the call ended)
-	CallDelete(ChannelId),
 	/// A group call has been updated
 	CallUpdate {
 		channel_id: ChannelId,
@@ -1563,6 +1554,8 @@ pub enum Event {
 		region: String,
 		ringing: Vec<UserId>,
 	},
+	/// A group call has been deleted (the call ended)
+	CallDelete(ChannelId),
 	/// A user has been added to a group
 	ChannelRecipientAdd(ChannelId, User),
 	/// A user has been removed from a group

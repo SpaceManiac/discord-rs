@@ -10,6 +10,7 @@ pub struct State {
 	session_id: String,
 	groups: BTreeMap<ChannelId, Group>,
 	private_channels: Vec<PrivateChannel>,
+	calls: BTreeMap<ChannelId, Call>,
 	servers: Vec<LiveServer>,
 	unavailable_servers: Vec<ServerId>,
 	presences: Vec<Presence>,
@@ -33,7 +34,7 @@ impl State {
 		for channel in ready.private_channels {
 			match channel {
 				Channel::Private(channel) => private_channels.push(channel),
-				Channel::Group(group) => groups.insert(group.channel_id, group),
+				Channel::Group(group) => { groups.insert(group.channel_id, group); },
 				_ => {},
 			}
 		}
@@ -44,6 +45,7 @@ impl State {
 			session_id: ready.session_id,
 			groups: groups,
 			private_channels: private_channels,
+			calls: BTreeMap::new(),
 			servers: servers,
 			unavailable_servers: unavailable,
 			presences: ready.presences,
@@ -70,6 +72,9 @@ impl State {
 	pub fn sync_calls(&mut self, conn: &::Connection) {
 		for &id in self.groups.keys() {
 			conn.__channel_sync(id);
+		}
+		for channel in &self.private_channels {
+			conn.__channel_sync(channel.id);
 		}
 	}
 
@@ -141,22 +146,17 @@ impl State {
 			Event::VoiceStateUpdate(None, ref state) => {
 				if let Some(channel) = state.channel_id {
 					// channel id available, insert voice state
-					if let Some(grp) = self.groups.get_mut(&channel) {
-						if let Some(call) = grp.call.as_mut() {
-							match call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-								Some(grp_state) => { grp_state.clone_from(state); return }
-								None => {},
-							}
-							call.voice_states.push(state.clone());
-							return
+					if let Some(call) = self.calls.get_mut(&channel) {
+						match call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
+							Some(grp_state) => { grp_state.clone_from(state); return }
+							None => {},
 						}
+						call.voice_states.push(state.clone());
 					}
 				} else {
 					// delete this user from any group call containing them
-					for (_, grp) in self.groups.iter_mut() {
-						if let Some(call) = grp.call.as_mut() {
-							call.voice_states.retain(|u| u.user_id != state.user_id);
-						}
+					for call in self.calls.values_mut() {
+						call.voice_states.retain(|u| u.user_id != state.user_id);
 					}
 				}
 			}
@@ -176,21 +176,29 @@ impl State {
 				});
 			}
 			Event::CallCreate(ref call) => {
-				if let Some(group) = self.groups.get_mut(&call.channel_id) {
-					group.call = Some(call.clone());
-				}
-			}
-			Event::CallDelete(channel_id) => {
-				if let Some(group) = self.groups.get_mut(&channel_id) {
-					group.call = None;
+				use std::collections::btree_map::Entry;
+				match self.calls.entry(call.channel_id) {
+					Entry::Vacant(e) => { e.insert(call.clone()); }
+					Entry::Occupied(mut e) => { e.get_mut().clone_from(call); }
 				}
 			}
 			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
+				if let Some(call) = self.calls.get_mut(&channel_id) {
+					call.region.clone_from(region);
+					call.ringing.clone_from(ringing);
+				}
+			}
+			Event::CallDelete(channel_id) => {
+				self.calls.remove(&channel_id);
+			}
+			Event::ChannelRecipientAdd(channel_id, ref user) => {
 				if let Some(group) = self.groups.get_mut(&channel_id) {
-					if let Some(call) = group.call.as_mut() {
-						call.region.clone_from(region);
-						call.ringing.clone_from(ringing);
-					}
+					group.recipients.push(user.clone());
+				}
+			}
+			Event::ChannelRecipientRemove(channel_id, ref user) => {
+				if let Some(group) = self.groups.get_mut(&channel_id) {
+					group.recipients.retain(|u| u.id != user.id);
 				}
 			}
 			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
@@ -425,12 +433,10 @@ impl State {
 				}
 			}
 		}
-		for (channel_id, group) in &self.groups {
-			if let Some(call) = group.call.as_ref() {
-				for vstate in &call.voice_states {
-					if vstate.user_id == user_id {
-						return Some((None, *channel_id));
-					}
+		for call in self.calls.values() {
+			for vstate in &call.voice_states {
+				if vstate.user_id == user_id {
+					return Some((None, call.channel_id));
 				}
 			}
 		}
