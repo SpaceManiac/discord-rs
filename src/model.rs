@@ -444,7 +444,7 @@ impl Group {
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
 			name: try!(opt(&mut value, "name", into_string)),
 			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
-			recipients: try!(remove(&mut value, "recipients").and_then(|r| decode_array(r, User::decode))),
+			recipients: try!(opt(&mut value, "recipients", |r| decode_array(r, User::decode))).unwrap_or(Vec::new()),
 		})
 	}
 

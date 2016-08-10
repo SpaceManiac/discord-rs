@@ -321,7 +321,21 @@ impl State {
 			},
 			Event::ChannelUpdate(ref channel) => match *channel {
 				Channel::Group(ref group) => {
-					self.groups.insert(group.channel_id, group.clone());
+					use std::collections::btree_map::Entry;
+					match self.groups.entry(group.channel_id) {
+						Entry::Vacant(e) => { e.insert(group.clone()); }
+						Entry::Occupied(mut e) => {
+							let dest = e.get_mut();
+							if group.recipients.is_empty() {
+								// if the update omits the recipient list, preserve it
+								let recipients = ::std::mem::replace(&mut dest.recipients, Vec::new());
+								dest.clone_from(group);
+								dest.recipients = recipients;
+							} else {
+								dest.clone_from(group);
+							}
+						}
+					}
 				}
 				Channel::Private(ref channel) => {
 					self.private_channels.iter_mut().find(|c| c.id == channel.id).map(|chan| {
