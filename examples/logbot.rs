@@ -25,7 +25,7 @@ fn main() {
 		let event = match connection.recv_event() {
 			Ok(event) => event,
 			Err(discord::Error::Closed(code, body)) => {
-				println!("[Error] Connection closed with status {:?}: {}", code, String::from_utf8_lossy(&body));
+				println!("[Error] Connection closed with status {:?}: {}", code, body);
 				break
 			}
 			Err(err) => {
@@ -41,6 +41,9 @@ fn main() {
 				match state.find_channel(&message.channel_id) {
 					Some(ChannelRef::Public(server, channel)) => {
 						println!("[{} #{}] {}: {}", server.name, channel.name, message.author.name, message.content);
+					}
+					Some(ChannelRef::Group(group)) => {
+						println!("[Group {}] {}: {}", group.name(), message.author.name, message.content);
 					}
 					Some(ChannelRef::Private(channel)) => {
 						if message.author.name == channel.recipient.name {

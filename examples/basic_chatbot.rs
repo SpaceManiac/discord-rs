@@ -26,7 +26,7 @@ fn main() {
 			}
 			Ok(_) => {}
 			Err(discord::Error::Closed(code, body)) => {
-				println!("Gateway closed on us with code {:?}: {}", code, String::from_utf8_lossy(&body));
+				println!("Gateway closed on us with code {:?}: {}", code, body);
 				break
 			}
 			Err(err) => println!("Receive error: {:?}", err)
