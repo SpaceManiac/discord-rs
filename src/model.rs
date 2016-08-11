@@ -437,6 +437,7 @@ pub struct Group {
 impl Group {
 	pub fn decode(value: Value) -> Result<Group> {
 		let mut value = try!(into_map(value));
+		let _ = remove(&mut value, "type"); // ignore "type" field
 		warn_json!(value, Group {
 			channel_id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
 			icon: try!(opt(&mut value, "icon", into_string)),
@@ -467,7 +468,7 @@ impl Group {
 	}
 }
 
-/// A call within a group
+/// An active group or private call
 #[derive(Debug, Clone)]
 pub struct Call {
 	pub channel_id: ChannelId,
@@ -1606,6 +1607,7 @@ pub enum Event {
 	MessageUpdate {
 		id: MessageId,
 		channel_id: ChannelId,
+		kind: Option<MessageType>,
 		content: Option<String>,
 		nonce: Option<String>,
 		tts: Option<bool>,
@@ -1788,6 +1790,7 @@ impl Event {
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				kind: try!(opt(&mut value, "type", |x| into_u64(x).and_then(MessageType::from_num_err))),
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_boolean()),
