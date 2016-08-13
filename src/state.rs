@@ -68,35 +68,22 @@ impl State {
 		total
 	}
 
-	/// Must be called on connect to get information about ongoing calls.
-	pub fn sync_calls(&mut self, conn: &::Connection) {
-		for &id in self.groups.keys() {
-			conn.__channel_sync(id);
-		}
-		for channel in &self.private_channels {
-			conn.__channel_sync(channel.id);
-		}
+	/// Build a list of all known private and group channel IDs.
+	pub fn all_private_channels(&self) -> Vec<ChannelId> {
+		self.groups.keys().cloned().chain(self.private_channels.iter().map(|c| c.id)).collect()
 	}
 
-	/// Requests a download of online member lists.
-	///
-	/// It is recommended to avoid calling this method until the online member list
-	/// is actually needed, especially for large servers, in order to save bandwidth
-	/// and memory.
-	pub fn download_online_members(&mut self, connection: &::Connection) {
-		connection.__guild_sync(&self.servers.iter().map(|s| s.id).collect::<Vec<_>>());
+	/// Build a list of all known server IDs.
+	pub fn all_servers(&self) -> Vec<ServerId> {
+		self.servers.iter().map(|s| s.id).chain(self.unavailable_servers.iter().cloned()).collect()
 	}
 
-	/// Requests a download of all member information for large servers.
-	///
-	/// The members lists are cleared on call, and then refilled as chunks are received. When
-	/// `unknown_members()` returns 0, the download has completed.
-	pub fn download_all_members(&mut self, connection: &::Connection) {
-		if self.unknown_members() == 0 { return }
-		connection.__download_members(&self.servers.iter_mut()
+	#[doc(hidden)]
+	pub fn __download_members(&mut self) -> Vec<ServerId> {
+		self.servers.iter_mut()
 			.filter(|s| s.large)
 			.map(|s| { s.members.clear(); s.id })
-			.collect::<Vec<_>>());
+			.collect::<Vec<_>>()
 	}
 
 	/// Update the state according to the changes described in the given event.

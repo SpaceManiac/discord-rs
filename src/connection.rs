@@ -352,8 +352,14 @@ impl Connection {
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
-	#[doc(hidden)]
-	pub fn __guild_sync(&self, servers: &[ServerId]) {
+	/// Requests a download of online member lists.
+	///
+	/// It is recommended to avoid calling this method until the online member list
+	/// is actually needed, especially for large servers, in order to save bandwidth
+	/// and memory.
+	///
+	/// Can be used with `State::all_servers`.
+	pub fn sync_servers(&self, servers: &[ServerId]) {
 		let msg = ObjectBuilder::new()
 			.insert("op", 12)
 			.insert_array("d", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
@@ -361,12 +367,34 @@ impl Connection {
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
-	#[doc(hidden)]
-	pub fn __channel_sync(&self, channel: ChannelId) {
+	/// Request a synchronize of active calls for the specified channels.
+	///
+	/// Can be used with `State::all_private_channels`.
+	pub fn sync_calls(&self, channels: &[ChannelId]) {
+		for &channel in channels {
+			let msg = ObjectBuilder::new()
+				.insert("op", 13)
+				.insert_object("d", |o| o
+					.insert("channel_id", channel.0)
+				)
+				.build();
+			let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+		}
+	}
+
+	/// Requests a download of all member information for large servers.
+	///
+	/// The members lists are cleared on call, and then refilled as chunks are received. When
+	/// `unknown_members()` returns 0, the download has completed.
+	pub fn download_all_members(&mut self, state: &mut ::State) {
+		if state.unknown_members() == 0 { return }
+		let servers = state.__download_members();
 		let msg = ObjectBuilder::new()
-			.insert("op", 13)
+			.insert("op", 8)
 			.insert_object("d", |o| o
-				.insert("channel_id", channel.0)
+				.insert_array("guild_id", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
+				.insert("query", "")
+				.insert("limit", 0)
 			)
 			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
