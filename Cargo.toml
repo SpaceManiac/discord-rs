@@ -17,10 +17,10 @@ voice = ["opus", "sodiumoxide"]
 
 [dependencies]
 hyper = "0.8"
-serde_json = "0.6"
+serde_json = "0.8"
 websocket = "0.17"
-bitflags = "0.3"
-byteorder = "0.4"
+bitflags = "0.7"
+byteorder = "0.5"
 time = "0.1"
 log = "0.3"
 base64-rs = "0.1.0"

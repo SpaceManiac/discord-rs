@@ -7,7 +7,6 @@ use serde_json::Value;
 use websocket::result::WebSocketError;
 #[cfg(feature="voice")]
 use opus::Error as OpusError;
-use byteorder::Error as BoError;
 
 /// Discord API `Result` alias type.
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -86,15 +85,6 @@ impl From<WebSocketError> for Error {
 impl From<OpusError> for Error {
 	fn from(err: OpusError) -> Error {
 		Error::Opus(err)
-	}
-}
-
-impl From<BoError> for Error {
-	fn from(err: BoError) -> Error {
-		match err {
-			BoError::UnexpectedEOF => Error::Other("byteorder::UnexpectedEOF"),
-			BoError::Io(io) => Error::Io(io),
-		}
 	}
 }
 

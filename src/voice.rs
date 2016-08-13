@@ -144,7 +144,7 @@ impl VoiceConnection {
 				.insert("self_mute", self.mute)
 				.insert("self_deaf", self.deaf)
 			)
-			.unwrap()
+			.build()
 		));
 	}
 
@@ -266,7 +266,7 @@ impl<R: Read + Send> AudioSource for PcmSource<R> {
 		for (i, val) in buffer.iter_mut().enumerate() {
 			*val = match self.1.read_i16::<LittleEndian>() {
 				Ok(val) => val,
-				Err(::byteorder::Error::UnexpectedEOF) => return Some(i),
+				Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => return Some(i),
 				Err(_) => return None
 			}
 		}
@@ -356,7 +356,7 @@ pub fn open_ytdl_stream(url: &str) -> Result<Box<AudioSource>> {
 		Some(map) => map,
 		None => return Err(Error::Other("youtube-dl output could not be read"))
 	};
-	let url = match map.get("url").and_then(serde_json::Value::as_string) {
+	let url = match map.get("url").and_then(serde_json::Value::as_str) {
 		Some(url) => url,
 		None => return Err(Error::Other("youtube-dl output's \"url\" could not be read"))
 	};
@@ -480,7 +480,7 @@ impl InternalConnection {
 				.insert("session_id", session_id)
 				.insert("token", token)
 			)
-			.unwrap();
+			.build();
 		try!(sender.send_json(&map));
 
 		// read the first websocket message
@@ -527,7 +527,7 @@ impl InternalConnection {
 						.insert("mode", "xsalsa20_poly1305")
 					)
 				)
-				.unwrap();
+				.build();
 			try!(sender.send_json(&map));
 		}
 
@@ -645,7 +645,7 @@ impl InternalConnection {
 			let map = ObjectBuilder::new()
 				.insert("op", 3)
 				.insert("d", serde_json::Value::Null)
-				.unwrap();
+				.build();
 			try!(self.sender.send_json(&map));
 		}
 
@@ -737,7 +737,7 @@ impl InternalConnection {
 				.insert("speaking", speaking)
 				.insert("delay", 0)
 			)
-			.unwrap();
+			.build();
 		self.sender.send_json(&map)
 	}
 }

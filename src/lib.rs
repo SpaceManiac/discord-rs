@@ -195,7 +195,7 @@ impl Discord {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
 			.insert("type", kind.name())
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.post(&format!("{}/guilds/{}/channels", API_BASE, server.0)).body(&body)));
@@ -234,7 +234,7 @@ impl Discord {
 			},
 			Channel::Group(group) => ObjectBuilder::new().insert("name", group.name),
 		};
-		let map = f(EditChannel(map)).0.unwrap();
+		let map = f(EditChannel(map)).0.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/channels/{}", API_BASE, channel.0)).body(&body)));
@@ -314,7 +314,7 @@ impl Discord {
 			.insert("content", text)
 			.insert("nonce", nonce)
 			.insert("tts", tts)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.post(&format!("{}/channels/{}/messages", API_BASE, channel.0)).body(&body)));
@@ -328,7 +328,7 @@ impl Discord {
 	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0)).body(&body)));
@@ -373,7 +373,7 @@ impl Discord {
 
 		let map = ObjectBuilder::new()
 			.insert("messages", ids)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(|| self.client.post(
 			&format!("{}/channels/{}/messages/bulk_delete", API_BASE, channel.0)).body(&body)));
@@ -447,7 +447,7 @@ impl Discord {
 			.insert("allow", target.allow.bits())
 			.insert("deny", target.deny.bits())
 			.insert("type", kind)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(|| self.client.put(
 			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)).body(&body)));
@@ -502,7 +502,7 @@ impl Discord {
 			.insert("name", name)
 			.insert("region", region)
 			.insert("icon", icon)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.post(&format!("{}/guilds", API_BASE)).body(&body)));
@@ -523,7 +523,7 @@ impl Discord {
 	/// );
 	/// ```
 	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
-		let map = f(EditServer(ObjectBuilder::new())).0.unwrap();
+		let map = f(EditServer(ObjectBuilder::new())).0.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/guilds/{}", API_BASE, server_id.0)).body(&body)));
@@ -613,7 +613,7 @@ impl Discord {
 			.insert("max_age", max_age)
 			.insert("max_uses", max_uses)
 			.insert("temporary", temporary)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.post(&format!("{}/channels/{}/invites", API_BASE, channel.0)).body(&body)));
@@ -644,7 +644,7 @@ impl Discord {
 	///
 	/// See the `EditMember` struct for the editable fields.
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
-		let map = f(EditMember(ObjectBuilder::new())).0.unwrap();
+		let map = f(EditMember(ObjectBuilder::new())).0.build();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(|| self.client.patch(
 			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
@@ -668,7 +668,7 @@ impl Discord {
 	pub fn create_private_channel(&self, recipient: &UserId) -> Result<PrivateChannel> {
 		let map = ObjectBuilder::new()
 			.insert("recipient_id", &recipient.0)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.post(&format!("{}/users/@me/channels", API_BASE)).body(&body)));
@@ -706,7 +706,7 @@ impl Discord {
 		}
 
 		// Then, send the profile patch.
-		let map = f(EditProfile(map)).0.unwrap();
+		let map = f(EditProfile(map)).0.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(||
 			self.client.patch(&format!("{}/users/@me", API_BASE)).body(&body)));
@@ -729,7 +729,7 @@ impl Discord {
 	pub fn move_member_voice(&self, server: &ServerId, user: &UserId, channel: &ChannelId) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("channel_id", &channel.0)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(||
 			self.client.patch(&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
@@ -742,7 +742,7 @@ impl Discord {
 	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = ObjectBuilder::new()
 			.insert("days", days)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(|| self.client.post(
 			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
@@ -755,7 +755,7 @@ impl Discord {
 	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = ObjectBuilder::new()
 			.insert("days", days)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		let response = try!(self.request(|| self.client.get(
 			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
@@ -770,7 +770,7 @@ impl Discord {
 	pub fn edit_note(&self, user: UserId, note: &str) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("note", note)
-			.unwrap();
+			.build();
 		let body = try!(serde_json::to_string(&map));
 		try!(self.request(||
 			self.client.put(&format!("{}/users/@me/notes/{}", API_BASE, user.0)).body(&body)));

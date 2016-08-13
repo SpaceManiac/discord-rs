@@ -148,7 +148,7 @@ impl Connection {
 					None => object.insert("game", serde_json::Value::Null),
 				}
 			})
-			.unwrap();
+			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
@@ -234,7 +234,7 @@ impl Connection {
 				let map = ObjectBuilder::new()
 					.insert("op", 1)
 					.insert("d", sequence)
-					.unwrap();
+					.build();
 				let _ = self.keepalive_channel.send(Status::SendMessage(map));
 				self.recv_event()
 			}
@@ -293,7 +293,7 @@ impl Connection {
 				.insert("token", &self.token)
 				.insert("session_id", session_id)
 			)
-			.unwrap();
+			.build();
 		try!(sender.send_json(&resume));
 
 		// TODO: when Discord has implemented it, observe the RESUMING event here
@@ -348,7 +348,7 @@ impl Connection {
 				.insert("query", "")
 				.insert("limit", 0)
 			)
-			.unwrap();
+			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
@@ -357,7 +357,7 @@ impl Connection {
 		let msg = ObjectBuilder::new()
 			.insert("op", 12)
 			.insert_array("d", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
-			.unwrap();
+			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
@@ -368,7 +368,7 @@ impl Connection {
 			.insert_object("d", |o| o
 				.insert("channel_id", channel.0)
 			)
-			.unwrap();
+			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 }
@@ -394,7 +394,7 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 
 			object
 		})
-		.unwrap()
+		.build()
 }
 
 #[inline]
@@ -436,7 +436,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 			let map = ObjectBuilder::new()
 				.insert("op", 1)
 				.insert("d", last_sequence)
-				.unwrap();
+				.build();
 			match sender.send_json(&map) {
 				Ok(()) => {},
 				Err(e) => warn!("Error sending gateway keeaplive: {:?}", e)
