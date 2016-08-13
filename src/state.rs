@@ -5,16 +5,16 @@ use super::model::*;
 #[derive(Debug, Clone)]
 pub struct State {
 	user: CurrentUser,
-	settings: Option<UserSettings>,
-	server_settings: Option<Vec<UserServerSettings>>,
-	session_id: String,
-	groups: BTreeMap<ChannelId, Group>,
-	private_channels: Vec<PrivateChannel>,
-	calls: BTreeMap<ChannelId, Call>,
 	servers: Vec<LiveServer>,
 	unavailable_servers: Vec<ServerId>,
+	private_channels: Vec<PrivateChannel>,
+	groups: BTreeMap<ChannelId, Group>,
+	calls: BTreeMap<ChannelId, Call>,
 	presences: Vec<Presence>,
 	relationships: Vec<Relationship>,
+	// user accounts only
+	settings: Option<UserSettings>,
+	server_settings: Option<Vec<UserServerSettings>>,
 	notes: Option<BTreeMap<UserId, String>>,
 }
 
@@ -40,16 +40,15 @@ impl State {
 		}
 		State {
 			user: ready.user,
-			settings: ready.user_settings,
-			server_settings: ready.user_server_settings,
-			session_id: ready.session_id,
-			groups: groups,
-			private_channels: private_channels,
-			calls: BTreeMap::new(),
 			servers: servers,
 			unavailable_servers: unavailable,
+			private_channels: private_channels,
+			groups: groups,
+			calls: BTreeMap::new(),
 			presences: ready.presences,
 			relationships: ready.relationships,
+			settings: ready.user_settings,
+			server_settings: ready.user_server_settings,
 			notes: ready.notes,
 		}
 	}
@@ -380,33 +379,57 @@ impl State {
 	#[inline]
 	pub fn user(&self) -> &CurrentUser { &self.user }
 
-	/// Get the logged-in user's client settings. Will return `None` for bots.
+	/// Get the servers this user has access to.
 	#[inline]
-	pub fn settings(&self) -> Option<&UserSettings> { self.settings.as_ref() }
+	pub fn servers(&self) -> &[LiveServer] { &self.servers }
 
-	/// Get the logged-in user's per-server notification settings. Will return `None` for bots.
-	#[inline]
-	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
+	/// Get the currently unavailable servers.
+	pub fn unavailable_servers(&self) -> &[ServerId] { &self.unavailable_servers }
 
-	/// Get the websocket session ID.
-	#[inline]
-	pub fn session_id(&self) -> &str { &self.session_id }
-
-	/// Get the list of groups with other users.
-	#[inline]
-	pub fn groups(&self) -> &BTreeMap<ChannelId, Group> { &self.groups }
-
-	/// Get the list of ongoing calls. May require a call to `sync_calls`.
-	#[inline]
-	pub fn calls(&self) -> &BTreeMap<ChannelId, Call> { &self.calls }
-
-	/// Get the list of private channels with other users.
+	/// Get the active 1-on-1 private channels with other users.
 	#[inline]
 	pub fn private_channels(&self) -> &[PrivateChannel] { &self.private_channels }
 
-	/// Get the list of servers this user has access to.
+	/// Get the active groups with other users.
 	#[inline]
-	pub fn servers(&self) -> &[LiveServer] { &self.servers }
+	pub fn groups(&self) -> &BTreeMap<ChannelId, Group> { &self.groups }
+
+	/// Get the currently ongoing calls.
+	///
+	/// Calls which were already ongoing when the user connected may require
+	/// calling `Connection::sync_calls` to appear here.
+	#[inline]
+	pub fn calls(&self) -> &BTreeMap<ChannelId, Call> { &self.calls }
+
+	/// Get the presences of online friends.
+	///
+	/// Usually empty for bot accounts.
+	#[inline]
+	pub fn presences(&self) -> &[Presence] { &self.presences }
+
+	/// Get the friend/block relationships with other users.
+	///
+	/// Usually empty for bot accounts.
+	#[inline]
+	pub fn relationships(&self) -> &[Relationship] { &self.relationships }
+
+	/// Get the logged-in user's client settings.
+	///
+	/// Returns `None` on bot accounts.
+	#[inline]
+	pub fn settings(&self) -> Option<&UserSettings> { self.settings.as_ref() }
+
+	/// Get the logged-in user's per-server notification settings.
+	///
+	/// Returns `None` on bot accounts.
+	#[inline]
+	pub fn server_settings(&self) -> Option<&[UserServerSettings]> { self.server_settings.as_ref().map(|x| &x[..]) }
+
+	/// Get the map of notes that have been made by this user.
+	///
+	/// Returns `None` on bot accounts.
+	#[inline]
+	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
 
 	/// Look up a private or public channel by its ID.
 	pub fn find_channel(&self, id: &ChannelId) -> Option<ChannelRef> {
@@ -450,9 +473,6 @@ impl State {
 		}
 		None
 	}
-
-	/// Get the map of notes that have been made by this user.
-	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
 }
 
 fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {
