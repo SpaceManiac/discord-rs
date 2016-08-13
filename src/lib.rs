@@ -55,7 +55,7 @@ pub use state::{State, ChannelRef};
 use model::*;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
-const API_BASE: &'static str = "https://discordapp.com/api";
+const API_BASE: &'static str = "https://discordapp.com/api/v6";
 const STATUS_BASE: &'static str = "https://status.discordapp.com";
 
 /// Client for the Discord REST API.
