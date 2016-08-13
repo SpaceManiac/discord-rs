@@ -180,8 +180,8 @@ impl Discord {
 
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
-		try!(self.request(|| self.client.post(&format!("{}/auth/logout", API_BASE))));
-		Ok(())
+		self.request(|| self.client.post(&format!("{}/auth/logout", API_BASE)))
+			.and_then(check_empty)
 	}
 
 	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
@@ -250,8 +250,8 @@ impl Discord {
 
 	/// Indicate typing on a channel for the next 5 seconds.
 	pub fn broadcast_typing(&self, channel: &ChannelId) -> Result<()> {
-		try!(self.request(|| self.client.post(&format!("{}/channels/{}/typing", API_BASE, channel.0))));
-		Ok(())
+		self.request(|| self.client.post(&format!("{}/channels/{}/typing", API_BASE, channel.0)))
+			.and_then(check_empty)
 	}
 
 	/// Get a single message by ID from a given channel.
@@ -291,18 +291,18 @@ impl Discord {
 	///
 	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
 	pub fn pin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
-		try!(self.request(|| self.client.put(
-			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
-		Ok(())
+		self.request(|| self.client.put(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0)
+		)).and_then(check_empty)
 	}
 
 	/// Removes the given message from being pinned to the given channel.
 	///
 	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
 	pub fn unpin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
-		try!(self.request(|| self.client.delete(
-			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0))));
-		Ok(())
+		self.request(|| self.client.delete(
+			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0)
+		)).and_then(check_empty)
 	}
 
 	/// Send a message to a given channel.
@@ -340,9 +340,9 @@ impl Discord {
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
 	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		try!(self.request(||
-			self.client.delete(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0))));
-		Ok(())
+		self.request(|| self.client.delete(
+			&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0)
+		)).and_then(check_empty)
 	}
 
 	/// Bulk deletes a list of `MessageId`s from a given channel.
@@ -375,9 +375,9 @@ impl Discord {
 			.insert("messages", ids)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.request(|| self.client.post(
-			&format!("{}/channels/{}/messages/bulk_delete", API_BASE, channel.0)).body(&body)));
-		Ok(())
+		self.request(|| self.client.post(
+			&format!("{}/channels/{}/messages/bulk_delete", API_BASE, channel.0)
+		).body(&body)).and_then(check_empty)
 	}
 
 	/// Send a file attached to a message on a given channel.
@@ -399,9 +399,9 @@ impl Discord {
 
 	/// Acknowledge this message as "read" by this client.
 	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		try!(self.request(||
-			self.client.post(&format!("{}/channels/{}/messages/{}/ack", API_BASE, channel.0, message.0))));
-		Ok(())
+		self.request(|| self.client.post(
+			&format!("{}/channels/{}/messages/{}/ack", API_BASE, channel.0, message.0)
+		)).and_then(check_empty)
 	}
 
 	/// Create permissions for a `Channel` for a `Member` or `Role`.
@@ -449,9 +449,9 @@ impl Discord {
 			.insert("type", kind)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.request(|| self.client.put(
-			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)).body(&body)));
-		Ok(())
+		self.request(|| self.client.put(
+			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)
+		).body(&body)).and_then(check_empty)
 	}
 
 	/// Delete a `Member` or `Role`'s permissions for a `Channel`.
@@ -484,9 +484,9 @@ impl Discord {
 			PermissionOverwriteType::Member(id) => id.0,
 			PermissionOverwriteType::Role(id) => id.0,
 		};
-		try!(self.request(|| self.client.delete(
-			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id))));
-		Ok(())
+		self.request(|| self.client.delete(
+			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)
+		)).and_then(check_empty)
 	}
 
 	/// Get the list of servers this user knows about.
@@ -555,16 +555,16 @@ impl Discord {
 	///
 	/// Zero may be passed for `delete_message_days` if no deletion is desired.
 	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: u32) -> Result<()> {
-		try!(self.request(|| self.client.put(
-			&format!("{}/guilds/{}/bans/{}?delete_message_days={}", API_BASE, server.0, user.0, delete_message_days))));
-		Ok(())
+		self.request(|| self.client.put(
+			&format!("{}/guilds/{}/bans/{}?delete_message_days={}", API_BASE, server.0, user.0, delete_message_days)
+		)).and_then(check_empty)
 	}
 
 	/// Unban a user from the server.
 	pub fn remove_ban(&self, server: &ServerId, user: &UserId) -> Result<()> {
-		try!(self.request(|| self.client.delete(
-			&format!("{}/guilds/{}/bans/{}", API_BASE, server.0, user.0))));
-		Ok(())
+		self.request(|| self.client.delete(
+			&format!("{}/guilds/{}/bans/{}", API_BASE, server.0, user.0)
+		)).and_then(check_empty)
 	}
 
 	/// Extract information from an invite.
@@ -646,16 +646,16 @@ impl Discord {
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
 		let map = f(EditMember(ObjectBuilder::new())).0.build();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.request(|| self.client.patch(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
-		Ok(())
+		self.request(|| self.client.patch(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
+		).body(&body)).and_then(check_empty)
 	}
 
 	/// Kick a member from a server.
 	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
-		try!(self.request(|| self.client.delete(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
-		Ok(())
+		self.request(|| self.client.delete(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
+		)).and_then(check_empty)
 	}
 
 	// Create role
@@ -731,9 +731,9 @@ impl Discord {
 			.insert("channel_id", &channel.0)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.request(||
-			self.client.patch(&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
-		Ok(())
+		self.request(|| self.client.patch(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
+		).body(&body)).and_then(check_empty)
 	}
 
 	/// Start a prune operation, kicking members who have been inactive for the
@@ -772,9 +772,9 @@ impl Discord {
 			.insert("note", note)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		try!(self.request(||
-			self.client.put(&format!("{}/users/@me/notes/{}", API_BASE, user.0)).body(&body)));
-		Ok(())
+		self.request(|| self.client.put(
+			&format!("{}/users/@me/notes/{}", API_BASE, user.0)
+		).body(&body)).and_then(check_empty)
 	}
 
 	/// Retrieves information about the application and the owner.
@@ -1016,12 +1016,28 @@ fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> Result<hyper
 	}
 }
 
+#[inline]
 fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
 	let response = try!(response);
 	if !response.status.is_success() {
 		return Err(Error::from_response(response))
 	}
 	Ok(response)
+}
+
+#[inline]
+fn check_empty(mut response: hyper::client::Response) -> Result<()> {
+	if response.status != hyper::status::StatusCode::NoContent {
+		use std::io::Read;
+		debug!("Expected 204 No Content, got {}", response.status);
+		for header in response.headers.iter() {
+			debug!("Header: {}", header);
+		}
+		let mut content = String::new();
+		try!(response.read_to_string(&mut content));
+		debug!("Content: {}", content);
+	}
+	Ok(())
 }
 
 fn resolve_invite(invite: &str) -> &str {
