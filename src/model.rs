@@ -27,6 +27,58 @@ macro_rules! warn_json {
 	};
 }
 
+macro_rules! map_names {
+	($typ:ident; $($entry:ident, $value:expr;)*) => {
+		impl $typ {
+			pub fn name(&self) -> &'static str {
+				match *self {
+					$($typ::$entry => $value,)*
+				}
+			}
+
+			pub fn from_str(name: &str) -> Option<Self> {
+				match name {
+					$($value => Some($typ::$entry),)*
+					_ => None,
+				}
+			}
+
+			fn decode_str(value: Value) -> Result<Self> {
+				let name = try!(into_string(value));
+				Self::from_str(&name).ok_or(Error::Decode(
+					concat!("Expected valid ", stringify!($typ)),
+					Value::String(name)
+				))
+			}
+		}
+	}
+}
+macro_rules! map_numbers {
+	($typ:ident; $($entry:ident, $value:expr;)*) => {
+		impl $typ {
+			pub fn num(&self) -> u64 {
+				match *self {
+					$($typ::$entry => $value,)*
+				}
+			}
+
+			pub fn from_num(num: u64) -> Option<Self> {
+				match num {
+					$($value => Some($typ::$entry),)*
+					_ => None,
+				}
+			}
+
+			fn decode(value: Value) -> Result<Self> {
+				value.as_u64().and_then(Self::from_num).ok_or(Error::Decode(
+					concat!("Expected valid ", stringify!($typ)),
+					value
+				))
+			}
+		}
+	}
+}
+
 //=================
 // Discord identifier types
 
@@ -162,56 +214,17 @@ pub enum ChannelType {
 	Voice,
 }
 
-impl ChannelType {
-	/// Attempt to parse a ChannelType from a number
-	pub fn from_num(num: u64) -> Option<ChannelType> {
-		match num {
-			0 => Some(ChannelType::Text),
-			1 => Some(ChannelType::Private),
-			2 => Some(ChannelType::Voice),
-			3 => Some(ChannelType::Group),
-			_ => None,
-		}
-	}
-
-	/// Attempt to parse a ChannelType from a name
-	pub fn from_str(name: &str) -> Option<ChannelType> {
-		match name {
-			"group" => Some(ChannelType::Group),
-			"private" => Some(ChannelType::Private),
-			"text" => Some(ChannelType::Text),
-			"voice" => Some(ChannelType::Voice),
-			_ => None,
-		}
-	}
-
-	fn from_num_err(num: u64) -> Result<ChannelType> {
-		ChannelType::from_num(num).ok_or(Error::Decode("Expected valid ChannelType", Value::U64(num)))
-	}
-
-	fn from_str_err(name: String) -> Result<ChannelType> {
-		ChannelType::from_str(&name).ok_or(Error::Decode("Expected valid ChannelType", Value::String(name)))
-	}
-
-	/// Get the name of this ChannelType
-	pub fn name(&self) -> &'static str {
-		match *self {
-			ChannelType::Group => "group",
-			ChannelType::Private => "private",
-			ChannelType::Text => "text",
-			ChannelType::Voice => "voice",
-		}
-	}
-
-	/// Get the number of this ChannelType
-	pub fn num(&self) -> u8 {
-		match *self {
-			ChannelType::Text => 0,
-			ChannelType::Private => 1,
-			ChannelType::Voice => 2,
-			ChannelType::Group => 3,
-		}
-	}
+map_names! { ChannelType;
+	Group, "group";
+	Private, "private";
+	Text, "text";
+	Voice, "voice";
+}
+map_numbers! { ChannelType;
+	Text, 0;
+	Private, 1;
+	Voice, 2;
+	Group, 3;
 }
 
 /// The basic information about a server only
@@ -512,7 +525,7 @@ impl PrivateChannel {
 		}
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(ChannelType::from_num_err)),
+			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
@@ -552,7 +565,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: try!(opt(&mut value, "topic", into_string)),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(ChannelType::from_num_err)),
+			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
@@ -721,7 +734,7 @@ impl Message {
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 			pinned: req!(try!(remove(&mut value, "pinned")).as_bool()),
-			kind: try!(remove(&mut value, "type").and_then(into_u64).and_then(MessageType::from_num_err)),
+			kind: try!(remove(&mut value, "type").and_then(MessageType::decode)),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_bool()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
@@ -749,35 +762,13 @@ pub enum MessageType {
 	Regular,
 }
 
-impl MessageType {
-	/// Attempt to parse a MessageType from a number
-	pub fn from_num(num: u64) -> Option<MessageType> {
-		match num {
-			0 => Some(MessageType::Regular),
-			1 => Some(MessageType::GroupRecipientAddition),
-			2 => Some(MessageType::GroupRecipientRemoval),
-			3 => Some(MessageType::GroupCallCreation),
-			4 => Some(MessageType::GroupNameUpdate),
-			5 => Some(MessageType::GroupIconUpdate),
-			_ => None,
-		}
-	}
-
-	pub fn from_num_err(num: u64) -> Result<MessageType> {
-		MessageType::from_num(num).ok_or(Error::Decode("Expected valid MessageType", Value::U64(num)))
-	}
-
-	/// Get the number of this MessageType
-	pub fn num(&self) -> u8 {
-		match *self {
-			MessageType::Regular => 0,
-			MessageType::GroupRecipientAddition => 1,
-			MessageType::GroupRecipientRemoval => 2,
-			MessageType::GroupCallCreation => 3,
-			MessageType::GroupNameUpdate => 4,
-			MessageType::GroupIconUpdate => 5,
-		}
-	}
+map_numbers! { MessageType;
+	Regular, 0;
+	GroupRecipientAddition, 1;
+	GroupRecipientRemoval, 2;
+	GroupCallCreation, 3;
+	GroupNameUpdate, 4;
+	GroupIconUpdate, 5;
 }
 
 /// Information about an invite
@@ -801,7 +792,7 @@ impl Invite {
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_str_err));
+		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode_str));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
@@ -847,7 +838,7 @@ impl RichInvite {
 		warn_field("RichInvite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(into_string).and_then(ChannelType::from_str_err));
+		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode_str));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("RichInvite/channel", channel);
@@ -929,19 +920,10 @@ pub enum OnlineStatus {
 	Idle,
 }
 
-impl OnlineStatus {
-	pub fn from_str(name: &str) -> Option<OnlineStatus> {
-		match name {
-			"offline" => Some(OnlineStatus::Offline),
-			"online" => Some(OnlineStatus::Online),
-			"idle" => Some(OnlineStatus::Idle),
-			_ => None,
-		}
-	}
-
-	fn from_str_err(name: String) -> Result<OnlineStatus> {
-		OnlineStatus::from_str(&name).ok_or(Error::Decode("Expected valid OnlineStatus", Value::String(name)))
-	}
+map_names! { OnlineStatus;
+	Offline, "offline";
+	Online, "online";
+	Idle, "idle";
 }
 
 /// A type of game being played.
@@ -951,18 +933,9 @@ pub enum GameType {
 	Streaming,
 }
 
-impl GameType {
-	pub fn from_num(num: u64) -> Option<Self> {
-		match num {
-			0 => Some(GameType::Playing),
-			1 => Some(GameType::Streaming),
-			_ => None,
-		}
-	}
-
-	fn decode(value: Value) -> Result<Self> {
-		value.as_u64().and_then(GameType::from_num).ok_or(Error::Decode("Expected valid GameType", value))
-	}
+map_numbers! { GameType;
+	Playing, 0;
+	Streaming, 1;
 }
 
 /// Information about a game being played
@@ -1024,7 +997,7 @@ impl Presence {
 
 		warn_json!(@"Presence", value, Presence {
 			user_id: user_id,
-			status: try!(remove(&mut value, "status").and_then(into_string).and_then(OnlineStatus::from_str_err)),
+			status: try!(remove(&mut value, "status").and_then(OnlineStatus::decode_str)),
 			last_modified: try!(opt(&mut value, "last_modified", |v| Ok(req!(v.as_u64())))),
 			game: match value.remove("game") {
 				None | Some(Value::Null) => None,
@@ -1080,29 +1053,11 @@ pub enum VerificationLevel {
 	High,
 }
 
-impl VerificationLevel {
-	pub fn from_num(level: u64) -> Option<VerificationLevel> {
-		match level {
-			0 => Some(VerificationLevel::None),
-			1 => Some(VerificationLevel::Low),
-			2 => Some(VerificationLevel::Medium),
-			3 => Some(VerificationLevel::High),
-			_ => None,
-		}
-	}
-
-	pub fn to_num(self) -> u64 {
-		match self {
-			VerificationLevel::None => 0,
-			VerificationLevel::Low => 1,
-			VerificationLevel::Medium => 2,
-			VerificationLevel::High => 3,
-		}
-	}
-
-	fn decode(value: Value) -> Result<VerificationLevel> {
-		value.as_u64().and_then(VerificationLevel::from_num).ok_or(Error::Decode("Expected valid VerificationLevel", value))
-	}
+map_numbers! { VerificationLevel;
+	None, 0;
+	Low, 1;
+	Medium, 2;
+	High, 3;
 }
 
 /// A parter custom emoji
@@ -1390,7 +1345,7 @@ impl UserSettings {
 	}
 }
 
-/// A user's online presence status
+/// Notification level for a channel or server
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum NotificationLevel {
 	/// All messages trigger a notification
@@ -1403,20 +1358,11 @@ pub enum NotificationLevel {
 	Parent,
 }
 
-impl NotificationLevel {
-	pub fn from_num(level: u64) -> Option<NotificationLevel> {
-		match level {
-			0 => Some(NotificationLevel::All),
-			1 => Some(NotificationLevel::Mentions),
-			2 => Some(NotificationLevel::Nothing),
-			3 => Some(NotificationLevel::Parent),
-			_ => None,
-		}
-	}
-
-	fn decode(value: Value) -> Result<NotificationLevel> {
-		value.as_u64().and_then(NotificationLevel::from_num).ok_or(Error::Decode("Expected valid NotificationLevel", value))
-	}
+map_numbers! { NotificationLevel;
+	All, 0;
+	Mentions, 1;
+	Nothing, 2;
+	Parent, 3;
 }
 
 /// A channel-specific notification settings override
@@ -1790,7 +1736,7 @@ impl Event {
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				kind: try!(opt(&mut value, "type", |x| into_u64(x).and_then(MessageType::from_num_err))),
+				kind: try!(opt(&mut value, "type", MessageType::decode)),
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_bool()),
@@ -2044,14 +1990,6 @@ fn into_string(value: Value) -> Result<String> {
 	match value {
 		Value::String(s) => Ok(s),
 		value => Err(Error::Decode("Expected string", value)),
-	}
-}
-
-fn into_u64(value: Value) -> Result<u64> {
-	match value {
-		Value::I64(v) => Ok(v as u64),
-		Value::U64(v) => Ok(v),
-		value => Err(Error::Decode("Expected u64 or i64", value)),
 	}
 }
 

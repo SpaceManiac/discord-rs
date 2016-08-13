@@ -909,7 +909,7 @@ impl EditServer {
 
 	/// Edit the verification level of the server.
 	pub fn verification_level(self, verification_level: VerificationLevel) -> Self {
-		EditServer(self.0.insert("verification_level", verification_level.to_num()))
+		EditServer(self.0.insert("verification_level", verification_level.num()))
 	}
 
 	/// Edit the server's splash. Use `None` to remove the splash.
