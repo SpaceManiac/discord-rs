@@ -58,6 +58,29 @@ const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceMa
 const API_BASE: &'static str = "https://discordapp.com/api/v6";
 const STATUS_BASE: &'static str = "https://status.discordapp.com";
 
+macro_rules! request {
+	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {
+		try!($self_.request(|| $self_.client.$method(
+			&format!(concat!("{}", $url), API_BASE, $($rest)*)
+		).body(&$body)))
+	};
+	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {
+		try!($self_.request(|| $self_.client.$method(
+			&format!(concat!("{}", $url), API_BASE, $($rest)*)
+		)))
+	};
+	($self_:ident, $method:ident($body:expr), $url:expr) => {
+		try!($self_.request(|| $self_.client.$method(
+			&format!(concat!("{}", $url), API_BASE)
+		).body(&$body)))
+	};
+	($self_:ident, $method:ident, $url:expr) => {
+		try!($self_.request(|| $self_.client.$method(
+			&format!(concat!("{}", $url), API_BASE)
+		)))
+	};
+}
+
 /// Client for the Discord REST API.
 ///
 /// Log in to the API with a user's email and password using `new()`. Call
@@ -180,8 +203,7 @@ impl Discord {
 
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
-		self.request(|| self.client.post(&format!("{}/auth/logout", API_BASE)))
-			.and_then(check_empty)
+		check_empty(request!(self, post, "/auth/logout"))
 	}
 
 	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
@@ -197,15 +219,13 @@ impl Discord {
 			.insert("type", kind.name())
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/guilds/{}/channels", API_BASE, server.0)).body(&body)));
+		let response = request!(self, post(body), "/guilds/{}/channels", server);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Get information about a channel.
 	pub fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/channels/{}", API_BASE, channel.0))));
+		let response = request!(self, get, "/channels/{}", channel);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -236,27 +256,24 @@ impl Discord {
 		};
 		let map = f(EditChannel(map)).0.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.patch(&format!("{}/channels/{}", API_BASE, channel.0)).body(&body)));
+		let response = request!(self, patch(body), "/channels/{}", channel);
 		PublicChannel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: &ChannelId) -> Result<Channel> {
-		let response = try!(self.request(||
-			self.client.delete(&format!("{}/channels/{}", API_BASE, channel.0))));
+		let response = request!(self, delete, "/channels/{}", channel);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Indicate typing on a channel for the next 5 seconds.
 	pub fn broadcast_typing(&self, channel: &ChannelId) -> Result<()> {
-		self.request(|| self.client.post(&format!("{}/channels/{}/typing", API_BASE, channel.0)))
-			.and_then(check_empty)
+		check_empty(request!(self, post, "/channels/{}/typing", channel))
 	}
 
 	/// Get a single message by ID from a given channel.
 	pub fn get_message(&self, channel: ChannelId, message: MessageId) -> Result<Message> {
-		let response = try!(self.request(|| self.client.get(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0))));
+		let response = request!(self, get, "/channels/{}/messages/{}", channel, message);
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -268,12 +285,12 @@ impl Discord {
 	/// will appear first in the list.
 	pub fn get_messages(&self, channel: ChannelId, what: GetMessages, limit: Option<u64>) -> Result<Vec<Message>> {
 		use std::fmt::Write;
-		let mut url = format!("{}/channels/{}/messages?limit={}", API_BASE, channel.0, limit.unwrap_or(50));
+		let mut url = format!("{}/channels/{}/messages?limit={}", API_BASE, channel, limit.unwrap_or(50));
 		match what {
 			GetMessages::MostRecent => {},
-			GetMessages::Before(id) => { let _ = write!(url, "&before={}", id.0); },
-			GetMessages::After(id) => { let _ = write!(url, "&after={}", id.0); },
-			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id.0); },
+			GetMessages::Before(id) => { let _ = write!(url, "&before={}", id); },
+			GetMessages::After(id) => { let _ = write!(url, "&after={}", id); },
+			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id); },
 		}
 		let response = try!(self.request(|| self.client.get(&url)));
 		decode_array(try!(serde_json::from_reader(response)), Message::decode)
@@ -281,28 +298,22 @@ impl Discord {
 
 	/// Gets the pinned messages for a given channel.
 	pub fn get_pinned_messages(&self, channel: ChannelId) -> Result<Vec<Message>> {
-		let response = try!(self.request(|| self.client.get(
-			&format!("{}/channels/{}/pins", API_BASE, channel.0))));
-		let value = try!(serde_json::from_reader(response));
-		decode_array(value, Message::decode)
+		let response = request!(self, get, "/channels/{}/pins", channel);
+		decode_array(try!(serde_json::from_reader(response)), Message::decode)
 	}
 
 	/// Pin the given message to the given channel.
 	///
 	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
 	pub fn pin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
-		self.request(|| self.client.put(
-			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, put, "/channels/{}/pins/{}", channel, message))
 	}
 
 	/// Removes the given message from being pinned to the given channel.
 	///
 	/// Requires that the logged in account have the "MANAGE_MESSAGES" permission.
 	pub fn unpin_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
-		self.request(|| self.client.delete(
-			&format!("{}/channels/{}/pins/{}", API_BASE, channel.0, message.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, delete, "/channels/{}/pins/{}", channel, message))
 	}
 
 	/// Send a message to a given channel.
@@ -316,8 +327,7 @@ impl Discord {
 			.insert("tts", tts)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/channels/{}/messages", API_BASE, channel.0)).body(&body)));
+		let response = request!(self, post(body), "/channels/{}/messages", channel);
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -330,8 +340,7 @@ impl Discord {
 			.insert("content", text)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.patch(&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0)).body(&body)));
+		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -340,9 +349,7 @@ impl Discord {
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
 	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		self.request(|| self.client.delete(
-			&format!("{}/channels/{}/messages/{}", API_BASE, channel.0, message.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, delete, "/channels/{}/messages/{}", channel, message))
 	}
 
 	/// Bulk deletes a list of `MessageId`s from a given channel.
@@ -375,16 +382,14 @@ impl Discord {
 			.insert("messages", ids)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		self.request(|| self.client.post(
-			&format!("{}/channels/{}/messages/bulk_delete", API_BASE, channel.0)
-		).body(&body)).and_then(check_empty)
+		check_empty(request!(self, post(body), "/channels/{}/messages/bulk_delete", channel))
 	}
 
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: &ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
-		let url = match hyper::Url::parse(&format!("{}/channels/{}/messages", API_BASE, channel.0)) {
+		let url = match hyper::Url::parse(&format!("{}/channels/{}/messages", API_BASE, channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
@@ -399,9 +404,7 @@ impl Discord {
 
 	/// Acknowledge this message as "read" by this client.
 	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
-		self.request(|| self.client.post(
-			&format!("{}/channels/{}/messages/{}/ack", API_BASE, channel.0, message.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, post, "/channels/{}/messages/{}/ack", channel, message))
 	}
 
 	/// Create permissions for a `Channel` for a `Member` or `Role`.
@@ -449,9 +452,7 @@ impl Discord {
 			.insert("type", kind)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		self.request(|| self.client.put(
-			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)
-		).body(&body)).and_then(check_empty)
+		check_empty(request!(self, put(body), "/channels/{}/permissions/{}", channel, id))
 	}
 
 	/// Delete a `Member` or `Role`'s permissions for a `Channel`.
@@ -484,15 +485,12 @@ impl Discord {
 			PermissionOverwriteType::Member(id) => id.0,
 			PermissionOverwriteType::Role(id) => id.0,
 		};
-		self.request(|| self.client.delete(
-			&format!("{}/channels/{}/permissions/{}", API_BASE, channel.0, id)
-		)).and_then(check_empty)
+		check_empty(request!(self, delete, "/channels/{}/permissions/{}", channel, id))
 	}
 
 	/// Get the list of servers this user knows about.
 	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/users/@me/guilds", API_BASE))));
+		let response = request!(self, get, "/users/@me/guilds");
 		decode_array(try!(serde_json::from_reader(response)), ServerInfo::decode)
 	}
 
@@ -504,8 +502,7 @@ impl Discord {
 			.insert("icon", icon)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/guilds", API_BASE)).body(&body)));
+		let response = request!(self, post(body), "/guilds");
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -525,29 +522,25 @@ impl Discord {
 	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
 		let map = f(EditServer(ObjectBuilder::new())).0.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.patch(&format!("{}/guilds/{}", API_BASE, server_id.0)).body(&body)));
+		let response = request!(self, patch(body), "/guilds/{}", server_id);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Leave the given server.
 	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
-		let response = try!(self.request(||
-			self.client.delete(&format!("{}/users/@me/guilds/{}", API_BASE, server.0))));
+		let response = request!(self, delete, "/users/@me/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete the given server. Only available to the server owner.
 	pub fn delete_server(&self, server: &ServerId) -> Result<Server> {
-		let response = try!(self.request(||
-			self.client.delete(&format!("{}/guilds/{}", API_BASE, server.0))));
+		let response = request!(self, delete, "/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Get the ban list for the given server.
 	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<User>> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/guilds/{}/bans", API_BASE, server.0))));
+		let response = request!(self, get, "/guilds/{}/bans", server);
 		decode_array(try!(serde_json::from_reader(response)), User::decode_ban)
 	}
 
@@ -555,16 +548,13 @@ impl Discord {
 	///
 	/// Zero may be passed for `delete_message_days` if no deletion is desired.
 	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: u32) -> Result<()> {
-		self.request(|| self.client.put(
-			&format!("{}/guilds/{}/bans/{}?delete_message_days={}", API_BASE, server.0, user.0, delete_message_days)
-		)).and_then(check_empty)
+		check_empty(request!(self, put, "/guilds/{}/bans/{}?delete_message_days={}",
+			server, user, delete_message_days))
 	}
 
 	/// Unban a user from the server.
 	pub fn remove_ban(&self, server: &ServerId, user: &UserId) -> Result<()> {
-		self.request(|| self.client.delete(
-			&format!("{}/guilds/{}/bans/{}", API_BASE, server.0, user.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, delete, "/guilds/{}/bans/{}", server, user))
 	}
 
 	/// Extract information from an invite.
@@ -573,30 +563,26 @@ impl Discord {
 	/// or a string containing just the `CODE`.
 	pub fn get_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/invite/{}", API_BASE, invite))));
+		let response = request!(self, get, "/invite/{}", invite);
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Get the active invites for a server.
 	pub fn get_server_invites(&self, server: ServerId) -> Result<Vec<RichInvite>> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/guilds/{}/invites", API_BASE, server.0))));
+		let response = request!(self, get, "/guilds/{}/invites", server);
 		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
 	}
 
 	/// Get the active invites for a channel.
 	pub fn get_channel_invites(&self, channel: ChannelId) -> Result<Vec<RichInvite>> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/channels/{}/invites", API_BASE, channel.0))));
+		let response = request!(self, get, "/channels/{}/invites", channel);
 		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
 	}
 
 	/// Accept an invite. See `get_invite` for details.
 	pub fn accept_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/invite/{}", API_BASE, invite))));
+		let response = request!(self, post, "/invite/{}", invite);
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -615,23 +601,20 @@ impl Discord {
 			.insert("temporary", temporary)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/channels/{}/invites", API_BASE, channel.0)).body(&body)));
+		let response = request!(self, post(body), "/channels/{}/invites", channel);
 		RichInvite::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete an invite. See `get_invite` for details.
 	pub fn delete_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
-		let response = try!(self.request(||
-			self.client.delete(&format!("{}/invite/{}", API_BASE, invite))));
+		let response = request!(self, delete, "/invite/{}", invite);
 		Invite::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Retrieve a member object for a server given the member's user id.
 	pub fn get_member(&self, server: ServerId, user: UserId) -> Result<Member> {
-		let response = try!(self.request(|| self.client.get(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0))));
+		let response = request!(self, get, "/guilds/{}/members/{}", server, user);
 		Member::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -646,16 +629,12 @@ impl Discord {
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
 		let map = f(EditMember(ObjectBuilder::new())).0.build();
 		let body = try!(serde_json::to_string(&map));
-		self.request(|| self.client.patch(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
-		).body(&body)).and_then(check_empty)
+		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
 
 	/// Kick a member from a server.
 	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
-		self.request(|| self.client.delete(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
-		)).and_then(check_empty)
+		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
 	}
 
 	// Create role
@@ -667,17 +646,16 @@ impl Discord {
 	/// one if it exists.
 	pub fn create_private_channel(&self, recipient: &UserId) -> Result<PrivateChannel> {
 		let map = ObjectBuilder::new()
-			.insert("recipient_id", &recipient.0)
+			.insert("recipient_id", recipient.0)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.post(&format!("{}/users/@me/channels", API_BASE)).body(&body)));
+		let response = request!(self, post(body), "/users/@me/channels");
 		PrivateChannel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Get the URL at which a user's avatar is located.
 	pub fn get_user_avatar_url(&self, user: &UserId, avatar: &str) -> String {
-		format!("{}/users/{}/avatars/{}.jpg", API_BASE, user.0, avatar)
+		format!("{}/users/{}/avatars/{}.jpg", API_BASE, user, avatar)
 	}
 
 	/// Download a user's avatar.
@@ -695,8 +673,7 @@ impl Discord {
 	/// This method requires mutable access because editing the profile generates a new token.
 	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&mut self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/users/@me", API_BASE))));
+		let response = request!(self, get, "/users/@me");
 		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
 		let mut map = ObjectBuilder::new()
 			.insert("username", user.username)
@@ -708,8 +685,7 @@ impl Discord {
 		// Then, send the profile patch.
 		let map = f(EditProfile(map)).0.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(||
-			self.client.patch(&format!("{}/users/@me", API_BASE)).body(&body)));
+		let response = request!(self, patch(body), "/users/@me");
 		let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 		// If a token was included in the response, switch to it. Important because if the
 		// password was changed, the old token is invalidated.
@@ -721,7 +697,7 @@ impl Discord {
 
 	/// Get the list of available voice regions for a server.
 	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
-		let response = try!(self.request(|| self.client.get(&format!("{}/voice/regions", API_BASE))));
+		let response = request!(self, get, "/voice/regions");
 		decode_array(try!(serde_json::from_reader(response)), VoiceRegion::decode)
 	}
 
@@ -731,9 +707,7 @@ impl Discord {
 			.insert("channel_id", &channel.0)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		self.request(|| self.client.patch(
-			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)
-		).body(&body)).and_then(check_empty)
+		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
 
 	/// Start a prune operation, kicking members who have been inactive for the
@@ -744,8 +718,7 @@ impl Discord {
 			.insert("days", days)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(|| self.client.post(
-			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		let response = request!(self, post(body), "/guilds/{}/prune", server);
 		ServerPrune::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -757,8 +730,7 @@ impl Discord {
 			.insert("days", days)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		let response = try!(self.request(|| self.client.get(
-			&format!("{}/guilds/{}/prune", API_BASE, server.0)).body(&body)));
+		let response = request!(self, get(body), "/guilds/{}/prune", server);
 		ServerPrune::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -772,15 +744,12 @@ impl Discord {
 			.insert("note", note)
 			.build();
 		let body = try!(serde_json::to_string(&map));
-		self.request(|| self.client.put(
-			&format!("{}/users/@me/notes/{}", API_BASE, user.0)
-		).body(&body)).and_then(check_empty)
+		check_empty(request!(self, put(body), "/users/@me/notes/{}", user))
 	}
 
 	/// Retrieves information about the application and the owner.
 	pub fn get_application_info(&self) -> Result<ApplicationInfo> {
-		let response = try!(self.request(||
-			self.client.get(&format!("{}/oauth2/applications/@me", API_BASE))));
+		let response = request!(self, get, "/oauth2/applications/@me");
 		ApplicationInfo::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -808,7 +777,7 @@ impl Discord {
 	}
 
 	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		let response = try!(self.request(|| self.client.get(&format!("{}/gateway", API_BASE))));
+		let response = request!(self, get, "/gateway");
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let url = match value.get("url") {
 			Some(url) => url,
