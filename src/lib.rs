@@ -55,28 +55,32 @@ pub use state::{State, ChannelRef};
 use model::*;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
-const API_BASE: &'static str = "https://discordapp.com/api/v6";
-const STATUS_BASE: &'static str = "https://status.discordapp.com";
+macro_rules! api_concat {
+	($e:expr) => (concat!("https://discordapp.com/api/v6", $e))
+}
+macro_rules! status_concat {
+	($e:expr) => (concat!("https://status.discordapp.com", $e))
+}
 
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {
 		try!($self_.request(|| $self_.client.$method(
-			&format!(concat!("{}", $url), API_BASE, $($rest)*)
+			&format!(api_concat!($url), $($rest)*)
 		).body(&$body)))
 	};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {
 		try!($self_.request(|| $self_.client.$method(
-			&format!(concat!("{}", $url), API_BASE, $($rest)*)
+			&format!(api_concat!($url), $($rest)*)
 		)))
 	};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {
 		try!($self_.request(|| $self_.client.$method(
-			&format!(concat!("{}", $url), API_BASE)
+			api_concat!($url)
 		).body(&$body)))
 	};
 	($self_:ident, $method:ident, $url:expr) => {
 		try!($self_.request(|| $self_.client.$method(
-			&format!(concat!("{}", $url), API_BASE)
+			api_concat!($url)
 		)))
 	};
 }
@@ -100,7 +104,7 @@ impl Discord {
 		map.insert("password", password);
 
 		let client = hyper::Client::new();
-		let response = try!(check_status(client.post(&format!("{}/auth/login", API_BASE))
+		let response = try!(check_status(client.post(api_concat!("/auth/login"))
 			.header(hyper::header::ContentType::json())
 			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 			.body(&try!(serde_json::to_string(&map)))
@@ -148,7 +152,7 @@ impl Discord {
 			}
 
 			let client = hyper::Client::new();
-			let response = try!(check_status(client.post(&format!("{}/auth/login", API_BASE))
+			let response = try!(check_status(client.post(api_concat!("/auth/login"))
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 				.header(hyper::header::Authorization(initial_token.clone()))
@@ -285,7 +289,7 @@ impl Discord {
 	/// will appear first in the list.
 	pub fn get_messages(&self, channel: ChannelId, what: GetMessages, limit: Option<u64>) -> Result<Vec<Message>> {
 		use std::fmt::Write;
-		let mut url = format!("{}/channels/{}/messages?limit={}", API_BASE, channel, limit.unwrap_or(50));
+		let mut url = format!(api_concat!("/channels/{}/messages?limit={}"), channel, limit.unwrap_or(50));
 		match what {
 			GetMessages::MostRecent => {},
 			GetMessages::Before(id) => { let _ = write!(url, "&before={}", id); },
@@ -389,7 +393,7 @@ impl Discord {
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: &ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
-		let url = match hyper::Url::parse(&format!("{}/channels/{}/messages", API_BASE, channel)) {
+		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
@@ -655,7 +659,7 @@ impl Discord {
 
 	/// Get the URL at which a user's avatar is located.
 	pub fn get_user_avatar_url(&self, user: &UserId, avatar: &str) -> String {
-		format!("{}/users/{}/avatars/{}.jpg", API_BASE, user, avatar)
+		format!(api_concat!("/users/{}/avatars/{}.jpg"), user, avatar)
 	}
 
 	/// Download a user's avatar.
@@ -806,7 +810,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(retry(|| client.get(
-		&format!("{}/api/v2/scheduled-maintenances/active.json", STATUS_BASE))));
+		status_concat!("/api/v2/scheduled-maintenances/active.json"))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -819,7 +823,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(retry(|| client.get(
-		&format!("{}/api/v2/scheduled-maintenances/upcoming.json", STATUS_BASE))));
+		status_concat!("/api/v2/scheduled-maintenances/upcoming.json"))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
