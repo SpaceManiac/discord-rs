@@ -20,7 +20,7 @@ pub fn main() {
 	let (mut connection, ready) = discord.connect().expect("connect failed");
 	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
 	let mut state = State::new(ready);
-	state.sync_calls(&connection);
+	connection.sync_calls(&state.all_private_channels());
 
 	// receive events forever
 	loop {
