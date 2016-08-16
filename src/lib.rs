@@ -38,6 +38,7 @@ extern crate log;
 extern crate sodiumoxide;
 extern crate multipart;
 extern crate base64;
+extern crate flate2;
 
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
@@ -1090,16 +1091,18 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 		let message: Message = try!(self.recv_message());
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
-		} else if message.opcode != Type::Text {
-			Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()))
+		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
+			let json: serde_json::Value = if message.opcode == Type::Binary {
+				try!(serde_json::from_reader(flate2::read::ZlibDecoder::new(&message.payload[..])))
+			} else {
+				try!(serde_json::from_reader(&message.payload[..]))
+			};
+			decode(json).map_err(|e| {
+				warn!("Error decoding: {}", String::from_utf8_lossy(&message.payload));
+				e
+			})
 		} else {
-			serde_json::from_reader::<_, serde_json::Value>(&message.payload[..])
-				.map_err(From::from)
-				.and_then(decode)
-				.map_err(|e| {
-					warn!("Error decoding: {}", String::from_utf8_lossy(&message.payload));
-					e
-				})
+			Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()))
 		}
 	}
 }
