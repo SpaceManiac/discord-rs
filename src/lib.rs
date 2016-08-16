@@ -48,6 +48,11 @@ mod connection;
 mod state;
 #[cfg(feature="voice")]
 pub mod voice;
+
+macro_rules! cdn_concat {
+	($e:expr) => (concat!("https://cdn.discordapp.com", $e))
+}
+
 pub mod model;
 
 pub use error::{Result, Error};

@@ -248,6 +248,14 @@ impl ServerInfo {
 			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
 		})
 	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
+	}
 }
 
 /// Static information about a server
@@ -292,6 +300,14 @@ impl Server {
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
 		})
+	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
 	}
 }
 
@@ -387,6 +403,14 @@ impl User {
 	/// Return a `Mention` which will ping this user.
 	#[inline(always)]
 	pub fn mention(&self) -> Mention { self.id.mention() }
+
+	/// Returns the formatted URL of the user's icon.
+	///
+	/// Returns None if the user does not have an avatar.
+	pub fn avatar_url(&self) -> Option<String> {
+		self.avatar.as_ref().map(|av|
+			format!(cdn_concat!("/avatars/{}/{}.jpg"), self.id, av))
+	}
 }
 
 /// Information about a member of a server
@@ -489,6 +513,14 @@ impl Group {
 				Cow::Owned(result)
 			}
 		}
+	}
+
+	/// Returns the formatted URL of the group's icon.
+	///
+	/// Returns None if the group does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/channel-icons/{}/{}.jpg"), self.channel_id, icon))
 	}
 }
 
@@ -1147,6 +1179,14 @@ impl LiveServer {
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
 			id: id,
 		})
+	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
 	}
 }
 
