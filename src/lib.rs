@@ -208,7 +208,12 @@ impl Discord {
 
 	/// Log out from the Discord API, invalidating this clients's token.
 	pub fn logout(self) -> Result<()> {
-		check_empty(request!(self, post, "/auth/logout"))
+		let map = ObjectBuilder::new()
+			.insert("provider", serde_json::Value::Null)
+			.insert("token", serde_json::Value::Null)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		check_empty(request!(self, post(body), "/auth/logout"))
 	}
 
 	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
