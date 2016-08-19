@@ -563,7 +563,6 @@ pub struct PublicChannel {
 impl PublicChannel {
 	pub fn decode(value: Value) -> Result<PublicChannel> {
 		let mut value = try!(into_map(value));
-		value.remove("is_private"); // discard is_private
 		let id = try!(remove(&mut value, "guild_id").and_then(ServerId::decode));
 		PublicChannel::decode_server(Value::Object(value), id)
 	}
@@ -1042,11 +1041,11 @@ impl VoiceState {
 			channel_id: try!(opt(&mut value, "channel_id", ChannelId::decode)),
 			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
 			token: try!(opt(&mut value, "token", into_string)),
-			suppress: req!(req!(value.remove("suppress")).as_bool()),
-			self_mute: req!(req!(value.remove("self_mute")).as_bool()),
-			self_deaf: req!(req!(value.remove("self_deaf")).as_bool()),
-			mute: req!(req!(value.remove("mute")).as_bool()),
-			deaf: req!(req!(value.remove("deaf")).as_bool()),
+			suppress: req!(try!(remove(&mut value, "suppress")).as_bool()),
+			self_mute: req!(try!(remove(&mut value, "self_mute")).as_bool()),
+			self_deaf: req!(try!(remove(&mut value, "self_deaf")).as_bool()),
+			mute: req!(try!(remove(&mut value, "mute")).as_bool()),
+			deaf: req!(try!(remove(&mut value, "deaf")).as_bool()),
 		})
 	}
 }
@@ -1926,7 +1925,7 @@ impl VoiceEvent {
 	pub fn decode(value: Value) -> Result<VoiceEvent> {
 		let mut value = try!(into_map(value));
 
-		let op = req!(req!(value.remove("op")).as_u64());
+		let op = req!(try!(remove(&mut value, "op")).as_u64());
 		if op == 3 {
 			return Ok(VoiceEvent::KeepAlive)
 		}

@@ -414,6 +414,8 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 					.insert("$referring_domain", "")
 					.insert("$referrer", "")
 				)
+				.insert("large_threshold", 250)
+				.insert("compress", true)
 				.insert("v", GATEWAY_VERSION);
 
 			if let Some(shard_info) = shard_info {
