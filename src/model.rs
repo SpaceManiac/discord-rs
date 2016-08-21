@@ -1188,6 +1188,79 @@ impl LiveServer {
 		self.icon.as_ref().map(|icon|
 			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
 	}
+
+	/// Calculate the effective permissions for a specific user in a specific
+	/// channel on this server.
+	pub fn permissions_for(&self, channel: ChannelId, user: UserId) -> Permissions {
+		use self::permissions::*;
+		// Owner has all permissions
+		if user == self.owner_id {
+			return Permissions::all();
+		}
+		// OR together all the user's roles
+		let everyone = match self.roles.iter().find(|r| r.id.0 == self.id.0) {
+			Some(r) => r,
+			None => {
+				error!("Missing @everyone role in permissions lookup on {} ({})", self.name, self.id);
+				return Permissions::empty();
+			}
+		};
+		let mut permissions = everyone.permissions;
+		let member = match self.members.iter().find(|u| u.user.id == user) {
+			Some(u) => u,
+			None => return everyone.permissions,
+		};
+		for &role in &member.roles {
+			if let Some(role) = self.roles.iter().find(|r| r.id == role) {
+				permissions |= role.permissions;
+			} else {
+				warn!("perms: {:?} on {:?} has non-existent role {:?}", member.user.id, self.id, role);
+			}
+		}
+		// Administrators have all permissions in any channel
+		if permissions.contains(ADMINISTRATOR) {
+			return Permissions::all();
+		}
+		let mut text_channel = false;
+		if let Some(channel) = self.channels.iter().find(|c| c.id == channel) {
+			text_channel = channel.kind == ChannelType::Text;
+			// Apply role overwrites, denied then allowed
+			for overwrite in channel.permission_overwrites.iter() {
+				if let PermissionOverwriteType::Role(role) = overwrite.kind {
+					if member.roles.contains(&role) {
+						permissions = (permissions & !overwrite.deny) | overwrite.allow;
+					}
+				}
+			}
+			// Apply member overwrites, denied then allowed
+			for overwrite in channel.permission_overwrites.iter() {
+				if PermissionOverwriteType::Member(user) == overwrite.kind {
+					permissions = (permissions & !overwrite.deny) | overwrite.allow;
+				}
+			}
+		} else {
+			warn!("perms: {:?} does not contain {:?}", self.id, channel);
+		}
+		// Default channel is always readable
+		if channel.0 == self.id.0 {
+			permissions |= READ_MESSAGES;
+		}
+		// No SEND_MESSAGES => no message-sending-related actions
+		if !permissions.contains(SEND_MESSAGES) {
+			permissions &= !(SEND_TTS_MESSAGES | MENTION_EVERYONE | EMBED_LINKS | ATTACH_FILES);
+		}
+		// No READ_MESSAGES => no channel actions
+		if !permissions.contains(READ_MESSAGES) {
+			permissions &= KICK_MEMBERS | BAN_MEMBERS | ADMINISTRATOR |
+				MANAGE_SERVER | CHANGE_NICKNAMES | MANAGE_NICKNAMES;
+		}
+		// Text channel => no voice actions
+		if text_channel {
+			permissions &= !(VOICE_CONNECT | VOICE_SPEAK | VOICE_MUTE_MEMBERS |
+				VOICE_DEAFEN_MEMBERS | VOICE_MOVE_MEMBERS | VOICE_USE_VAD);
+		}
+		permissions
+	}
 }
 
 /// A server which may be unavailable
