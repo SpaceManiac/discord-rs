@@ -790,18 +790,20 @@ impl Message {
 /// The type of a message
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum MessageType {
-	/// A group call was created
-	GroupCallCreation,
-	/// A group icon was updated
-	GroupIconUpdate,
-	/// A group name was updated
-	GroupNameUpdate,
+	/// A regular, text-based message
+	Regular,
 	/// A recipient was added to the group
 	GroupRecipientAddition,
 	/// A recipient was removed from the group
 	GroupRecipientRemoval,
-	/// A regular, text-based message
-	Regular,
+	/// A group call was created
+	GroupCallCreation,
+	/// A group name was updated
+	GroupNameUpdate,
+	/// A group icon was updated
+	GroupIconUpdate,
+	/// A message was pinned
+	MessagePinned,
 }
 
 map_numbers! { MessageType;
@@ -811,6 +813,7 @@ map_numbers! { MessageType;
 	GroupCallCreation, 3;
 	GroupNameUpdate, 4;
 	GroupIconUpdate, 5;
+	MessagePinned, 6;
 }
 
 /// Information about an invite
