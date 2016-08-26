@@ -133,10 +133,10 @@ impl State {
 				if let Some(channel) = state.channel_id {
 					// channel id available, insert voice state
 					if let Some(call) = self.calls.get_mut(&channel) {
-						match call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-							Some(grp_state) => { grp_state.clone_from(state); return }
-							None => {},
-						}
+						if let Some(grp_state) = call.voice_states.iter_mut()
+							.find(|u| u.user_id == state.user_id) {
+								grp_state.clone_from(state); return
+							}
 						call.voice_states.push(state.clone());
 					}
 				} else {
@@ -153,10 +153,10 @@ impl State {
 						srv.voice_states.retain(|v| v.user_id != state.user_id);
 					} else {
 						// Update or add to the voice state list
-						match srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-							Some(srv_state) => { srv_state.clone_from(state); return }
-							None => {}
-						}
+						if let Some(srv_state) = srv.voice_states.iter_mut()
+							.find(|u| u.user_id == state.user_id) {
+								srv_state.clone_from(state); return
+							}
 						srv.voice_states.push(state.clone());
 					}
 				});
@@ -168,7 +168,7 @@ impl State {
 					Entry::Occupied(mut e) => { e.get_mut().clone_from(call); }
 				}
 			}
-			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
+			Event::CallUpdate { channel_id, ref region, ref ringing, .. } => {
 				if let Some(call) = self.calls.get_mut(&channel_id) {
 					call.region.clone_from(region);
 					call.ringing.clone_from(ringing);
@@ -187,13 +187,13 @@ impl State {
 					group.recipients.retain(|u| u.id != user.id);
 				}
 			}
-			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
+			Event::PresenceUpdate { server_id, ref presence, .. } => {
 				if let Some(server_id) = server_id {
 					self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
 						// If the user was modified, update the member list
 						if let Some(user) = presence.user.as_ref() {
 							srv.members.iter_mut().find(|u| u.user.id == user.id).map(|member| {
-								member.user.clone_from(&user);
+								member.user.clone_from(user);
 							});
 						}
 						update_presence(&mut srv.presences, presence);
@@ -206,10 +206,10 @@ impl State {
 				self.presences.clone_from(presences);
 			}
 			Event::RelationshipAdd(ref relationship) => {
-				match self.relationships.iter_mut().find(|r| r.id == relationship.id) {
-					Some(rel) => { rel.clone_from(relationship); return }
-					None => {}
-				}
+				if let Some(rel) = self.relationships.iter_mut()
+					.find(|r| r.id == relationship.id) {
+						rel.clone_from(relationship); return
+					}
 				self.relationships.push(relationship.clone());
 			}
 			Event::RelationshipRemove(user_id, _) => {
@@ -350,8 +350,8 @@ impl State {
 				}
 			},
 			Event::ChannelPinsUpdate { ref channel_id, ref last_pin_timestamp } => {
-				for server in self.servers.iter_mut() {
-					for channel in server.channels.iter_mut() {
+				for server in &mut self.servers {
+					for channel in &mut server.channels {
 						if channel.id == *channel_id {
 							channel.last_pin_timestamp = last_pin_timestamp.clone();
 							return
@@ -359,14 +359,14 @@ impl State {
 					}
 				}
 
-				for channel in self.private_channels.iter_mut() {
+				for channel in &mut self.private_channels {
 					if channel.id == *channel_id {
 						channel.last_pin_timestamp = last_pin_timestamp.clone();
 						return
 					}
 				}
 
-				if let Some(group) = self.groups.get_mut(&channel_id) {
+				if let Some(group) = self.groups.get_mut(channel_id) {
 					group.last_pin_timestamp = last_pin_timestamp.clone();
 					return
 				}
@@ -481,18 +481,15 @@ fn update_presence(vec: &mut Vec<Presence>, presence: &Presence) {
 		vec.retain(|u| u.user_id != presence.user_id);
 	} else {
 		// Update or add to the presence list
-		match vec.iter_mut().find(|u| u.user_id == presence.user_id) {
-			Some(srv_presence) => {
-				if presence.user.is_none() {
-					let user = srv_presence.user.clone();
-					srv_presence.clone_from(presence);
-					srv_presence.user = user;
-				} else {
-					srv_presence.clone_from(presence);
-				}
-				return
+		if let Some(srv_presence) = vec.iter_mut().find(|u| u.user_id == presence.user_id) {
+			if presence.user.is_none() {
+				let user = srv_presence.user.clone();
+				srv_presence.clone_from(presence);
+				srv_presence.user = user;
+			} else {
+				srv_presence.clone_from(presence);
 			}
-			None => {}
+			return
 		}
 		vec.push(presence.clone());
 	}

@@ -97,7 +97,7 @@ impl Display for Error {
 			Error::Io(ref inner) => inner.fmt(f),
 			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.fmt(f),
-			Error::Command(ref cmd, _) => write!(f, "Command failed: {}", cmd),
+			Error::Command(cmd, _) => write!(f, "Command failed: {}", cmd),
 			_ => f.write_str(self.description()),
 		}
 	}
@@ -113,12 +113,10 @@ impl StdError for Error {
 			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.description(),
 			Error::Closed(_, _) => "Connection closed",
-			Error::Decode(msg, _) => msg,
+			Error::Decode(msg, _) | Error::Protocol(msg) | Error::Other(msg) => msg,
 			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::RateLimited(_) => "Rate limited",
-			Error::Protocol(msg) => msg,
 			Error::Command(_, _) => "Command failed",
-			Error::Other(msg) => msg,
 		}
 	}
 
