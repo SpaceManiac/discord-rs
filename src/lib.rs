@@ -67,7 +67,7 @@ macro_rules! api_concat {
 	($e:expr) => (concat!("https://discordapp.com/api/v6", $e))
 }
 macro_rules! status_concat {
-	($e:expr) => (concat!("https://status.discordapp.com", $e))
+	($e:expr) => (concat!("https://status.discordapp.com/api/v2", $e))
 }
 
 macro_rules! request {
@@ -852,7 +852,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 	let client = hyper::Client::new();
 	let response = try!(retry(|| client.get(
-		&format!("{}/api/v2/incidents/unresolved.json", STATUS_BASE))));
+		status_concat!("/incidents/unresolved.json"))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("incidents") {
@@ -865,7 +865,7 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/api/v2/scheduled-maintenances/active.json")))));
+		status_concat!("/scheduled-maintenances/active.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -878,7 +878,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
 	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/api/v2/scheduled-maintenances/upcoming.json")))));
+		status_concat!("/scheduled-maintenances/upcoming.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
