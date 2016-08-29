@@ -1390,7 +1390,7 @@ impl RelationshipType {
 	}
 
 	fn decode(value: Value) -> Result<Self> {
-		value.as_u64().and_then(RelationshipType::from_num).ok_or_else(|| Error::Decode("Expected valid RelationshipType", value))
+		value.as_u64().and_then(RelationshipType::from_num).ok_or(Error::Decode("Expected valid RelationshipType", value))
 	}
 }
 
