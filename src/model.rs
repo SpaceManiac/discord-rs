@@ -1772,6 +1772,10 @@ pub enum Event {
 		channel_id: ChannelId,
 		message_id: MessageId,
 	},
+	MessageDeleteBulk {
+		channel_id: ChannelId,
+		ids: Vec<MessageId>,
+	},
 
 	ServerCreate(PossibleServer<LiveServer>),
 	ServerUpdate(Server),
@@ -1954,6 +1958,11 @@ impl Event {
 			warn_json!(value, Event::MessageDelete {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
+			})
+		} else if kind == "MESSAGE_DELETE_BULK" {
+			warn_json!(value, Event::MessageDeleteBulk {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				ids: try!(decode_array(try!(remove(&mut value, "ids")), MessageId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
 			PossibleServer::<LiveServer>::decode(Value::Object(value)).map(Event::ServerCreate)
