@@ -113,7 +113,9 @@ impl StdError for Error {
 			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.description(),
 			Error::Closed(_, _) => "Connection closed",
-			Error::Decode(msg, _) | Error::Protocol(msg) | Error::Other(msg) => msg,
+			Error::Decode(msg, _) |
+			Error::Protocol(msg) |
+			Error::Other(msg) => msg,
 			Error::Status(status, _) => status.canonical_reason().unwrap_or("Unknown bad HTTP status"),
 			Error::RateLimited(_) => "Rate limited",
 			Error::Command(_, _) => "Command failed",

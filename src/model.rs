@@ -461,7 +461,8 @@ impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
 		let map = try!(into_map(value));
 		match req!(map.get("type").and_then(|x| x.as_u64())) {
-			0 | 2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
+			0 |
+			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
 			other => Err(Error::Decode("Expected value Channel type", Value::U64(other))),

@@ -133,8 +133,7 @@ impl State {
 				if let Some(channel) = state.channel_id {
 					// channel id available, insert voice state
 					if let Some(call) = self.calls.get_mut(&channel) {
-						if let Some(grp_state) = call.voice_states.iter_mut()
-							.find(|u| u.user_id == state.user_id) {
+						if let Some(grp_state) = call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
 								grp_state.clone_from(state); return
 							}
 						call.voice_states.push(state.clone());
@@ -153,8 +152,7 @@ impl State {
 						srv.voice_states.retain(|v| v.user_id != state.user_id);
 					} else {
 						// Update or add to the voice state list
-						if let Some(srv_state) = srv.voice_states.iter_mut()
-							.find(|u| u.user_id == state.user_id) {
+						if let Some(srv_state) = srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
 								srv_state.clone_from(state); return
 							}
 						srv.voice_states.push(state.clone());
@@ -168,7 +166,7 @@ impl State {
 					Entry::Occupied(mut e) => { e.get_mut().clone_from(call); }
 				}
 			}
-			Event::CallUpdate { channel_id, ref region, ref ringing, .. } => {
+			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
 				if let Some(call) = self.calls.get_mut(&channel_id) {
 					call.region.clone_from(region);
 					call.ringing.clone_from(ringing);
@@ -187,7 +185,7 @@ impl State {
 					group.recipients.retain(|u| u.id != user.id);
 				}
 			}
-			Event::PresenceUpdate { server_id, ref presence, .. } => {
+			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
 				if let Some(server_id) = server_id {
 					self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
 						// If the user was modified, update the member list
@@ -206,8 +204,7 @@ impl State {
 				self.presences.clone_from(presences);
 			}
 			Event::RelationshipAdd(ref relationship) => {
-				if let Some(rel) = self.relationships.iter_mut()
-					.find(|r| r.id == relationship.id) {
+				if let Some(rel) = self.relationships.iter_mut().find(|r| r.id == relationship.id) {
 						rel.clone_from(relationship); return
 					}
 				self.relationships.push(relationship.clone());
