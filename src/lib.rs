@@ -43,47 +43,50 @@ extern crate flate2;
 use std::collections::BTreeMap;
 use serde_json::builder::ObjectBuilder;
 
+mod ratelimit;
 mod error;
 mod connection;
 mod state;
 #[cfg(feature="voice")]
 pub mod voice;
+
+macro_rules! cdn_concat {
+	($e:expr) => (concat!("https://cdn.discordapp.com", $e))
+}
+
 pub mod model;
 
 pub use error::{Result, Error};
 pub use connection::Connection;
 pub use state::{State, ChannelRef};
 use model::*;
+use ratelimit::RateLimits;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
 macro_rules! api_concat {
 	($e:expr) => (concat!("https://discordapp.com/api/v6", $e))
 }
 macro_rules! status_concat {
-	($e:expr) => (concat!("https://status.discordapp.com", $e))
+	($e:expr) => (concat!("https://status.discordapp.com/api/v2", $e))
 }
 
 macro_rules! request {
-	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {
-		try!($self_.request(|| $self_.client.$method(
-			&format!(api_concat!($url), $($rest)*)
-		).body(&$body)))
-	};
-	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {
-		try!($self_.request(|| $self_.client.$method(
-			&format!(api_concat!($url), $($rest)*)
-		)))
-	};
-	($self_:ident, $method:ident($body:expr), $url:expr) => {
-		try!($self_.request(|| $self_.client.$method(
-			api_concat!($url)
-		).body(&$body)))
-	};
-	($self_:ident, $method:ident, $url:expr) => {
-		try!($self_.request(|| $self_.client.$method(
-			api_concat!($url)
-		)))
-	};
+	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
+		let path = format!(api_concat!($url), $($rest)*);
+		try!($self_.request(&path, || $self_.client.$method(&path).body(&$body)))
+	}};
+	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
+		let path = format!(api_concat!($url), $($rest)*);
+		try!($self_.request(&path, || $self_.client.$method(&path)))
+	}};
+	($self_:ident, $method:ident($body:expr), $url:expr) => {{
+		let path = api_concat!($url);
+		try!($self_.request(path, || $self_.client.$method(path).body(&$body)))
+	}};
+	($self_:ident, $method:ident, $url:expr) => {{
+		let path = api_concat!($url);
+		try!($self_.request(path, || $self_.client.$method(path)))
+	}};
 }
 
 /// Client for the Discord REST API.
@@ -93,6 +96,7 @@ macro_rules! request {
 /// use `logout()` to invalidate the token when done. Other methods manipulate
 /// the Discord REST API.
 pub struct Discord {
+	rate_limits: RateLimits,
 	client: hyper::Client,
 	token: String,
 }
@@ -116,6 +120,7 @@ impl Discord {
 			None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
 		};
 		Ok(Discord {
+			rate_limits: RateLimits::default(),
 			client: client,
 			token: token,
 		})
@@ -165,6 +170,7 @@ impl Discord {
 				None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
 			};
 			Discord {
+				rate_limits: RateLimits::default(),
 				client: client,
 				token: token,
 			}
@@ -198,9 +204,18 @@ impl Discord {
 		Ok(discord)
 	}
 
+	fn from_token_raw(token: String) -> Discord {
+		Discord {
+			rate_limits: RateLimits::default(),
+			client: hyper::Client::new(),
+			token: token,
+		}
+	}
+
 	/// Log in as a bot account using the given authentication token.
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
 		Ok(Discord {
+			rate_limits: RateLimits::default(),
 			client: hyper::Client::new(),
 			token: format!("Bot {}", token),
 		})
@@ -216,10 +231,25 @@ impl Discord {
 		check_empty(request!(self, post(body), "/auth/logout"))
 	}
 
-	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, f: F) -> Result<hyper::client::Response> {
-		retry(|| f()
+	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, url: &str, f: F) -> Result<hyper::client::Response> {
+		self.rate_limits.pre_check(url);
+		let f2 = || f()
 			.header(hyper::header::ContentType::json())
-			.header(hyper::header::Authorization(self.token.clone())))
+			.header(hyper::header::Authorization(self.token.clone()));
+		let result = retry(&f2);
+		if let Ok(response) = result.as_ref() {
+			if self.rate_limits.post_update(url, response) {
+				// we were rate limited, we have slept, it is time to retry
+				// the request once. if it fails the second time, give up
+				debug!("Retrying after having been ratelimited");
+				let result = retry(f2);
+				if let Ok(response) = result.as_ref() {
+					self.rate_limits.post_update(url, response);
+				}
+				return check_status(result)
+			}
+		}
+		check_status(result)
 	}
 
 	/// Create a channel.
@@ -308,7 +338,7 @@ impl Discord {
 			GetMessages::After(id) => { let _ = write!(url, "&after={}", id); },
 			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id); },
 		}
-		let response = try!(self.request(|| self.client.get(&url)));
+		let response = try!(self.request(&url, || self.client.get(&url)));
 		decode_array(try!(serde_json::from_reader(response)), Message::decode)
 	}
 
@@ -818,11 +848,24 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 	))
 }
 
-/// Retrieves the active maintenance statuses.
-pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
+/// Retrieves the current unresolved incidents from the status page.
+pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 	let client = hyper::Client::new();
 	let response = try!(retry(|| client.get(
-		status_concat!("/api/v2/scheduled-maintenances/active.json"))));
+		status_concat!("/incidents/unresolved.json"))));
+	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
+	match json.remove("incidents") {
+		Some(incidents) => decode_array(incidents, Incident::decode),
+		None => Ok(vec![]),
+	}
+}
+
+/// Retrieves the active maintenances from the status page.
+pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
+	let client = hyper::Client::new();
+	let response = try!(check_status(retry(|| client.get(
+		status_concat!("/scheduled-maintenances/active.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -831,11 +874,11 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	}
 }
 
-/// Retrieves the upcoming maintenance statuses.
+/// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = hyper::Client::new();
-	let response = try!(retry(|| client.get(
-		status_concat!("/api/v2/scheduled-maintenances/upcoming.json"))));
+	let response = try!(check_status(retry(|| client.get(
+		status_concat!("/scheduled-maintenances/upcoming.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -989,28 +1032,31 @@ impl EditProfile {
 	}
 }
 
-fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> Result<hyper::client::Response> {
-	let f2 = || check_status(f()
+/// Send a request with the correct UserAgent, retrying it a second time if the
+/// connection is aborted the first time.
+fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> hyper::Result<hyper::client::Response> {
+	let f2 = || f()
 		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-		.send());
+		.send();
 	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
 	match f2() {
-		Err(Error::Hyper(hyper::error::Error::Io(ref io)))
+		Err(hyper::error::Error::Io(ref io))
 			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
 		other => other
 	}
 }
 
-#[inline]
+/// Convert non-success hyper statuses to discord crate errors, tossing info.
 fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
-	let response = try!(response);
+	let response: hyper::client::Response = try!(response);
 	if !response.status.is_success() {
 		return Err(Error::from_response(response))
 	}
 	Ok(response)
 }
 
-#[inline]
+/// Validate a request that is expected to return 204 No Content and print
+/// debug information if it does not.
 fn check_empty(mut response: hyper::client::Response) -> Result<()> {
 	if response.status != hyper::status::StatusCode::NoContent {
 		use std::io::Read;

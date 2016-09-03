@@ -248,6 +248,14 @@ impl ServerInfo {
 			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
 		})
 	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
+	}
 }
 
 /// Static information about a server
@@ -292,6 +300,14 @@ impl Server {
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
 		})
+	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
 	}
 }
 
@@ -387,6 +403,14 @@ impl User {
 	/// Return a `Mention` which will ping this user.
 	#[inline(always)]
 	pub fn mention(&self) -> Mention { self.id.mention() }
+
+	/// Returns the formatted URL of the user's icon.
+	///
+	/// Returns None if the user does not have an avatar.
+	pub fn avatar_url(&self) -> Option<String> {
+		self.avatar.as_ref().map(|av|
+			format!(cdn_concat!("/avatars/{}/{}.jpg"), self.id, av))
+	}
 }
 
 /// Information about a member of a server
@@ -489,6 +513,14 @@ impl Group {
 				Cow::Owned(result)
 			}
 		}
+	}
+
+	/// Returns the formatted URL of the group's icon.
+	///
+	/// Returns None if the group does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/channel-icons/{}/{}.jpg"), self.channel_id, icon))
 	}
 }
 
@@ -758,18 +790,20 @@ impl Message {
 /// The type of a message
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum MessageType {
-	/// A group call was created
-	GroupCallCreation,
-	/// A group icon was updated
-	GroupIconUpdate,
-	/// A group name was updated
-	GroupNameUpdate,
+	/// A regular, text-based message
+	Regular,
 	/// A recipient was added to the group
 	GroupRecipientAddition,
 	/// A recipient was removed from the group
 	GroupRecipientRemoval,
-	/// A regular, text-based message
-	Regular,
+	/// A group call was created
+	GroupCallCreation,
+	/// A group name was updated
+	GroupNameUpdate,
+	/// A group icon was updated
+	GroupIconUpdate,
+	/// A message was pinned
+	MessagePinned,
 }
 
 map_numbers! { MessageType;
@@ -779,6 +813,7 @@ map_numbers! { MessageType;
 	GroupCallCreation, 3;
 	GroupNameUpdate, 4;
 	GroupIconUpdate, 5;
+	MessagePinned, 6;
 }
 
 /// Information about an invite
@@ -1148,6 +1183,87 @@ impl LiveServer {
 			id: id,
 		})
 	}
+
+	/// Returns the formatted URL of the server's icon.
+	///
+	/// Returns None if the server does not have an icon.
+	pub fn icon_url(&self) -> Option<String> {
+		self.icon.as_ref().map(|icon|
+			format!(cdn_concat!("/icons/{}/{}.jpg"), self.id, icon))
+	}
+
+	/// Calculate the effective permissions for a specific user in a specific
+	/// channel on this server.
+	pub fn permissions_for(&self, channel: ChannelId, user: UserId) -> Permissions {
+		use self::permissions::*;
+		// Owner has all permissions
+		if user == self.owner_id {
+			return Permissions::all();
+		}
+		// OR together all the user's roles
+		let everyone = match self.roles.iter().find(|r| r.id.0 == self.id.0) {
+			Some(r) => r,
+			None => {
+				error!("Missing @everyone role in permissions lookup on {} ({})", self.name, self.id);
+				return Permissions::empty();
+			}
+		};
+		let mut permissions = everyone.permissions;
+		let member = match self.members.iter().find(|u| u.user.id == user) {
+			Some(u) => u,
+			None => return everyone.permissions,
+		};
+		for &role in &member.roles {
+			if let Some(role) = self.roles.iter().find(|r| r.id == role) {
+				permissions |= role.permissions;
+			} else {
+				warn!("perms: {:?} on {:?} has non-existent role {:?}", member.user.id, self.id, role);
+			}
+		}
+		// Administrators have all permissions in any channel
+		if permissions.contains(ADMINISTRATOR) {
+			return Permissions::all();
+		}
+		let mut text_channel = false;
+		if let Some(channel) = self.channels.iter().find(|c| c.id == channel) {
+			text_channel = channel.kind == ChannelType::Text;
+			// Apply role overwrites, denied then allowed
+			for overwrite in channel.permission_overwrites.iter() {
+				if let PermissionOverwriteType::Role(role) = overwrite.kind {
+					if member.roles.contains(&role) {
+						permissions = (permissions & !overwrite.deny) | overwrite.allow;
+					}
+				}
+			}
+			// Apply member overwrites, denied then allowed
+			for overwrite in channel.permission_overwrites.iter() {
+				if PermissionOverwriteType::Member(user) == overwrite.kind {
+					permissions = (permissions & !overwrite.deny) | overwrite.allow;
+				}
+			}
+		} else {
+			warn!("perms: {:?} does not contain {:?}", self.id, channel);
+		}
+		// Default channel is always readable
+		if channel.0 == self.id.0 {
+			permissions |= READ_MESSAGES;
+		}
+		// No SEND_MESSAGES => no message-sending-related actions
+		if !permissions.contains(SEND_MESSAGES) {
+			permissions &= !(SEND_TTS_MESSAGES | MENTION_EVERYONE | EMBED_LINKS | ATTACH_FILES);
+		}
+		// No READ_MESSAGES => no channel actions
+		if !permissions.contains(READ_MESSAGES) {
+			permissions &= KICK_MEMBERS | BAN_MEMBERS | ADMINISTRATOR |
+				MANAGE_SERVER | CHANGE_NICKNAMES | MANAGE_NICKNAMES;
+		}
+		// Text channel => no voice actions
+		if text_channel {
+			permissions &= !(VOICE_CONNECT | VOICE_SPEAK | VOICE_MUTE_MEMBERS |
+				VOICE_DEAFEN_MEMBERS | VOICE_MOVE_MEMBERS | VOICE_USE_VAD);
+		}
+		permissions
+	}
 }
 
 /// A server which may be unavailable
@@ -1461,6 +1577,75 @@ impl Maintenance {
 	}
 }
 
+/// An incident retrieved from the Discord status page.
+#[derive(Debug, Clone)]
+pub struct Incident {
+	pub id: String,
+	pub impact: String,
+	pub monitoring_at: Option<String>,
+	pub name: String,
+	pub page_id: String,
+	pub short_link: String,
+	pub status: String,
+
+	pub incident_updates: Vec<IncidentUpdate>,
+
+	pub created_at: String,
+	pub resolved_at: Option<String>,
+	pub updated_at: String,
+}
+
+impl Incident {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Incident {
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			impact: try!(remove(&mut value, "impact").and_then(into_string)),
+			monitoring_at: try!(opt(&mut value, "monitoring_at", into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			page_id: try!(remove(&mut value, "page_id").and_then(into_string)),
+			short_link: try!(remove(&mut value, "shortlink").and_then(into_string)),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
+			incident_updates: try!(decode_array(try!(remove(&mut value, "incident_updates")), IncidentUpdate::decode)),
+			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
+			resolved_at: try!(opt(&mut value, "resolved_at", into_string)),
+			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
+		})
+	}
+}
+
+/// An update to an incident from the Discord status page. This will typically
+/// state what new information has been discovered about an incident.
+#[derive(Debug, Clone)]
+pub struct IncidentUpdate {
+	pub body: String,
+	pub id: String,
+	pub incident_id: String,
+	pub status: String,
+
+	pub affected_components: Vec<Value>,
+
+	pub created_at: String,
+	pub display_at: String,
+	pub updated_at: String,
+}
+
+impl IncidentUpdate {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, IncidentUpdate {
+			body: try!(remove(&mut value, "body").and_then(into_string)),
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			incident_id: try!(remove(&mut value, "incident_id").and_then(into_string)),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
+			affected_components: try!(decode_array(try!(remove(&mut value, "affected_components")), Ok)),
+			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
+			display_at: try!(remove(&mut value, "display_at").and_then(into_string)),
+			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
+		})
+	}
+}
+
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
 pub struct ReadyEvent {
@@ -1586,6 +1771,10 @@ pub enum Event {
 	MessageDelete {
 		channel_id: ChannelId,
 		message_id: MessageId,
+	},
+	MessageDeleteBulk {
+		channel_id: ChannelId,
+		ids: Vec<MessageId>,
 	},
 
 	ServerCreate(PossibleServer<LiveServer>),
@@ -1769,6 +1958,11 @@ impl Event {
 			warn_json!(value, Event::MessageDelete {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
+			})
+		} else if kind == "MESSAGE_DELETE_BULK" {
+			warn_json!(value, Event::MessageDeleteBulk {
+				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+				ids: try!(decode_array(try!(remove(&mut value, "ids")), MessageId::decode)),
 			})
 		} else if kind == "GUILD_CREATE" {
 			PossibleServer::<LiveServer>::decode(Value::Object(value)).map(Event::ServerCreate)

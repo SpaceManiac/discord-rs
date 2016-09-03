@@ -266,10 +266,7 @@ impl Connection {
 			::sleep_ms(1000);
 		}
 		// If those fail, hit REST for a new endpoint
-		let (conn, ready) = try!(::Discord {
-			client: ::hyper::client::Client::new(),
-			token: self.token.to_owned()
-		}.connect());
+		let (conn, ready) = try!(::Discord::from_token_raw(self.token.to_owned()).connect());
 		try!(::std::mem::replace(self, conn).shutdown());
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
