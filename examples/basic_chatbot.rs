@@ -32,7 +32,4 @@ fn main() {
 			Err(err) => println!("Receive error: {:?}", err)
 		}
 	}
-
-	// Log out from the API
-	discord.logout().expect("logout failed");
 }

@@ -62,7 +62,4 @@ fn main() {
 			_ => {}, // discard other known events
 		}
 	}
-
-	// Log out from the API
-	discord.logout().expect("logout failed");
 }
