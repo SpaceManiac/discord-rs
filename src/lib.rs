@@ -174,12 +174,10 @@ impl Discord {
 				client: client,
 				token: token,
 			}
+		} else if let Some(password) = password {
+			try!(Discord::new(email, password))
 		} else {
-			if let Some(password) = password {
-				try!(Discord::new(email, password))
-			} else {
-				return Err(Error::Other("No password was specified and no cached token was found"))
-			}
+			return Err(Error::Other("No password was specified and no cached token was found"))
 		};
 
 		// Write the token back out, if needed
@@ -829,7 +827,7 @@ impl Discord {
 			Some(url) => url,
 			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
 		};
-		Connection::new(&url, &self.token, shard_info)
+		Connection::new(url, &self.token, shard_info)
 	}
 }
 
@@ -1032,7 +1030,7 @@ impl EditProfile {
 	}
 }
 
-/// Send a request with the correct UserAgent, retrying it a second time if the
+/// Send a request with the correct `UserAgent`, retrying it a second time if the
 /// connection is aborted the first time.
 fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> hyper::Result<hyper::client::Response> {
 	let f2 = || f()

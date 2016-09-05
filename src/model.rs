@@ -461,9 +461,9 @@ impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
 		let map = try!(into_map(value));
 		match req!(map.get("type").and_then(|x| x.as_u64())) {
-			0 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
-			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
+			0 |
 			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
+			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
 			other => Err(Error::Decode("Expected value Channel type", Value::U64(other))),
 		}
@@ -1006,7 +1006,7 @@ impl Game {
 			None | Some(Value::Null) => return Ok(None),
 			Some(val) => try!(into_string(val)),
 		};
-		if name.trim().len() == 0 {
+		if name.trim().is_empty() {
 			return Ok(None)
 		}
 		warn_json!(@"Game", value, Some(Game {
@@ -1035,7 +1035,7 @@ impl Presence {
 
 		let (user_id, user) = if user_map.len() > 1 {
 			let user = try!(User::decode(Value::Object(user_map)));
-			(user.id.clone(), Some(user))
+			(user.id, Some(user))
 		} else {
 			(try!(remove(&mut user_map, "id").and_then(UserId::decode)), None)
 		};
@@ -1228,7 +1228,7 @@ impl LiveServer {
 		if let Some(channel) = self.channels.iter().find(|c| c.id == channel) {
 			text_channel = channel.kind == ChannelType::Text;
 			// Apply role overwrites, denied then allowed
-			for overwrite in channel.permission_overwrites.iter() {
+			for overwrite in &channel.permission_overwrites {
 				if let PermissionOverwriteType::Role(role) = overwrite.kind {
 					if member.roles.contains(&role) {
 						permissions = (permissions & !overwrite.deny) | overwrite.allow;
@@ -1236,7 +1236,7 @@ impl LiveServer {
 				}
 			}
 			// Apply member overwrites, denied then allowed
-			for overwrite in channel.permission_overwrites.iter() {
+			for overwrite in &channel.permission_overwrites {
 				if PermissionOverwriteType::Member(user) == overwrite.kind {
 					permissions = (permissions & !overwrite.deny) | overwrite.allow;
 				}
@@ -2155,7 +2155,7 @@ impl VoiceEvent {
 // Decode helpers
 
 fn remove(map: &mut BTreeMap<String, Value>, key: &str) -> Result<Value> {
-	map.remove(key).ok_or(Error::Decode("Unexpected absent key", Value::String(key.into())))
+	map.remove(key).ok_or_else(|| Error::Decode("Unexpected absent key", Value::String(key.into())))
 }
 
 fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut BTreeMap<String, Value>, key: &str, f: F) -> Result<Option<T>> {
@@ -2217,7 +2217,7 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 }
 
 fn warn_field(name: &str, map: BTreeMap<String, Value>) {
-	if map.len() != 0 {
+	if !map.is_empty() {
 		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}
 }
