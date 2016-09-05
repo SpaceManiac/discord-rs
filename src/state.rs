@@ -134,8 +134,8 @@ impl State {
 					// channel id available, insert voice state
 					if let Some(call) = self.calls.get_mut(&channel) {
 						if let Some(grp_state) = call.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-								grp_state.clone_from(state); return
-							}
+							grp_state.clone_from(state); return
+						}
 						call.voice_states.push(state.clone());
 					}
 				} else {
@@ -153,8 +153,8 @@ impl State {
 					} else {
 						// Update or add to the voice state list
 						if let Some(srv_state) = srv.voice_states.iter_mut().find(|u| u.user_id == state.user_id) {
-								srv_state.clone_from(state); return
-							}
+							srv_state.clone_from(state); return
+						}
 						srv.voice_states.push(state.clone());
 					}
 				});
