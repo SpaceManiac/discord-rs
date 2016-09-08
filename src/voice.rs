@@ -44,6 +44,9 @@ pub trait AudioSource: Send {
 	/// This value should change infrequently; changing it will reset the encoder state.
 	fn is_stereo(&mut self) -> bool;
 
+	/// Called each frame to determine what type of audio to expect.
+	fn get_type(&mut self) -> SourceType;
+
 	/// Called each frame when more audio is required.
 	///
 	/// Samples should be supplied at 48000Hz, and if `is_stereo` returned true, the channels
@@ -56,7 +59,10 @@ pub trait AudioSource: Send {
 	/// If `Some(0)` is returned, no audio will be sent this frame, but the audio source will
 	/// remain active. If `None` is returned, the audio source is considered to have ended, and
 	/// `read_frame` will not be called again.
-	fn read_frame(&mut self, buffer: &mut [i16]) -> Option<usize>;
+	fn read_pcm_frame(&mut self, buffer: &mut [i16]) -> Option<usize>;
+
+	/// See documentation for `read_pcm_frame` for more information.
+	fn read_opus_frame(&mut self) -> Option<Vec<u8>>;
 }
 
 /// A receiver for incoming audio.
@@ -254,23 +260,78 @@ impl Drop for VoiceConnection {
 ///
 /// The input data should be in signed 16-bit little-endian PCM input stream at 48000Hz. If
 /// `stereo` is true, the channels should be interleaved, left first.
-pub fn create_pcm_source<R: Read + Send + 'static>(stereo: bool, read: R) -> Box<AudioSource> {
-	Box::new(PcmSource(stereo, read))
+pub fn create_pcm_source<R: Read + Send + 'static>(stereo: bool, read: R) -> Box<InputSource> {
+	Box::new(InputSource {
+		stereo: stereo,
+		input_type: SourceType::Pcm,
+		read: Some(Box::new(read)),
+		sender: None,
+		receiver: None
+	})
 }
 
-struct PcmSource<R: Read + Send>(bool, R);
+/// Create an audio source based on an `opus` input stream.
+///
+/// The input data should be in opus at 48000Hz. If
+/// `stereo` is true, the channels should be interleaved, left first.
+pub fn create_opus_source(stereo: bool) -> Box<InputSource> {
+	let (tx, rx) = mpsc::channel::<Vec<u8>>();
+	Box::new(InputSource {
+		stereo: stereo,
+		input_type: SourceType::Opus,
+		read: None,
+		sender: Some(tx),
+		receiver: Some(rx),
+	})
+}
 
-impl<R: Read + Send> AudioSource for PcmSource<R> {
-	fn is_stereo(&mut self) -> bool { self.0 }
-	fn read_frame(&mut self, buffer: &mut [i16]) -> Option<usize> {
+/// Represents the accepted audio encodings.
+#[derive(Clone)]
+pub enum SourceType {
+	/// signed 16-bit little-endian PCM samples
+	Pcm,
+	/// 48000Hz opus frames
+	Opus
+}
+
+/// An input source, obtained from `create_pcm_source` and `create_opus_source`
+pub struct InputSource {
+	stereo: bool,
+	input_type: SourceType,
+	read: Option<Box<Read + Send>>,
+	sender: Option<mpsc::Sender<Vec<u8>>>,
+	receiver: Option<mpsc::Receiver<Vec<u8>>>,
+}
+
+impl AudioSource for InputSource {
+	fn is_stereo(&mut self) -> bool { self.stereo }
+	fn get_type(&mut self) -> SourceType { self.input_type.clone() }
+	fn read_pcm_frame(&mut self, buffer: &mut [i16]) -> Option<usize> {
 		for (i, val) in buffer.iter_mut().enumerate() {
-			*val = match self.1.read_i16::<LittleEndian>() {
+			*val = match self.read.as_mut().unwrap().read_i16::<LittleEndian>() {
 				Ok(val) => val,
 				Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => return Some(i),
 				Err(_) => return None
 			}
 		}
 		Some(buffer.len())
+	}
+	fn read_opus_frame(&mut self) -> Option<Vec<u8>> {
+		match self.receiver.as_mut().unwrap().try_recv() {
+			Ok(f) => return Some(f),
+			Err(mpsc::TryRecvError::Empty) => return Some(Vec::new()),
+			Err(mpsc::TryRecvError::Disconnected) => return None,
+		}
+	}
+}
+
+impl InputSource {
+	/// Send an opus frame to the player.
+	///
+	/// Calls will asynchronously buffer the frames into an infinite buffer.
+	pub fn send_opus_frame(&mut self, buffer: Vec<u8>) -> Result<()> {
+		self.sender.as_mut().unwrap().send(buffer)
+			.and(Ok(())).or(Err(Error::Other("Opus receiver is disconnected")))
 	}
 }
 
@@ -658,17 +719,33 @@ impl InternalConnection {
 
 		// read the audio from the source
 		let mut clear_source = false;
+		let mut opus_frame = Vec::new();
 		let len = if let Some(source) = source.as_mut() {
 			let stereo = source.is_stereo();
-			if stereo != self.encoder_stereo {
-				let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
-				self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
-				self.encoder_stereo = stereo;
-			}
-			let buffer_len = if stereo { 960 * 2 } else { 960 };
-			match source.read_frame(&mut audio_buffer[..buffer_len]) {
-				Some(len) => len,
-				None => { clear_source = true; 0 }
+			let input_type = source.get_type();
+
+			if let SourceType::Pcm = input_type {
+				if stereo != self.encoder_stereo {
+					let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
+					self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
+					self.encoder_stereo = stereo;
+				}
+				let buffer_len = if stereo { 960 * 2 } else { 960 };
+				match source.read_pcm_frame(&mut audio_buffer[..buffer_len]) {
+					Some(len) => len,
+					None => { clear_source = true; 0 }
+				}
+			} else {
+				// we still need an encoder to encode the silence frames
+				if stereo != self.encoder_stereo {
+					let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
+					self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
+					self.encoder_stereo = stereo;
+				}
+				match source.read_opus_frame() {
+					Some(f) => {opus_frame = f; opus_frame.len()},
+					None => { clear_source = true; 0 }
+				}
 			}
 		} else {
 			0
@@ -712,7 +789,13 @@ impl InternalConnection {
 		// encode the audio data
 		let extent = packet.len() - 16; // leave 16 bytes for encryption overhead
 		let buffer_len = if self.encoder_stereo { 960 * 2 } else { 960 };
-		let len = try!(self.encoder.encode(&audio_buffer[..buffer_len], &mut packet[HEADER_LEN..extent]));
+		let len;
+		if opus_frame.is_empty() {
+			len = try!(self.encoder.encode(&audio_buffer[..buffer_len], &mut packet[HEADER_LEN..extent]));
+		} else {
+			len = opus_frame.len();
+			packet[HEADER_LEN..HEADER_LEN + len].clone_from_slice(&opus_frame);
+		}
 		let crypted = crypto::seal(&packet[HEADER_LEN..HEADER_LEN + len], &nonce, &self.encryption_key);
 		packet[HEADER_LEN..HEADER_LEN + crypted.len()].clone_from_slice(&crypted);
 
