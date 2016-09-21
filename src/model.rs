@@ -43,6 +43,7 @@ macro_rules! map_names {
 				}
 			}
 
+			#[allow(dead_code)]
 			fn decode_str(value: Value) -> Result<Self> {
 				let name = try!(into_string(value));
 				Self::from_str(&name).ok_or(Error::Decode(
@@ -837,7 +838,7 @@ impl Invite {
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode_str));
+		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
@@ -857,6 +858,7 @@ impl Invite {
 #[derive(Debug, Clone)]
 pub struct RichInvite {
 	pub code: String,
+	pub server_icon: Option<String>,
 	pub server_id: ServerId,
 	pub server_name: String,
 	pub server_splash_hash: Option<String>,
@@ -867,7 +869,6 @@ pub struct RichInvite {
 	pub created_at: String,
 	pub max_age: u64,
 	pub max_uses: u64,
-	pub revoked: bool,
 	pub temporary: bool,
 	pub uses: u64,
 }
@@ -877,19 +878,21 @@ impl RichInvite {
 		let mut value = try!(into_map(value));
 
 		let mut server = try!(remove(&mut value, "guild").and_then(into_map));
+		let server_icon_hash = try!(opt(&mut server, "icon", into_string));
 		let server_id = try!(remove(&mut server, "id").and_then(ServerId::decode));
 		let server_name = try!(remove(&mut server, "name").and_then(into_string));
 		let server_splash_hash = try!(opt(&mut server, "splash_hash", into_string));
 		warn_field("RichInvite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode_str));
+		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("RichInvite/channel", channel);
 
 		warn_json!(value, RichInvite {
 			code: try!(remove(&mut value, "code").and_then(into_string)),
+			server_icon: server_icon_hash,
 			server_id: server_id,
 			server_name: server_name,
 			server_splash_hash: server_splash_hash,
@@ -900,7 +903,6 @@ impl RichInvite {
 			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
 			max_age: req!(try!(remove(&mut value, "max_age")).as_u64()),
 			max_uses: req!(try!(remove(&mut value, "max_uses")).as_u64()),
-			revoked: req!(try!(remove(&mut value, "revoked")).as_bool()),
 			temporary: req!(try!(remove(&mut value, "temporary")).as_bool()),
 			uses: req!(try!(remove(&mut value, "uses")).as_u64()),
 		})
