@@ -488,7 +488,7 @@ impl InternalConnection {
 			VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
 			_ => return Err(Error::Protocol("First voice event was not Handshake"))
 		};
-		if !modes.iter().find(|&s| s == "xsalsa20_poly1305").is_some() {
+		if !modes.iter().any(|s| s == "xsalsa20_poly1305") {
 			return Err(Error::Protocol("Voice mode \"xsalsa20_poly1305\" unavailable"))
 		}
 
