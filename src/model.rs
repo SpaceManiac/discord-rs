@@ -1452,8 +1452,11 @@ pub struct UserSettings {
 }
 
 impl UserSettings {
-	pub fn decode(value: Value) -> Result<UserSettings> {
+	pub fn decode(value: Value) -> Result<Option<UserSettings>> {
 		let mut value = try!(into_map(value));
+		if value.is_empty() {
+			return Ok(None)
+		}
 		warn_json!(value, UserSettings {
 			enable_tts_command: req!(try!(remove(&mut value, "enable_tts_command")).as_bool()),
 			inline_attachment_media: req!(try!(remove(&mut value, "inline_attachment_media")).as_bool()),
@@ -1467,7 +1470,7 @@ impl UserSettings {
 			allow_email_friend_request: req!(try!(remove(&mut value, "allow_email_friend_request")).as_bool()),
 			friend_source_flags: try!(remove(&mut value, "friend_source_flags").and_then(FriendSourceFlags::decode)),
 			restricted_servers: try!(remove(&mut value, "restricted_guilds").and_then(|v| decode_array(v, ServerId::decode))),
-		})
+		}).map(Some)
 	}
 }
 
@@ -1843,7 +1846,7 @@ impl Event {
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
 				relationships: try!(remove(&mut value, "relationships").and_then(|v| decode_array(v, Relationship::decode))),
 				servers: try!(decode_array(try!(remove(&mut value, "guilds")), PossibleServer::<LiveServer>::decode)),
-				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)),
+				user_settings: try!(opt(&mut value, "user_settings", UserSettings::decode)).and_then(|x| x),
 				user_server_settings: try!(opt(&mut value, "user_guild_settings", |v| decode_array(v, UserServerSettings::decode))),
 				tutorial: try!(opt(&mut value, "tutorial", Tutorial::decode)),
 				notes: try!(opt(&mut value, "notes", decode_notes)),

@@ -1141,13 +1141,17 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
-			let json: serde_json::Value = if message.opcode == Type::Binary {
-				try!(serde_json::from_reader(flate2::read::ZlibDecoder::new(&message.payload[..])))
+			let mut payload_vec;
+			let payload = if message.opcode == Type::Binary {
+				use std::io::Read;
+				payload_vec = Vec::new();
+				try!(flate2::read::ZlibDecoder::new(&message.payload[..]).read_to_end(&mut payload_vec));
+				&payload_vec[..]
 			} else {
-				try!(serde_json::from_reader(&message.payload[..]))
+				&message.payload[..]
 			};
-			decode(json).map_err(|e| {
-				warn!("Error decoding: {}", String::from_utf8_lossy(&message.payload));
+			serde_json::from_reader(payload).map_err(From::from).and_then(decode).map_err(|e| {
+				warn!("Error decoding: {}", String::from_utf8_lossy(&payload));
 				e
 			})
 		} else {
