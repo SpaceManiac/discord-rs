@@ -100,25 +100,29 @@ impl State {
 				}
 			},
 			Event::UserSettingsUpdate {
+				ref detect_platform_accounts, ref developer_mode,
 				ref enable_tts_command, ref inline_attachment_media,
 				ref inline_embed_media, ref locale,
 				ref message_display_compact,
-				ref render_embeds, ref show_current_game,
+				ref render_embeds, ref server_positions,
+				ref show_current_game, ref status,
 				ref theme, ref convert_emoticons,
-				ref allow_email_friend_request,
 				ref friend_source_flags,
 			} => {
 				if let Some(settings) = self.settings.as_mut() {
+					opt_modify(&mut settings.detect_platform_accounts, detect_platform_accounts);
+					opt_modify(&mut settings.developer_mode, developer_mode);
 					opt_modify(&mut settings.enable_tts_command, enable_tts_command);
 					opt_modify(&mut settings.inline_attachment_media, inline_attachment_media);
 					opt_modify(&mut settings.inline_embed_media, inline_embed_media);
 					opt_modify(&mut settings.locale, locale);
 					opt_modify(&mut settings.message_display_compact, message_display_compact);
 					opt_modify(&mut settings.render_embeds, render_embeds);
+					opt_modify(&mut settings.server_positions, server_positions);
 					opt_modify(&mut settings.show_current_game, show_current_game);
+					opt_modify(&mut settings.status, status);
 					opt_modify(&mut settings.theme, theme);
 					opt_modify(&mut settings.convert_emoticons, convert_emoticons);
-					opt_modify(&mut settings.allow_email_friend_request, allow_email_friend_request);
 					opt_modify(&mut settings.friend_source_flags, friend_source_flags);
 				}
 			}

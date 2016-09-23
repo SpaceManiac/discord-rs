@@ -1436,16 +1436,19 @@ impl FriendSourceFlags {
 /// User settings usually used to influence client behavior
 #[derive(Debug, Clone)]
 pub struct UserSettings {
+	pub detect_platform_accounts: bool,
+	pub developer_mode: bool,
 	pub enable_tts_command: bool,
 	pub inline_attachment_media: bool,
 	pub inline_embed_media: bool,
 	pub locale: String,
 	pub message_display_compact: bool,
 	pub render_embeds: bool,
+	pub server_positions: Vec<ServerId>,
 	pub show_current_game: bool,
+	pub status: String,
 	pub theme: String,
 	pub convert_emoticons: bool,
-	pub allow_email_friend_request: bool,
 	pub friend_source_flags: FriendSourceFlags,
 	/// Servers whose members cannot private message this user.
 	pub restricted_servers: Vec<ServerId>,
@@ -1458,16 +1461,19 @@ impl UserSettings {
 			return Ok(None)
 		}
 		warn_json!(value, UserSettings {
+			detect_platform_accounts: req!(try!(remove(&mut value, "detect_platform_accounts")).as_bool()),
+			developer_mode: req!(try!(remove(&mut value, "developer_mode")).as_bool()),
 			enable_tts_command: req!(try!(remove(&mut value, "enable_tts_command")).as_bool()),
 			inline_attachment_media: req!(try!(remove(&mut value, "inline_attachment_media")).as_bool()),
 			inline_embed_media: req!(try!(remove(&mut value, "inline_embed_media")).as_bool()),
 			locale: try!(remove(&mut value, "locale").and_then(into_string)),
 			message_display_compact: req!(try!(remove(&mut value, "message_display_compact")).as_bool()),
 			render_embeds: req!(try!(remove(&mut value, "render_embeds")).as_bool()),
+			server_positions: try!(decode_array(try!(remove(&mut value, "guild_positions")), ServerId::decode)),
 			show_current_game: req!(try!(remove(&mut value, "show_current_game")).as_bool()),
+			status: try!(remove(&mut value, "status").and_then(into_string)),
 			theme: try!(remove(&mut value, "theme").and_then(into_string)),
 			convert_emoticons: req!(try!(remove(&mut value, "convert_emoticons")).as_bool()),
-			allow_email_friend_request: req!(try!(remove(&mut value, "allow_email_friend_request")).as_bool()),
 			friend_source_flags: try!(remove(&mut value, "friend_source_flags").and_then(FriendSourceFlags::decode)),
 			restricted_servers: try!(remove(&mut value, "restricted_guilds").and_then(|v| decode_array(v, ServerId::decode))),
 		}).map(Some)
@@ -1690,16 +1696,19 @@ pub enum Event {
 	UserNoteUpdate(UserId, String),
 	/// Update to the logged-in user's preferences or client settings
 	UserSettingsUpdate {
+		detect_platform_accounts: Option<bool>,
+		developer_mode: Option<bool>,
 		enable_tts_command: Option<bool>,
 		inline_attachment_media: Option<bool>,
 		inline_embed_media: Option<bool>,
 		locale: Option<String>,
 		message_display_compact: Option<bool>,
 		render_embeds: Option<bool>,
+		server_positions: Option<Vec<ServerId>>,
 		show_current_game: Option<bool>,
+		status: Option<String>,
 		theme: Option<String>,
 		convert_emoticons: Option<bool>,
-		allow_email_friend_request: Option<bool>,
 		friend_source_flags: Option<FriendSourceFlags>,
 	},
 	/// Update to the logged-in user's server-specific notification settings
@@ -1867,16 +1876,19 @@ impl Event {
 			))
 		} else if kind == "USER_SETTINGS_UPDATE" {
 			warn_json!(value, Event::UserSettingsUpdate {
+				detect_platform_accounts: remove(&mut value, "detect_platform_accounts").ok().and_then(|v| v.as_bool()),
+				developer_mode: remove(&mut value, "developer_mode").ok().and_then(|v| v.as_bool()),
 				enable_tts_command: remove(&mut value, "enable_tts_command").ok().and_then(|v| v.as_bool()),
 				inline_attachment_media: remove(&mut value, "inline_attachment_media").ok().and_then(|v| v.as_bool()),
 				inline_embed_media: remove(&mut value, "inline_embed_media").ok().and_then(|v| v.as_bool()),
 				locale: try!(opt(&mut value, "locale", into_string)),
 				message_display_compact: remove(&mut value, "message_display_compact").ok().and_then(|v| v.as_bool()),
 				render_embeds: remove(&mut value, "render_embeds").ok().and_then(|v| v.as_bool()),
+				server_positions: try!(opt(&mut value, "guild_positions", |v| decode_array(v, ServerId::decode))),
 				show_current_game: remove(&mut value, "show_current_game").ok().and_then(|v| v.as_bool()),
+				status: try!(opt(&mut value, "status", into_string)),
 				theme: try!(opt(&mut value, "theme", into_string)),
 				convert_emoticons: remove(&mut value, "convert_emoticons").ok().and_then(|v| v.as_bool()),
-				allow_email_friend_request: remove(&mut value, "allow_email_friend_request").ok().and_then(|v| v.as_bool()),
 				friend_source_flags: try!(opt(&mut value, "friend_source_flags", FriendSourceFlags::decode)),
 			})
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
