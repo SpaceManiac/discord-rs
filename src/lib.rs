@@ -582,6 +582,41 @@ impl Discord {
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Creates an emoji in a server.
+	///
+	/// Requires that the logged in account be a user and have the
+	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	pub fn create_emoji(&self, server: ServerId, name: &str, image: &str) -> Result<Emoji> {
+		let map = ObjectBuilder::new()
+			.insert("name", name)
+			.insert("image", image)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, post(body), "/guilds/{}/emojis", server);
+		Emoji::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Edits a server's emoji.
+	///
+	/// Requires that the logged in account be a user and have the
+	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	pub fn edit_emoji(&self, server: ServerId, emoji: EmojiId, name: &str) -> Result<Emoji> {
+		let map = ObjectBuilder::new()
+			.insert("name", name)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/guilds/{}/emojis/{}", server, emoji);
+		Emoji::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Delete an emoji in a server.
+	///
+	/// Requires that the logged in account be a user and have the
+	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	pub fn delete_emoji(&self, server: ServerId, emoji: EmojiId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/emojis/{}", server, emoji))
+	}
+
 	/// Get the ban list for the given server.
 	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
