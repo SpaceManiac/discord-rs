@@ -677,6 +677,7 @@ pub mod permissions {
 			const CHANGE_NICKNAMES = 1 << 26,
 			/// Change the nickname of other users
 			const MANAGE_NICKNAMES = 1 << 27,
+			const MANAGE_EMOJIS = 1 << 30,
 
 			const READ_MESSAGES = 1 << 10,
 			const SEND_MESSAGES = 1 << 11,
@@ -962,12 +963,16 @@ impl ReadState {
 /// A user's online presence status
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum OnlineStatus {
+	DoNotDisturb,
+	Invisible,
 	Offline,
 	Online,
 	Idle,
 }
 
 map_names! { OnlineStatus;
+	DoNotDisturb, "dnd";
+	Invisible, "invisible";
 	Offline, "offline";
 	Online, "online";
 	Idle, "idle";
