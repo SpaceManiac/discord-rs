@@ -16,14 +16,14 @@ default = ["voice"]
 voice = ["opus", "sodiumoxide"]
 
 [dependencies]
-hyper = "0.8"
+hyper = "0.9"
 serde_json = "0.8"
 websocket = "0.17"
 bitflags = "0.7"
 byteorder = "0.5"
 time = "0.1"
 log = "0.3"
-base64-rs = "0.1.0"
+base64-rs = "0.1.1"
 flate2 = "0.2.14"
 opus = { version = "0.1", optional = true }
 
@@ -33,6 +33,6 @@ default-features = false
 optional = true
 
 [dependencies.multipart]
-version = "0.7"
+version = "0.8"
 default-features = false
 features = ["hyper", "client"]
