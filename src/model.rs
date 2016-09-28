@@ -677,6 +677,7 @@ pub mod permissions {
 			const CHANGE_NICKNAMES = 1 << 26,
 			/// Change the nickname of other users
 			const MANAGE_NICKNAMES = 1 << 27,
+			/// Manage the emojis in a a server.
 			const MANAGE_EMOJIS = 1 << 30,
 
 			const READ_MESSAGES = 1 << 10,
