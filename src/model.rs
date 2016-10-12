@@ -1238,7 +1238,8 @@ impl LiveServer {
 			// Apply role overwrites, denied then allowed
 			for overwrite in &channel.permission_overwrites {
 				if let PermissionOverwriteType::Role(role) = overwrite.kind {
-					if member.roles.contains(&role) {
+					// if the member has this role, or it is the @everyone role
+					if member.roles.contains(&role) || role.0 == self.id.0 {
 						permissions = (permissions & !overwrite.deny) | overwrite.allow;
 					}
 				}
