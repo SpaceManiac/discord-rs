@@ -832,6 +832,21 @@ impl Discord {
 		ApplicationInfo::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Retrieves the number of guild shards Discord suggests to use based on
+	/// the number of guilds.
+	///
+	/// This endpoint is only available for bots.
+	pub fn suggested_shard_count(&self) -> Result<u64> {
+		let response = request!(self, get, "/gateway/bot");
+		let mut value: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+		match value.remove("shards") {
+			Some(serde_json::Value::I64(shards)) => Ok(shards as u64),
+			Some(serde_json::Value::U64(shards)) => Ok(shards),
+			Some(other) => return Err(Error::Decode("Invalid \"shards\"", other)),
+			None => return Err(Error::Decode("suggested_shard_count missing \"shards\"", serde_json::Value::Object(value))),
+		}
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
