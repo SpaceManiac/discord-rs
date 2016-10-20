@@ -443,7 +443,7 @@ impl Discord {
 		let mut request = try!(multipart::client::Multipart::from_request(request));
 		try!(request.write_text("content", text));
 		try!(request.write_stream("file", &mut file, Some(filename), None));
-		Message::decode(try!(serde_json::from_reader(try!(request.send()))))
+		Message::decode(try!(serde_json::from_reader(try!(check_status(request.send())))))
 	}
 
 	/// Acknowledge this message as "read" by this client.
