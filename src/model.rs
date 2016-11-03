@@ -1136,6 +1136,43 @@ impl Emoji {
 	}
 }
 
+#[derive(Debug, Clone)]
+pub struct Reaction {
+	pub channel_id: ChannelId,
+	pub emoji: ReactionEmoji,
+	pub user_id: UserId,
+	pub message_id: MessageId,
+}
+
+impl Reaction {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Reaction {
+			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
+			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
+			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+		})
+	}
+}
+
+/// Emoji information sent only from reaction events
+#[derive(Debug, Clone)]
+pub enum ReactionEmoji {
+	Unicode(String),
+	Custom { name: String, id: EmojiId },
+}
+
+impl ReactionEmoji {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		let name = try!(remove(&mut value, "name").and_then(into_string));
+		match try!(opt(&mut value, "id", EmojiId::decode)) {
+			Some(id) => Ok(ReactionEmoji::Custom { name: name, id: id }),
+			None => Ok(ReactionEmoji::Unicode(name)),
+		}
+	}
+}
 /// Live server information
 #[derive(Debug, Clone)]
 pub struct LiveServer {
@@ -1841,6 +1878,9 @@ pub enum Event {
 		last_pin_timestamp: Option<String>,
 	},
 
+	ReactionAdd(Reaction),
+	ReactionRemove(Reaction),
+
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
 	// Any other event. Should never be used directly.
@@ -1953,6 +1993,10 @@ impl Event {
 				try!(remove(&mut value, "id").and_then(UserId::decode)),
 				try!(remove(&mut value, "type").and_then(RelationshipType::decode)),
 			))
+		} else if kind == "MESSAGE_REACTION_ADD" {
+			Reaction::decode(Value::Object(value)).map(Event::ReactionAdd)
+		} else if kind == "MESSAGE_REACTION_REMOVE" {
+			Reaction::decode(Value::Object(value)).map(Event::ReactionRemove)
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {

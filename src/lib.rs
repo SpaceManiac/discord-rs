@@ -532,6 +532,93 @@ impl Discord {
 		check_empty(request!(self, delete, "/channels/{}/permissions/{}", channel, id))
 	}
 
+	/// Add a `Reaction` to a `Message`.
+	/// 
+	/// # Examples
+	/// Add an unicode emoji to a `Message`:
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.add_reaction(&channel.id, message.id, ReactionEmoji::Unicode("👌".to_string));
+	/// ```
+	/// 
+	/// Add a custom emoji to a `Message`:
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::{EmojiId, ReactionEmoji};
+	///
+	/// let _ = discord.add_reaction(&channel.id, message.id, ReactionEmoji::Custom { name: "ThisIsFine", id: EmojiId(236147133370204161) });
+	/// ```
+	///
+	/// Requires the `ADD_REACTIONS` permission.
+	pub fn add_reaction(&self, channel: &ChannelId, message: MessageId, emoji: ReactionEmoji) -> Result<()> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		check_empty(request!(self, put, "/channels/{}/messages/{}/reactions/{}/@me", channel, message, emoji))
+	}
+
+	/// Delete a `Reaction` from a `Message`.
+	/// 
+	/// # Examples
+	/// Delete a `Reaction` from a `Message` (unicode emoji): 
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message, state have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, None, ReactionEmoji::Unicode("👌".to_string()));
+	/// ```
+	/// 
+	/// Delete your `Reaction` from a `Message`(custom emoji):
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, None, ReactionEmoji::Unicode("👌".to_string()));
+	/// ```
+	///
+	/// Delete someone else's `Reaction` from a `Message` (custom emoji):
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::{EmojiId, ReactionEmoji};
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, Some(UserId(110372470472613888)), ReactionEmoji::Custom { name: "ThisIsFine", id: EmojiId(236147133370204161) });
+	/// ```
+	///
+	/// Requires `MANAGE_MESSAGES` if deleting someone else's `Reaction`.
+	pub fn delete_reaction(&self, channel: &ChannelId, message: MessageId, user_id: Option<UserId>, emoji: ReactionEmoji) -> Result<()> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		let endpoint = format!("/channels/{}/messages/{}/reactions/{}/{}", channel, message, emoji, match user_id {
+			Some(id) => id.0.to_string(),
+			None => "@me".to_string(),
+		});
+		check_empty(request!(self, delete, "{}", endpoint))
+	}
+
+	/// Get reactors for the `Emoji` in a `Message`.
+	pub fn get_reactions(&self, channel: &ChannelId, message: MessageId, emoji: ReactionEmoji, limit: Option<i32>) 
+		-> Result<Vec<User>> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		let endpoint = format!("/channels/{}/messages/{}/reactions/{}?limit={}", channel, message, emoji, limit.unwrap_or(50));
+		let response =  request!(self, get, "{}", endpoint);
+		decode_array(try!(serde_json::from_reader(response)), User::decode)
+	}
+
 	/// Get the list of servers this user knows about.
 	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
 		let response = request!(self, get, "/users/@me/guilds");
