@@ -1163,7 +1163,6 @@ pub enum ReactionEmoji {
 	Custom { name: String, id: EmojiId },
 }
 
-
 impl ReactionEmoji {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
