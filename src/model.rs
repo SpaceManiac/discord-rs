@@ -2191,11 +2191,15 @@ impl GatewayEvent {
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub enum VoiceEvent {
+	Heartbeat {
+		heartbeat_interval: u64,
+	},
 	Handshake {
 		heartbeat_interval: u64,
 		port: u16,
 		ssrc: u32,
 		modes: Vec<String>,
+		ip: String,
 	},
 	Ready {
 		mode: String,
@@ -2226,6 +2230,7 @@ impl VoiceEvent {
 				modes: try!(decode_array(try!(remove(&mut value, "modes")), into_string)),
 				port: req!(try!(remove(&mut value, "port")).as_u64()) as u16,
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
+				ip: try!(remove(&mut value, "ip").and_then(into_string)),
 			})
 		} else if op == 4 {
 			warn_json!(value, VoiceEvent::Ready {
@@ -2239,6 +2244,10 @@ impl VoiceEvent {
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
 				speaking: req!(try!(remove(&mut value, "speaking")).as_bool()),
+			})
+		} else if op == 8 {
+			warn_json!(value, VoiceEvent::Heartbeat {
+				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 			})
 		} else {
 			Ok(VoiceEvent::Unknown(op, Value::Object(value)))
