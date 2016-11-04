@@ -765,6 +765,7 @@ pub struct Message {
 	pub mention_everyone: bool,
 	pub mentions: Vec<User>,
 	pub mention_roles: Vec<RoleId>,
+	pub reactions: Vec<MessageReaction>,
 
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
@@ -790,6 +791,7 @@ impl Message {
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
 			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
 			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
+			reactions: try!(opt(&mut value, "reactions", |x| decode_array(x, MessageReaction::decode))).unwrap_or(Vec::new()),
 		})
 	}
 }
@@ -1140,6 +1142,7 @@ impl Emoji {
 	}
 }
 
+/// A full single reaction
 #[derive(Debug, Clone)]
 pub struct Reaction {
 	pub channel_id: ChannelId,
@@ -1156,6 +1159,25 @@ impl Reaction {
 			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
 			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+		})
+	}
+}
+
+/// Information on a reaction as available at a glance on a message.
+#[derive(Debug, Clone)]
+pub struct MessageReaction {
+	pub count: u64,
+	pub me: bool,
+	pub emoji: ReactionEmoji,
+}
+
+impl MessageReaction {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, MessageReaction {
+			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
+			count: req!(try!(remove(&mut value, "count")).as_u64()),
+			me: req!(try!(remove(&mut value, "me")).as_bool()),
 		})
 	}
 }
