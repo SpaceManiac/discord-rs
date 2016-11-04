@@ -683,8 +683,9 @@ impl Discord {
 
 	/// Creates an emoji in a server.
 	///
-	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `read_image` may be used to build an `image` string. Requires that the
+	/// logged in account be a user and have the `ADMINISTRATOR` or
+	/// `MANAGE_EMOJIS` permission.
 	pub fn create_emoji(&self, server: ServerId, name: &str, image: &str) -> Result<Emoji> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -698,7 +699,7 @@ impl Discord {
 	/// Edits a server's emoji.
 	///
 	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `ADMINISTRATOR` or `MANAGE_EMOJIS` permission.
 	pub fn edit_emoji(&self, server: ServerId, emoji: EmojiId, name: &str) -> Result<Emoji> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -711,7 +712,7 @@ impl Discord {
 	/// Delete an emoji in a server.
 	///
 	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `ADMINISTRATOR` or `MANAGE_EMOJIS` permission.
 	pub fn delete_emoji(&self, server: ServerId, emoji: EmojiId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/emojis/{}", server, emoji))
 	}
