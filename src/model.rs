@@ -679,6 +679,8 @@ pub mod permissions {
 			const MANAGE_NICKNAMES = 1 << 27,
 			/// Manage the emojis in a a server.
 			const MANAGE_EMOJIS = 1 << 30,
+			/// Manage channel webhooks
+			const MANAGE_WEBHOOKS = 1 << 29,
 
 			const READ_MESSAGES = 1 << 10,
 			const SEND_MESSAGES = 1 << 11,
@@ -693,6 +695,8 @@ pub mod permissions {
 			const MENTION_EVERYONE = 1 << 17,
 			/// Use emojis from other servers
 			const EXTERNAL_EMOJIS = 1 << 18,
+			/// Add emoji reactions to messages
+			const ADD_REACTIONS = 1 << 6,
 
 			const VOICE_CONNECT = 1 << 20,
 			const VOICE_SPEAK = 1 << 21,
