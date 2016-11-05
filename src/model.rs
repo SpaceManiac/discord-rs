@@ -2199,7 +2199,7 @@ pub enum VoiceEvent {
 		port: u16,
 		ssrc: u32,
 		modes: Vec<String>,
-		ip: String,
+		ip: Option<String>,
 	},
 	Ready {
 		mode: String,
@@ -2230,7 +2230,7 @@ impl VoiceEvent {
 				modes: try!(decode_array(try!(remove(&mut value, "modes")), into_string)),
 				port: req!(try!(remove(&mut value, "port")).as_u64()) as u16,
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
-				ip: try!(remove(&mut value, "ip").and_then(into_string)),
+				ip: try!(opt(&mut value, "ip", into_string)),
 			})
 		} else if op == 4 {
 			warn_json!(value, VoiceEvent::Ready {
