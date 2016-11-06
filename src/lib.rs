@@ -620,13 +620,22 @@ impl Discord {
 	}
 
 	/// Get reactors for the `Emoji` in a `Message`.
-	pub fn get_reactions(&self, channel: ChannelId, message: MessageId, emoji: ReactionEmoji, limit: Option<i32>)
+	///
+	/// The default `limit` is 50. The optional value of `after` is the ID of
+	/// the user to retrieve the next reactions after.
+	pub fn get_reactions(&self, channel: ChannelId, message: MessageId, emoji: ReactionEmoji, limit: Option<i32>, after: Option<UserId>)
 		-> Result<Vec<User>> {
 		let emoji = match emoji {
 			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
 			ReactionEmoji::Unicode(name) => name,
 		};
-		let endpoint = format!("/channels/{}/messages/{}/reactions/{}?limit={}", channel, message, emoji, limit.unwrap_or(50));
+		let mut endpoint = format!("/channels/{}/messages/{}/reactions/{}?limit={}", channel, message, emoji, limit.unwrap_or(50));
+
+		if let Some(amount) = after {
+			endpoint.push_str("&after=");
+			endpoint.push_str(&amount.to_string());
+		}
+
 		let response =  request!(self, get, "{}", endpoint);
 		decode_array(try!(serde_json::from_reader(response)), User::decode)
 	}
