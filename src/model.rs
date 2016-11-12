@@ -70,6 +70,7 @@ macro_rules! map_numbers {
 				}
 			}
 
+			#[allow(dead_code)]
 			fn decode(value: Value) -> Result<Self> {
 				value.as_u64().and_then(Self::from_num).ok_or(Error::Decode(
 					concat!("Expected valid ", stringify!($typ)),
@@ -1023,9 +1024,19 @@ impl Game {
 		if name.trim().is_empty() {
 			return Ok(None)
 		}
+
+		let kind = match value.remove("type") {
+			Some(Value::U64(v)) => Value::U64(v),
+			Some(Value::String(v)) => match v.parse::<u64>() {
+				Ok(v) => Value::U64(v),
+				Err(_) => return Err(Error::Decode("Expected valid GameType", Value::String(v))),
+			},
+			Some(other) => return Err(Error::Decode("Expected valid GameType", other)),
+			None => Value::Null,
+		};
 		warn_json!(@"Game", value, Some(Game {
 			name: name,
-			kind: try!(opt(&mut value, "type", GameType::decode)).unwrap_or(GameType::Playing),
+			kind: GameType::decode(kind).unwrap_or(GameType::Playing),
 			url: try!(opt(&mut value, "url", into_string)),
 		}))
 	}
