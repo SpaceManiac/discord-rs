@@ -215,7 +215,7 @@ impl Discord {
 		Ok(Discord {
 			rate_limits: RateLimits::default(),
 			client: hyper::Client::new(),
-			token: format!("Bot {}", token),
+			token: format!("Bot {}", token.trim()),
 		})
 	}
 
