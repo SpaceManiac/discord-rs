@@ -483,11 +483,24 @@ impl InternalConnection {
 			.build();
 		try!(sender.send_json(&map));
 
-		// read the first websocket message
-		let (interval, port, ssrc, modes) = match try!(receiver.recv_json(VoiceEvent::decode)) {
-			VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes } => (heartbeat_interval, port, ssrc, modes),
-			_ => return Err(Error::Protocol("First voice event was not Handshake"))
-		};
+		let stuff;
+		loop {
+			match try!(receiver.recv_json(VoiceEvent::decode)) {
+				VoiceEvent::Heartbeat { .. } => {
+					// TODO: handle this by beginning to heartbeat at the
+					// supplied interval
+				}
+				VoiceEvent::Handshake { heartbeat_interval, port, ssrc, modes, ip } => {
+					stuff = (heartbeat_interval, port, ssrc, modes, ip);
+					break;
+				}
+				other => {
+					debug!("Unexpected voice msg: {:?}", other);
+					return Err(Error::Protocol("Unexpected message setting up voice"));
+				}
+			}
+		}
+		let (interval, port, ssrc, modes, ip) = stuff;
 		if !modes.iter().any(|s| s == "xsalsa20_poly1305") {
 			return Err(Error::Protocol("Voice mode \"xsalsa20_poly1305\" unavailable"))
 		}
@@ -495,7 +508,7 @@ impl InternalConnection {
 		// bind a UDP socket and send the ssrc value in a packet as identification
 		let destination = {
 			use std::net::ToSocketAddrs;
-			try!(try!((&endpoint[..], port).to_socket_addrs())
+			try!(try!((ip.as_ref().map(|ip| &ip[..]).unwrap_or(&endpoint[..]), port).to_socket_addrs())
 				.next()
 				.ok_or(Error::Other("Failed to resolve voice hostname")))
 		};
@@ -577,7 +590,7 @@ impl InternalConnection {
 			rx
 		};
 
-		info!("Voice connected to {}", endpoint);
+		info!("Voice connected to {} ({})", endpoint, destination);
 		Ok(InternalConnection {
 			sender: sender,
 			receive_chan: receive_chan,

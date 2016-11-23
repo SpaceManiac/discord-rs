@@ -215,7 +215,7 @@ impl Discord {
 		Ok(Discord {
 			rate_limits: RateLimits::default(),
 			client: hyper::Client::new(),
-			token: format!("Bot {}", token),
+			token: format!("Bot {}", token.trim()),
 		})
 	}
 
@@ -443,7 +443,7 @@ impl Discord {
 		let mut request = try!(multipart::client::Multipart::from_request(request));
 		try!(request.write_text("content", text));
 		try!(request.write_stream("file", &mut file, Some(filename), None));
-		Message::decode(try!(serde_json::from_reader(try!(request.send()))))
+		Message::decode(try!(serde_json::from_reader(try!(check_status(request.send())))))
 	}
 
 	/// Acknowledge this message as "read" by this client.
@@ -532,6 +532,114 @@ impl Discord {
 		check_empty(request!(self, delete, "/channels/{}/permissions/{}", channel, id))
 	}
 
+	/// Add a `Reaction` to a `Message`.
+	///
+	/// # Examples
+	/// Add an unicode emoji to a `Message`:
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.add_reaction(&channel.id, message.id, ReactionEmoji::Unicode("👌".to_string));
+	/// ```
+	///
+	/// Add a custom emoji to a `Message`:
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::{EmojiId, ReactionEmoji};
+	///
+	/// let _ = discord.add_reaction(&channel.id, message.id, ReactionEmoji::Custom {
+	///     name: "ThisIsFine",
+	///     id: EmojiId(1234)
+	/// });
+	/// ```
+	///
+	/// Requires the `ADD_REACTIONS` permission.
+	pub fn add_reaction(&self, channel: ChannelId, message: MessageId, emoji: ReactionEmoji) -> Result<()> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		check_empty(request!(self, put, "/channels/{}/messages/{}/reactions/{}/@me", channel, message, emoji))
+	}
+
+	/// Delete a `Reaction` from a `Message`.
+	///
+	/// # Examples
+	/// Delete a `Reaction` from a `Message` (unicode emoji):
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message, state have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, None, ReactionEmoji::Unicode("👌".to_string()));
+	/// ```
+	///
+	/// Delete your `Reaction` from a `Message` (custom emoji):
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::ReactionEmoji;
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, None, ReactionEmoji::Custom {
+	///	    name: "ThisIsFine",
+	///     id: EmojiId(1234)
+	/// });
+	/// ```
+	///
+	/// Delete someone else's `Reaction` from a `Message` (custom emoji):
+	///
+	/// ```ignore
+	/// // Assuming that a `Discord` instance, channel, message have
+	/// // already been previously defined.
+	/// use discord::model::{EmojiId, ReactionEmoji};
+	///
+	/// let _ = discord.delete_reaction(&channel.id, message.id, Some(UserId(1234)), ReactionEmoji::Custom {
+	///     name: "ThisIsFine",
+	///     id: EmojiId(1234)
+	/// });
+	/// ```
+	///
+	/// Requires `MANAGE_MESSAGES` if deleting someone else's `Reaction`.
+	pub fn delete_reaction(&self, channel: ChannelId, message: MessageId, user_id: Option<UserId>, emoji: ReactionEmoji) -> Result<()> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		let endpoint = format!("/channels/{}/messages/{}/reactions/{}/{}", channel, message, emoji, match user_id {
+			Some(id) => id.0.to_string(),
+			None => "@me".to_string(),
+		});
+		check_empty(request!(self, delete, "{}", endpoint))
+	}
+
+	/// Get reactors for the `Emoji` in a `Message`.
+	///
+	/// The default `limit` is 50. The optional value of `after` is the ID of
+	/// the user to retrieve the next reactions after.
+	pub fn get_reactions(&self, channel: ChannelId, message: MessageId, emoji: ReactionEmoji, limit: Option<i32>, after: Option<UserId>)
+		-> Result<Vec<User>> {
+		let emoji = match emoji {
+			ReactionEmoji::Custom { name, id } => format!("{}:{}", name, id.0),
+			ReactionEmoji::Unicode(name) => name,
+		};
+		let mut endpoint = format!("/channels/{}/messages/{}/reactions/{}?limit={}", channel, message, emoji, limit.unwrap_or(50));
+
+		if let Some(amount) = after {
+			use std::fmt::Write;
+			let _ = write!(endpoint, "&after={}", amount);
+		}
+
+		let response = request!(self, get, "{}", endpoint);
+		decode_array(try!(serde_json::from_reader(response)), User::decode)
+	}
+
 	/// Get the list of servers this user knows about.
 	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
 		let response = request!(self, get, "/users/@me/guilds");
@@ -584,8 +692,9 @@ impl Discord {
 
 	/// Creates an emoji in a server.
 	///
-	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `read_image` may be used to build an `image` string. Requires that the
+	/// logged in account be a user and have the `ADMINISTRATOR` or
+	/// `MANAGE_EMOJIS` permission.
 	pub fn create_emoji(&self, server: ServerId, name: &str, image: &str) -> Result<Emoji> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -599,7 +708,7 @@ impl Discord {
 	/// Edits a server's emoji.
 	///
 	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `ADMINISTRATOR` or `MANAGE_EMOJIS` permission.
 	pub fn edit_emoji(&self, server: ServerId, emoji: EmojiId, name: &str) -> Result<Emoji> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
@@ -612,7 +721,7 @@ impl Discord {
 	/// Delete an emoji in a server.
 	///
 	/// Requires that the logged in account be a user and have the
-	/// "ADMINISTRATOR" or "MANAGE_EMOJIS" permission.
+	/// `ADMINISTRATOR` or `MANAGE_EMOJIS` permission.
 	pub fn delete_emoji(&self, server: ServerId, emoji: EmojiId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/emojis/{}", server, emoji))
 	}
@@ -830,6 +939,21 @@ impl Discord {
 	pub fn get_application_info(&self) -> Result<ApplicationInfo> {
 		let response = request!(self, get, "/oauth2/applications/@me");
 		ApplicationInfo::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Retrieves the number of guild shards Discord suggests to use based on
+	/// the number of guilds.
+	///
+	/// This endpoint is only available for bots.
+	pub fn suggested_shard_count(&self) -> Result<u64> {
+		let response = request!(self, get, "/gateway/bot");
+		let mut value: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+		match value.remove("shards") {
+			Some(serde_json::Value::I64(shards)) => Ok(shards as u64),
+			Some(serde_json::Value::U64(shards)) => Ok(shards),
+			Some(other) => return Err(Error::Decode("Invalid \"shards\"", other)),
+			None => return Err(Error::Decode("suggested_shard_count missing \"shards\"", serde_json::Value::Object(value))),
+		}
 	}
 
 	/// Establish a websocket connection over which events can be received.

@@ -139,10 +139,30 @@ impl Connection {
 
 	/// Change the game information that this client reports as playing.
 	pub fn set_game(&self, game: Option<Game>) {
+		self.set_presence(game, OnlineStatus::Online, false)
+	}
+
+	/// Set the client to be playing this game, with defaults used for any
+	/// extended information.
+	pub fn set_game_name(&self, name: String) {
+		self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false);
+	}
+
+	/// Sets the active presence of the client, including game and/or status
+	/// information.
+	///
+	/// `afk` will help Discord determine where to send notifications.
+	pub fn set_presence(&self, game: Option<Game>, status: OnlineStatus, afk: bool) {
+		let status = match status {
+			OnlineStatus::Offline => OnlineStatus::Invisible,
+			other => other,
+		};
 		let msg = ObjectBuilder::new()
 			.insert("op", 3)
 			.insert_object("d", move |mut object| {
-				object = object.insert("idle_since", serde_json::Value::Null);
+				object = object.insert("afk", afk)
+					.insert("since", 0)
+					.insert("status", status.name());
 				match game {
 					Some(game) => object.insert_object("game", move |o| o.insert("name", game.name)),
 					None => object.insert("game", serde_json::Value::Null),
@@ -150,12 +170,6 @@ impl Connection {
 			})
 			.build();
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
-	}
-
-	/// Set the client to be playing this game, with defaults used for any
-	/// extended information.
-	pub fn set_game_name(&self, name: String) {
-		self.set_game(Some(Game::playing(name)));
 	}
 
 	/// Get a handle to the voice connection for a server.

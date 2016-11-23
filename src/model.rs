@@ -70,6 +70,7 @@ macro_rules! map_numbers {
 				}
 			}
 
+			#[allow(dead_code)]
 			fn decode(value: Value) -> Result<Self> {
 				value.as_u64().and_then(Self::from_num).ok_or(Error::Decode(
 					concat!("Expected valid ", stringify!($typ)),
@@ -679,6 +680,8 @@ pub mod permissions {
 			const MANAGE_NICKNAMES = 1 << 27,
 			/// Manage the emojis in a a server.
 			const MANAGE_EMOJIS = 1 << 30,
+			/// Manage channel webhooks
+			const MANAGE_WEBHOOKS = 1 << 29,
 
 			const READ_MESSAGES = 1 << 10,
 			const SEND_MESSAGES = 1 << 11,
@@ -693,6 +696,8 @@ pub mod permissions {
 			const MENTION_EVERYONE = 1 << 17,
 			/// Use emojis from other servers
 			const EXTERNAL_EMOJIS = 1 << 18,
+			/// Add emoji reactions to messages
+			const ADD_REACTIONS = 1 << 6,
 
 			const VOICE_CONNECT = 1 << 20,
 			const VOICE_SPEAK = 1 << 21,
@@ -761,6 +766,7 @@ pub struct Message {
 	pub mention_everyone: bool,
 	pub mentions: Vec<User>,
 	pub mention_roles: Vec<RoleId>,
+	pub reactions: Vec<MessageReaction>,
 
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
@@ -786,6 +792,7 @@ impl Message {
 			author: try!(remove(&mut value, "author").and_then(User::decode)),
 			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
 			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
+			reactions: try!(opt(&mut value, "reactions", |x| decode_array(x, MessageReaction::decode))).unwrap_or(Vec::new()),
 		})
 	}
 }
@@ -1017,9 +1024,19 @@ impl Game {
 		if name.trim().is_empty() {
 			return Ok(None)
 		}
+
+		let kind = match value.remove("type") {
+			Some(Value::U64(v)) => Value::U64(v),
+			Some(Value::String(v)) => match v.parse::<u64>() {
+				Ok(v) => Value::U64(v),
+				Err(_) => return Err(Error::Decode("Expected valid GameType", Value::String(v))),
+			},
+			Some(other) => return Err(Error::Decode("Expected valid GameType", other)),
+			None => Value::Null,
+		};
 		warn_json!(@"Game", value, Some(Game {
 			name: name,
-			kind: try!(opt(&mut value, "type", GameType::decode)).unwrap_or(GameType::Playing),
+			kind: GameType::decode(kind).unwrap_or(GameType::Playing),
 			url: try!(opt(&mut value, "url", into_string)),
 		}))
 	}
@@ -1136,6 +1153,64 @@ impl Emoji {
 	}
 }
 
+/// A full single reaction
+#[derive(Debug, Clone)]
+pub struct Reaction {
+	pub channel_id: ChannelId,
+	pub message_id: MessageId,
+	pub user_id: UserId,
+	pub emoji: ReactionEmoji,
+}
+
+impl Reaction {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Reaction {
+			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
+			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
+			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
+			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
+		})
+	}
+}
+
+/// Information on a reaction as available at a glance on a message.
+#[derive(Debug, Clone)]
+pub struct MessageReaction {
+	pub count: u64,
+	pub me: bool,
+	pub emoji: ReactionEmoji,
+}
+
+impl MessageReaction {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, MessageReaction {
+			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
+			count: req!(try!(remove(&mut value, "count")).as_u64()),
+			me: req!(try!(remove(&mut value, "me")).as_bool()),
+		})
+	}
+}
+
+/// Emoji information sent only from reaction events
+#[derive(Debug, Clone)]
+pub enum ReactionEmoji {
+	Unicode(String),
+	Custom { name: String, id: EmojiId },
+}
+
+impl ReactionEmoji {
+	pub fn decode(value: Value) -> Result<Self> {
+		let mut value = try!(into_map(value));
+		let name = try!(remove(&mut value, "name").and_then(into_string));
+		match try!(opt(&mut value, "id", EmojiId::decode)) {
+			Some(id) => Ok(ReactionEmoji::Custom { name: name, id: id }),
+			None => Ok(ReactionEmoji::Unicode(name)),
+		}
+	}
+}
+
 /// Live server information
 #[derive(Debug, Clone)]
 pub struct LiveServer {
@@ -1238,7 +1313,8 @@ impl LiveServer {
 			// Apply role overwrites, denied then allowed
 			for overwrite in &channel.permission_overwrites {
 				if let PermissionOverwriteType::Role(role) = overwrite.kind {
-					if member.roles.contains(&role) {
+					// if the member has this role, or it is the @everyone role
+					if member.roles.contains(&role) || role.0 == self.id.0 {
 						permissions = (permissions & !overwrite.deny) | overwrite.allow;
 					}
 				}
@@ -1840,6 +1916,9 @@ pub enum Event {
 		last_pin_timestamp: Option<String>,
 	},
 
+	ReactionAdd(Reaction),
+	ReactionRemove(Reaction),
+
 	/// An event type not covered by the above
 	Unknown(String, BTreeMap<String, Value>),
 	// Any other event. Should never be used directly.
@@ -1952,6 +2031,10 @@ impl Event {
 				try!(remove(&mut value, "id").and_then(UserId::decode)),
 				try!(remove(&mut value, "type").and_then(RelationshipType::decode)),
 			))
+		} else if kind == "MESSAGE_REACTION_ADD" {
+			Reaction::decode(Value::Object(value)).map(Event::ReactionAdd)
+		} else if kind == "MESSAGE_REACTION_REMOVE" {
+			Reaction::decode(Value::Object(value)).map(Event::ReactionRemove)
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
@@ -2119,11 +2202,15 @@ impl GatewayEvent {
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub enum VoiceEvent {
+	Heartbeat {
+		heartbeat_interval: u64,
+	},
 	Handshake {
 		heartbeat_interval: u64,
 		port: u16,
 		ssrc: u32,
 		modes: Vec<String>,
+		ip: Option<String>,
 	},
 	Ready {
 		mode: String,
@@ -2154,6 +2241,7 @@ impl VoiceEvent {
 				modes: try!(decode_array(try!(remove(&mut value, "modes")), into_string)),
 				port: req!(try!(remove(&mut value, "port")).as_u64()) as u16,
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
+				ip: try!(opt(&mut value, "ip", into_string)),
 			})
 		} else if op == 4 {
 			warn_json!(value, VoiceEvent::Ready {
@@ -2167,6 +2255,10 @@ impl VoiceEvent {
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 				ssrc: req!(try!(remove(&mut value, "ssrc")).as_u64()) as u32,
 				speaking: req!(try!(remove(&mut value, "speaking")).as_bool()),
+			})
+		} else if op == 8 {
+			warn_json!(value, VoiceEvent::Heartbeat {
+				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 			})
 		} else {
 			Ok(VoiceEvent::Unknown(op, Value::Object(value)))
