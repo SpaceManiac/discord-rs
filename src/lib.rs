@@ -211,11 +211,21 @@ impl Discord {
 	}
 
 	/// Log in as a bot account using the given authentication token.
+	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
 		Ok(Discord {
 			rate_limits: RateLimits::default(),
 			client: hyper::Client::new(),
 			token: format!("Bot {}", token.trim()),
+		})
+	}
+
+	/// Log in as a user account using the given authentication token.
+	pub fn from_user_token(token: &str) -> Result<Discord> {
+		Ok(Discord {
+			rate_limits: RateLimits::default(),
+			client: hyper::Client::new(),
+			token: token.trim().to_owned(),
 		})
 	}
 
