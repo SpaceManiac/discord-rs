@@ -41,7 +41,7 @@ extern crate base64;
 extern crate flate2;
 
 use std::collections::BTreeMap;
-use serde_json::builder::ObjectBuilder;
+use serde_json::builder::{ObjectBuilder, ArrayBuilder};
 
 mod ratelimit;
 mod error;
@@ -442,6 +442,17 @@ impl Discord {
 			.build();
 		let body = try!(serde_json::to_string(&map));
 		check_empty(request!(self, post(body), "/channels/{}/messages/bulk_delete", channel))
+	}
+
+	/// Send some embedded rich content attached to a message on a given channel.
+	///
+	/// See the `EmbedBuilder` struct for the editable fields.
+	/// `text` may be empty.
+	pub fn send_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: &ChannelId, text: &str, f: F) -> Result<Message> {
+		let map = ObjectBuilder::new().insert("content", text).insert("embed", f(EmbedBuilder(ObjectBuilder::new())).0.build()).build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, post(body), "/channels/{}/messages", channel);
+		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Send a file attached to a message on a given channel.
@@ -1202,6 +1213,60 @@ impl EditProfile {
 	pub fn new_password(self, password: &str) -> Self {
 		EditProfile(self.0.insert("new_password", password))
 	}
+}
+
+/// Patch content for the `send_embed` call.
+pub struct EmbedBuilder(ObjectBuilder);
+impl EmbedBuilder {
+	/// Add the "title of embed".
+	pub fn title(self, title: &str) -> Self { EmbedBuilder(self.0.insert("title", title)) }
+	/// Add the "description of embed".
+	pub fn description(self, description: &str) -> Self { EmbedBuilder(self.0.insert("description", description)) }
+	/// Add the "url of embed".
+	pub fn url(self, url: &str) -> Self { EmbedBuilder(self.0.insert("url", url)) }
+	/// Add the "timestamp of embed content".
+	pub fn timestamp(self, timestamp: &str) -> Self { EmbedBuilder(self.0.insert("timestamp", timestamp)) }
+	/// Add the "color code of the embed".
+	pub fn color(self, color: u64) -> Self { EmbedBuilder(self.0.insert("color", color)) }
+	/// Add "footer information". See the `EmbedFooterBuilder` struct for the editable fields.
+	pub fn footer<F: FnOnce(EmbedFooterBuilder) -> EmbedFooterBuilder>(self, f: F) -> Self { EmbedBuilder(self.0.insert("footer", f(EmbedFooterBuilder(ObjectBuilder::new())).0.build())) }
+	/// Add "image information". See the `EmbedImageBuilder` struct for the editable fields.
+	pub fn image(self, url: &str) -> Self { EmbedBuilder(self.0.insert("image", ObjectBuilder::new().insert("url", url).build())) }
+	/// Add "thumbnail information". See the `EmbedThumbnailBuilder` struct for the editable fields.
+	pub fn thumbnail(self, url: &str) -> Self { EmbedBuilder(self.0.insert("image", ObjectBuilder::new().insert("url", url).build())) }
+	/// Add "author information". See the `EmbedAuthorBuilder` struct for the editable fields.
+	pub fn author<F: FnOnce(EmbedAuthorBuilder) -> EmbedAuthorBuilder>(self, f: F) -> Self { EmbedBuilder(self.0.insert("author", f(EmbedAuthorBuilder(ObjectBuilder::new())).0.build())) }
+	/// Add "fields information". See the `EmbedFieldsBuilder` struct for the editable fields.
+	pub fn fields<F: FnOnce(EmbedFieldsBuilder) -> EmbedFieldsBuilder>(self, f: F) -> Self { EmbedBuilder(self.0.insert("fields", f(EmbedFieldsBuilder(ArrayBuilder::new())).0.build())) }
+}
+
+/// Inner patch content for the `send_embed` call.
+pub struct EmbedFooterBuilder(ObjectBuilder);
+impl EmbedFooterBuilder {
+	/// Add the "footer text".
+	pub fn text(self, text: &str) -> Self { EmbedFooterBuilder(self.0.insert("text", text)) }
+	/// Add the "url of footer icon". Only the http(s) protocols are supported.
+	pub fn icon_url(self, icon_url: &str) -> Self { EmbedFooterBuilder(self.0.insert("icon_url", icon_url)) }
+}
+
+/// Inner patch content for the `send_embed` call.
+pub struct EmbedAuthorBuilder(ObjectBuilder);
+impl EmbedAuthorBuilder {
+	/// Add the "name of author".
+	pub fn name(self, name: &str) -> Self { EmbedAuthorBuilder(self.0.insert("name", name)) }
+	/// Add the "url of author".
+	pub fn url(self, url: &str) -> Self { EmbedAuthorBuilder(self.0.insert("url", url)) }
+	/// Add the "url of author icon". Only the http(s) protocols are supported.
+	pub fn icon_url(self, icon_url: &str) -> Self { EmbedAuthorBuilder(self.0.insert("icon_url", icon_url)) }
+}
+
+/// Inner patch content for the `send_embed` call.
+pub struct EmbedFieldsBuilder(ArrayBuilder);
+impl EmbedFieldsBuilder {
+	/// Add an entire field structure, representing a mapping from `name` to `value`.
+	///
+	/// `inline` determines "whether or not this field should display inline".
+	pub fn field(self, name: &str, value: &str, inline: bool) -> Self { EmbedFieldsBuilder(self.0.push(ObjectBuilder::new().insert("name", name).insert("value", value).insert("inline", inline).build())) }
 }
 
 /// Send a request with the correct `UserAgent`, retrying it a second time if the
