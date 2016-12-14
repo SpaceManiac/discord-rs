@@ -78,7 +78,7 @@ pub fn main() {
 							"You must be in a voice channel to DJ".to_owned()
 						};
 						if !output.is_empty() {
-							warn(discord.send_message(&message.channel_id, &output, "", false));
+							warn(discord.send_message(message.channel_id, &output, "", false));
 						}
 					}
 				}

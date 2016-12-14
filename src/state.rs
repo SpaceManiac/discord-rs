@@ -435,20 +435,20 @@ impl State {
 	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
 
 	/// Look up a private or public channel by its ID.
-	pub fn find_channel(&self, id: &ChannelId) -> Option<ChannelRef> {
+	pub fn find_channel(&self, id: ChannelId) -> Option<ChannelRef> {
 		for server in &self.servers {
 			for channel in &server.channels {
-				if channel.id == *id {
+				if channel.id == id {
 					return Some(ChannelRef::Public(server, channel))
 				}
 			}
 		}
 		for channel in &self.private_channels {
-			if channel.id == *id {
+			if channel.id == id {
 				return Some(ChannelRef::Private(channel))
 			}
 		}
-		if let Some(group) = self.groups.get(id) {
+		if let Some(group) = self.groups.get(&id) {
 			return Some(ChannelRef::Group(group))
 		}
 		None

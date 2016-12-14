@@ -266,7 +266,7 @@ impl Discord {
 	}
 
 	/// Create a channel.
-	pub fn create_channel(&self, server: &ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
+	pub fn create_channel(&self, server: ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
 			.insert("type", kind.name())
@@ -320,13 +320,13 @@ impl Discord {
 	}
 
 	/// Delete a channel.
-	pub fn delete_channel(&self, channel: &ChannelId) -> Result<Channel> {
+	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, delete, "/channels/{}", channel);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Indicate typing on a channel for the next 5 seconds.
-	pub fn broadcast_typing(&self, channel: &ChannelId) -> Result<()> {
+	pub fn broadcast_typing(&self, channel: ChannelId) -> Result<()> {
 		check_empty(request!(self, post, "/channels/{}/typing", channel))
 	}
 
@@ -379,7 +379,7 @@ impl Discord {
 	///
 	/// The `nonce` will be returned in the result and also transmitted to other
 	/// clients. The empty string is a good default if you don't care.
-	pub fn send_message(&self, channel: &ChannelId, text: &str, nonce: &str, tts: bool) -> Result<Message> {
+	pub fn send_message(&self, channel: ChannelId, text: &str, nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
 			.insert("nonce", nonce)
@@ -394,7 +394,7 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
-	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str) -> Result<Message> {
+	pub fn edit_message(&self, channel: ChannelId, message: MessageId, text: &str) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
 			.build();
@@ -407,7 +407,7 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
-	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+	pub fn delete_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
 		check_empty(request!(self, delete, "/channels/{}/messages/{}", channel, message))
 	}
 
@@ -448,7 +448,7 @@ impl Discord {
 	///
 	/// See the `EmbedBuilder` struct for the editable fields.
 	/// `text` may be empty.
-	pub fn send_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: &ChannelId, text: &str, f: F) -> Result<Message> {
+	pub fn send_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, text: &str, f: F) -> Result<Message> {
 		let map = ObjectBuilder::new().insert("content", text).insert("embed", f(EmbedBuilder(ObjectBuilder::new())).0.build()).build();
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
@@ -458,7 +458,7 @@ impl Discord {
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
-	pub fn send_file<R: ::std::io::Read>(&self, channel: &ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
 		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
@@ -473,7 +473,7 @@ impl Discord {
 	}
 
 	/// Acknowledge this message as "read" by this client.
-	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+	pub fn ack_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
 		check_empty(request!(self, post, "/channels/{}/messages/{}/ack", channel, message))
 	}
 
@@ -705,13 +705,13 @@ impl Discord {
 	}
 
 	/// Leave the given server.
-	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
+	pub fn leave_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/users/@me/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete the given server. Only available to the server owner.
-	pub fn delete_server(&self, server: &ServerId) -> Result<Server> {
+	pub fn delete_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
@@ -753,7 +753,7 @@ impl Discord {
 	}
 
 	/// Get the ban list for the given server.
-	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<Ban>> {
+	pub fn get_bans(&self, server: ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
 		decode_array(try!(serde_json::from_reader(response)), Ban::decode)
 	}
@@ -761,13 +761,13 @@ impl Discord {
 	/// Ban a user from the server, optionally deleting their recent messages.
 	///
 	/// Zero may be passed for `delete_message_days` if no deletion is desired.
-	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: u32) -> Result<()> {
+	pub fn add_ban(&self, server: ServerId, user: UserId, delete_message_days: u32) -> Result<()> {
 		check_empty(request!(self, put, "/guilds/{}/bans/{}?delete_message_days={}",
 			server, user, delete_message_days))
 	}
 
 	/// Unban a user from the server.
-	pub fn remove_ban(&self, server: &ServerId, user: &UserId) -> Result<()> {
+	pub fn remove_ban(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/bans/{}", server, user))
 	}
 
@@ -833,8 +833,8 @@ impl Discord {
 	}
 
 	/// Edit the list of roles assigned to a member of a server.
-	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
-		self.edit_member(*server, *user, |m| m.roles(roles))
+	pub fn edit_member_roles(&self, server: ServerId, user: UserId, roles: &[RoleId]) -> Result<()> {
+		self.edit_member(server, user, |m| m.roles(roles))
 	}
 
 	/// Edit member information, including roles, nickname, and voice state.
@@ -847,7 +847,7 @@ impl Discord {
 	}
 
 	/// Kick a member from a server.
-	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
+	pub fn kick_member(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
 	}
 
@@ -858,7 +858,7 @@ impl Discord {
 
 	/// Create a private channel with the given user, or return the existing
 	/// one if it exists.
-	pub fn create_private_channel(&self, recipient: &UserId) -> Result<PrivateChannel> {
+	pub fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
 		let map = ObjectBuilder::new()
 			.insert("recipient_id", recipient.0)
 			.build();
@@ -868,12 +868,12 @@ impl Discord {
 	}
 
 	/// Get the URL at which a user's avatar is located.
-	pub fn get_user_avatar_url(&self, user: &UserId, avatar: &str) -> String {
+	pub fn get_user_avatar_url(&self, user: UserId, avatar: &str) -> String {
 		format!(api_concat!("/users/{}/avatars/{}.jpg"), user, avatar)
 	}
 
 	/// Download a user's avatar.
-	pub fn get_user_avatar(&self, user: &UserId, avatar: &str) -> Result<Vec<u8>> {
+	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
 		let mut response = try!(retry(||
 			self.client.get(&self.get_user_avatar_url(user, avatar))));
@@ -922,7 +922,7 @@ impl Discord {
 	}
 
 	/// Move a server member to another voice channel.
-	pub fn move_member_voice(&self, server: &ServerId, user: &UserId, channel: &ChannelId) -> Result<()> {
+	pub fn move_member_voice(&self, server: ServerId, user: UserId, channel: ChannelId) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("channel_id", &channel.0)
 			.build();

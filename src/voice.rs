@@ -66,7 +66,7 @@ pub trait AudioReceiver: Send {
 	/// This method is the only way to know the `ssrc` to `user_id` mapping, but is unreliable and
 	/// only a hint for when users are actually speaking, due both to latency differences and that
 	/// it is possible for a user to leave `speaking` true even when they are not sending audio.
-	fn speaking_update(&mut self, ssrc: u32, user_id: &UserId, speaking: bool);
+	fn speaking_update(&mut self, ssrc: u32, user_id: UserId, speaking: bool);
 
 	/// Called when a voice packet is received.
 	///
@@ -627,7 +627,7 @@ impl InternalConnection {
 			while let Ok(status) = self.receive_chan.try_recv() {
 				match status {
 					RecvStatus::Websocket(VoiceEvent::SpeakingUpdate { user_id, ssrc, speaking }) => {
-						receiver.speaking_update(ssrc, &user_id, speaking);
+						receiver.speaking_update(ssrc, user_id, speaking);
 					},
 					RecvStatus::Websocket(_) => {},
 					RecvStatus::Udp(packet) => {
