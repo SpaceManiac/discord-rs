@@ -103,6 +103,10 @@ pub struct Discord {
 
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
+	///
+	/// **Deprecated**: login automation is not recommended. Use
+	/// `from_user_token` instead.
+	#[deprecated]
 	pub fn new(email: &str, password: &str) -> Result<Discord> {
 		let mut map = BTreeMap::new();
 		map.insert("email", email);
@@ -131,6 +135,11 @@ impl Discord {
 	/// Cached login tokens are keyed to the email address and will be read from
 	/// and written to the specified path. If no cached token was found and no
 	/// password was specified, an error is returned.
+	///
+	/// **Deprecated**: login automation is not recommended. Use
+	/// `from_user_token` instead.
+	#[deprecated]
+	#[allow(deprecated)]
 	pub fn new_cache<P: AsRef<std::path::Path>>(path: P, email: &str, password: Option<&str>) -> Result<Discord> {
 		use std::io::{Write, BufRead, BufReader};
 		use std::fs::File;
@@ -211,25 +220,21 @@ impl Discord {
 	}
 
 	/// Log in as a bot account using the given authentication token.
+	///
 	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
-		Ok(Discord {
-			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
-			token: format!("Bot {}", token.trim()),
-		})
+		Ok(Discord::from_token_raw(format!("Bot {}", token.trim())))
 	}
 
 	/// Log in as a user account using the given authentication token.
 	pub fn from_user_token(token: &str) -> Result<Discord> {
-		Ok(Discord {
-			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
-			token: token.trim().to_owned(),
-		})
+		Ok(Discord::from_token_raw(token.trim().to_owned()))
 	}
 
 	/// Log out from the Discord API, invalidating this clients's token.
+	///
+	/// **Deprecated**: accomplishes nothing and may fail for no reason.
+	#[deprecated]
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("provider", serde_json::Value::Null)
