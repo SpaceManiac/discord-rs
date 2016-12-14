@@ -901,12 +901,18 @@ impl Discord {
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
 		let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
 		// If a token was included in the response, switch to it. Important because if the
 		// password was changed, the old token is invalidated.
-		if let Some(serde_json::Value::String(token)) = json.remove("token") {
-			self.token = token;
+		let token = json.remove("token");
+		let user = try!(CurrentUser::decode(serde_json::Value::Object(json)));
+		if let Some(serde_json::Value::String(token)) = token {
+			if !user.bot {
+				self.token = token;
+			}
 		}
-		CurrentUser::decode(serde_json::Value::Object(json))
+
+		Ok(user)
 	}
 
 	/// Get the list of available voice regions for a server.
