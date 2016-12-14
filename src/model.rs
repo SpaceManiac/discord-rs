@@ -145,6 +145,20 @@ id! {
 	EmojiId;
 }
 
+impl ServerId {
+	/// Get the `ChannelId` of this server's main text channel.
+	#[inline(always)]
+	pub fn main(self) -> ChannelId {
+		ChannelId(self.0)
+	}
+
+	/// Get the `RoleId` of this server's `@everyone` role.
+	#[inline(always)]
+	pub fn everyone(self) -> RoleId {
+		RoleId(self.0)
+	}
+}
+
 /// A mention targeted at a specific user, channel, or other entity.
 ///
 /// A mention can be constructed by calling `.mention()` on a mentionable item
@@ -1284,7 +1298,7 @@ impl LiveServer {
 			return Permissions::all();
 		}
 		// OR together all the user's roles
-		let everyone = match self.roles.iter().find(|r| r.id.0 == self.id.0) {
+		let everyone = match self.roles.iter().find(|r| r.id == self.id.everyone()) {
 			Some(r) => r,
 			None => {
 				error!("Missing @everyone role in permissions lookup on {} ({})", self.name, self.id);
