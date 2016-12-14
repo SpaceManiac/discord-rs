@@ -219,14 +219,14 @@ impl EmbedBuilder {
 		EmbedBuilder(self.0.insert("footer", f(EmbedFooterBuilder(ObjectBuilder::new())).0.build()))
 	}
 
-	/// Add "image information". See the `EmbedImageBuilder` struct for the editable fields.
+	/// Add "image information". Url must point to image's web address.
 	pub fn image(self, url: &str) -> Self {
 		EmbedBuilder(self.0.insert("image", ObjectBuilder::new().insert("url", url).build()))
 	}
 
-	/// Add "thumbnail information". See the `EmbedThumbnailBuilder` struct for the editable fields.
+	/// Add "thumbnail information". Url must point to image's web address.
 	pub fn thumbnail(self, url: &str) -> Self {
-		EmbedBuilder(self.0.insert("image", ObjectBuilder::new().insert("url", url).build()))
+		EmbedBuilder(self.0.insert("thumbnail", ObjectBuilder::new().insert("url", url).build()))
 	}
 
 	/// Add "author information". See the `EmbedAuthorBuilder` struct for the editable fields.
