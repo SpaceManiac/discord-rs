@@ -3,7 +3,6 @@
 //! These types do not usually need to be imported, but the methods available
 //! on them are very relevant to where they are used.
 
-use serde_json;
 use serde_json::builder::{ObjectBuilder, ArrayBuilder};
 use model::*;
 
@@ -36,6 +35,9 @@ builder! {
 	/// Patch content for the `edit_profile` call.
 	EditProfile(ObjectBuilder);
 
+	/// Patch content for the `edit_user_profile` call.
+	EditUserProfile(ObjectBuilder);
+
 	/// Patch content for the `send_embed` call.
 	EmbedBuilder(ObjectBuilder);
 
@@ -62,18 +64,12 @@ impl EditServer {
 
 	/// Edit the server's icon. Use `None` to remove the icon.
 	pub fn icon(self, icon: Option<&str>) -> Self {
-		EditServer(match icon {
-			Some(icon) => self.0.insert("icon", icon),
-			None => self.0.insert("icon", serde_json::Value::Null),
-		})
+		EditServer(self.0.insert("icon", icon))
 	}
 
 	/// Edit the server's AFK channel. Use `None` to select no AFK channel.
 	pub fn afk_channel(self, channel: Option<ChannelId>) -> Self {
-		EditServer(match channel {
-			Some(ch) => self.0.insert("afk_channel_id", ch.0),
-			None => self.0.insert("afk_channel_id", serde_json::Value::Null),
-		})
+		EditServer(self.0.insert("afk_channel_id", channel.map(|c| c.0)))
 	}
 
 	/// Edit the server's AFK timeout.
@@ -93,10 +89,7 @@ impl EditServer {
 
 	/// Edit the server's splash. Use `None` to remove the splash.
 	pub fn splash(self, splash: Option<&str>) -> Self {
-		EditServer(match splash {
-			Some(splash) => self.0.insert("splash", splash),
-			None => self.0.insert("splash", serde_json::Value::Null),
-		})
+		EditServer(self.0.insert("splash", splash))
 	}
 }
 
@@ -163,26 +156,35 @@ impl EditProfile {
 
 	/// Edit the user's avatar. Use `None` to remove the avatar.
 	pub fn avatar(self, icon: Option<&str>) -> Self {
-		EditProfile(match icon {
-			Some(icon) => self.0.insert("avatar", icon),
-			None => self.0.insert("avatar", serde_json::Value::Null),
-		})
+		EditProfile(self.0.insert("avatar", icon))
 	}
+}
 
-	/// Provide the user's current password for authentication. Does not apply to bot accounts, and
-	/// must be supplied for user accounts.
+impl EditUserProfile {
+	/// Provide the user's current password for authentication. Required if
+	/// the email or password is being changed.
 	pub fn password(self, password: &str) -> Self {
-		EditProfile(self.0.insert("password", password))
+		EditUserProfile(self.0.insert("password", password))
 	}
 
-	/// Edit the user's email address. Does not apply to bot accounts.
+	/// Edit the user's email address.
 	pub fn email(self, email: &str) -> Self {
-		EditProfile(self.0.insert("email", email))
+		EditUserProfile(self.0.insert("email", email))
 	}
 
-	/// Edit the user's password. Does not apply to bot accounts.
+	/// Edit the user's password.
 	pub fn new_password(self, password: &str) -> Self {
-		EditProfile(self.0.insert("new_password", password))
+		EditUserProfile(self.0.insert("new_password", password))
+	}
+
+	/// Edit the user's username. Must be between 2 and 32 characters long.
+	pub fn username(self, username: &str) -> Self {
+		EditUserProfile(self.0.insert("username", username))
+	}
+
+	/// Edit the user's avatar. Use `None` to remove the avatar.
+	pub fn avatar(self, icon: Option<&str>) -> Self {
+		EditUserProfile(self.0.insert("avatar", icon))
 	}
 }
 

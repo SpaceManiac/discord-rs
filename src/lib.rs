@@ -887,13 +887,37 @@ impl Discord {
 		Ok(vec)
 	}
 
-	/// Edit the logged-in user's profile. See `EditProfile` for editable fields.
+	/// Edit the logged-in bot or user's profile. See `EditProfile` for editable fields.
 	///
-	/// This method requires mutable access because editing the profile generates a new token.
-	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&mut self, f: F) -> Result<CurrentUser> {
+	/// Usable for bot and user accounts. Only allows updating the username and
+	/// avatar.
+	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
 		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		let map = ObjectBuilder::new()
+			.insert("username", user.username)
+			.insert("avatar", user.avatar);
+
+		// Then, send the profile patch.
+		let map = EditProfile::__build(f, map).build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/users/@me");
+		let json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+		CurrentUser::decode(serde_json::Value::Object(json))
+	}
+
+	/// Edit the logged-in non-bot user's profile. See `EditUserProfile` for editable fields.
+	///
+	/// Usable only for user (non-bot) accounts. Requires mutable access in order
+	/// to keep the login token up to date in the event of a password change.
+	pub fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(&mut self, f: F) -> Result<CurrentUser> {
+		// First, get the current profile, so that providing username and avatar is optional.
+		let response = request!(self, get, "/users/@me");
+		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		if user.bot {
+			return Err(Error::Other("Cannot call edit_user_profile on a bot account"))
+		}
 		let mut map = ObjectBuilder::new()
 			.insert("username", user.username)
 			.insert("avatar", user.avatar);
@@ -902,22 +926,17 @@ impl Discord {
 		}
 
 		// Then, send the profile patch.
-		let map = EditProfile::__build(f, map).build();
+		let map = EditUserProfile::__build(f, map).build();
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
 		let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
 
 		// If a token was included in the response, switch to it. Important because if the
 		// password was changed, the old token is invalidated.
-		let token = json.remove("token");
-		let user = try!(CurrentUser::decode(serde_json::Value::Object(json)));
-		if let Some(serde_json::Value::String(token)) = token {
-			if !user.bot {
-				self.token = token;
-			}
+		if let Some(serde_json::Value::String(token)) = json.remove("token") {
+			self.token = token;
 		}
-
-		Ok(user)
+		CurrentUser::decode(serde_json::Value::Object(json))
 	}
 
 	/// Get the list of available voice regions for a server.
