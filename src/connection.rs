@@ -206,6 +206,7 @@ impl Connection {
 						Err(e) => debug!("Failed to resume: {:?}", e),
 					}
 				}
+				// If resuming didn't work, reconnect
 				self.reconnect().map(Event::Ready)
 			}
 			Err(Error::Closed(num, message)) => {
@@ -219,6 +220,7 @@ impl Connection {
 						}
 					}
 				}
+				// If resuming didn't work, reconnect
 				self.reconnect().map(Event::Ready)
 			}
 			Err(error) => Err(error),
@@ -229,10 +231,6 @@ impl Connection {
 			Ok(GatewayEvent::Dispatch(sequence, event)) => {
 				self.last_sequence = sequence;
 				let _ = self.keepalive_channel.send(Status::Sequence(sequence));
-				if let Event::Resumed { heartbeat_interval, .. } = event {
-					debug!("Resumed successfully");
-					let _ = self.keepalive_channel.send(Status::ChangeInterval(heartbeat_interval));
-				}
 				voice_only! {{
 					if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
 						self.voice(server_id).__update_state(voice_state);
@@ -273,7 +271,7 @@ impl Connection {
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
 			if let Ok((conn, ready)) = Connection::new(&self.ws_url, &self.token, self.shard_info) {
-				try!(::std::mem::replace(self, conn).shutdown());
+				::std::mem::replace(self, conn).raw_shutdown();
 				self.session_id = Some(ready.session_id.clone());
 				return Ok(ready)
 			}
@@ -281,7 +279,7 @@ impl Connection {
 		}
 		// If those fail, hit REST for a new endpoint
 		let (conn, ready) = try!(::Discord::from_token_raw(self.token.to_owned()).connect());
-		try!(::std::mem::replace(self, conn).shutdown());
+		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
 	}
@@ -311,7 +309,13 @@ impl Connection {
 		let first_event;
 		loop {
 			match try!(receiver.recv_json(GatewayEvent::decode)) {
+				GatewayEvent::Hello(interval) => {
+					let _ = self.keepalive_channel.send(Status::ChangeInterval(interval));
+				}
 				GatewayEvent::Dispatch(seq, event) => {
+					if let Event::Resumed { .. } = event {
+						debug!("Resumed successfully");
+					}
 					if let Event::Ready(ReadyEvent { ref session_id, .. }) = event {
 						self.session_id = Some(session_id.clone());
 					}
@@ -348,6 +352,13 @@ impl Connection {
 		try!(stream.flush());
 		try!(stream.shutdown(::std::net::Shutdown::Both));
 		Ok(())
+	}
+
+	fn raw_shutdown(mut self) {
+		use std::io::Write;
+		let stream = self.receiver.get_mut().get_mut();
+		let _ = stream.flush();
+		let _ = stream.shutdown(::std::net::Shutdown::Both);
 	}
 
 	#[doc(hidden)]

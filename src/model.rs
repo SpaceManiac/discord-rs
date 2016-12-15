@@ -1784,7 +1784,6 @@ pub enum Event {
 	Ready(ReadyEvent),
 	/// The connection has successfully resumed after a disconnect.
 	Resumed {
-		heartbeat_interval: u64,
 		trace: Vec<Option<String>>,
 	},
 
@@ -1965,7 +1964,6 @@ impl Event {
 			}))
 		} else if kind == "RESUMED" {
 			warn_json!(value, Event::Resumed {
-				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			})
 		} else if kind == "USER_UPDATE" {
