@@ -605,7 +605,7 @@ impl InternalConnection {
 			silence_frames: 0,
 
 			decoder_map: HashMap::new(),
-			encoder: try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::CodingMode::Audio)),
+			encoder: try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::Application::Audio)),
 			encoder_stereo: false,
 			keepalive_timer: ::Timer::new(interval),
 			// after 5 minutes of us sending nothing, Discord will stop sending voice data to us
@@ -675,7 +675,7 @@ impl InternalConnection {
 			let stereo = source.is_stereo();
 			if stereo != self.encoder_stereo {
 				let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
-				self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
+				self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::Application::Audio));
 				self.encoder_stereo = stereo;
 			}
 			let buffer_len = if stereo { 960 * 2 } else { 960 };

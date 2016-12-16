@@ -25,7 +25,7 @@ time = "0.1"
 log = "0.3"
 base64-rs = "0.1.1"
 flate2 = "0.2.14"
-opus = { version = "0.1", optional = true }
+opus = { version = "0.2", optional = true }
 
 [dependencies.sodiumoxide]
 version = "0.0.12"
