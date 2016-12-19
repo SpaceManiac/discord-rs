@@ -267,6 +267,7 @@ impl Connection {
 
 	/// Reconnect after receiving an OP7 RECONNECT
 	fn reconnect(&mut self) -> Result<ReadyEvent> {
+		::sleep_ms(1000);
 		debug!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
@@ -286,6 +287,7 @@ impl Connection {
 
 	/// Resume using our existing session
 	fn resume(&mut self, session_id: String) -> Result<Event> {
+		::sleep_ms(1000);
 		debug!("Resuming...");
 		// close connection and re-establish
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
