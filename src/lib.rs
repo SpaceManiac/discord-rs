@@ -105,10 +105,7 @@ pub struct Discord {
 
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
-	///
-	/// **Deprecated**: login automation is not recommended. Use
-	/// `from_user_token` instead.
-	#[deprecated]
+	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
 	pub fn new(email: &str, password: &str) -> Result<Discord> {
 		let mut map = BTreeMap::new();
 		map.insert("email", email);
@@ -137,10 +134,7 @@ impl Discord {
 	/// Cached login tokens are keyed to the email address and will be read from
 	/// and written to the specified path. If no cached token was found and no
 	/// password was specified, an error is returned.
-	///
-	/// **Deprecated**: login automation is not recommended. Use
-	/// `from_user_token` instead.
-	#[deprecated]
+	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
 	#[allow(deprecated)]
 	pub fn new_cache<P: AsRef<std::path::Path>>(path: P, email: &str, password: Option<&str>) -> Result<Discord> {
 		use std::io::{Write, BufRead, BufReader};
@@ -234,9 +228,7 @@ impl Discord {
 	}
 
 	/// Log out from the Discord API, invalidating this clients's token.
-	///
-	/// **Deprecated**: accomplishes nothing and may fail for no reason.
-	#[deprecated]
+	#[deprecated(note="Accomplishes nothing and may fail for no reason.")]
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("provider", serde_json::Value::Null)
