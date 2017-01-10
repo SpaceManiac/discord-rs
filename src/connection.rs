@@ -196,71 +196,69 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		match self.receiver.recv_json(GatewayEvent::decode) {
-			Err(Error::WebSocket(err)) => {
-				warn!("Websocket error, reconnecting: {:?}", err);
-				// Try resuming if we haven't received an InvalidateSession
-				if let Some(session_id) = self.session_id.clone() {
-					match self.resume(session_id) {
-						Ok(event) => return Ok(event),
-						Err(e) => debug!("Failed to resume: {:?}", e),
-					}
-				}
-				// If resuming didn't work, reconnect
-				self.reconnect().map(Event::Ready)
-			}
-			Err(Error::Closed(num, message)) => {
-				warn!("Closure, reconnecting: {:?}: {}", num, message);
-				// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
-				if num != Some(1000) && num != Some(4006) {
+		loop {
+			match self.receiver.recv_json(GatewayEvent::decode) {
+				Err(Error::WebSocket(err)) => {
+					warn!("Websocket error, reconnecting: {:?}", err);
+					// Try resuming if we haven't received an InvalidateSession
 					if let Some(session_id) = self.session_id.clone() {
 						match self.resume(session_id) {
 							Ok(event) => return Ok(event),
 							Err(e) => debug!("Failed to resume: {:?}", e),
 						}
 					}
+					// If resuming didn't work, reconnect
+					return self.reconnect().map(Event::Ready);
 				}
-				// If resuming didn't work, reconnect
-				self.reconnect().map(Event::Ready)
-			}
-			Err(error) => Err(error),
-			Ok(GatewayEvent::Hello(interval)) => {
-				debug!("Mysterious late-game hello: {}", interval);
-				self.recv_event()
-			}
-			Ok(GatewayEvent::Dispatch(sequence, event)) => {
-				self.last_sequence = sequence;
-				let _ = self.keepalive_channel.send(Status::Sequence(sequence));
-				voice_only! {{
-					if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
-						self.voice(server_id).__update_state(voice_state);
+				Err(Error::Closed(num, message)) => {
+					warn!("Closure, reconnecting: {:?}: {}", num, message);
+					// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
+					if num != Some(1000) && num != Some(4006) {
+						if let Some(session_id) = self.session_id.clone() {
+							match self.resume(session_id) {
+								Ok(event) => return Ok(event),
+								Err(e) => debug!("Failed to resume: {:?}", e),
+							}
+						}
 					}
-					if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
-						self.voice(server_id).__update_server(endpoint, token);
-					}
-				}}
-				Ok(event)
-			}
-			Ok(GatewayEvent::Heartbeat(sequence)) => {
-				debug!("Heartbeat received with seq {}", sequence);
-				let map = ObjectBuilder::new()
-					.insert("op", 1)
-					.insert("d", sequence)
-					.build();
-				let _ = self.keepalive_channel.send(Status::SendMessage(map));
-				self.recv_event()
-			}
-			Ok(GatewayEvent::HeartbeatAck) => {
-				self.recv_event()
-			}
-			Ok(GatewayEvent::Reconnect) => {
-				self.reconnect().map(Event::Ready)
-			}
-			Ok(GatewayEvent::InvalidateSession) => {
-				debug!("Session invalidated, reidentifying");
-				self.session_id = None;
-				let _ = self.keepalive_channel.send(Status::SendMessage(identify(&self.token, self.shard_info)));
-				self.recv_event()
+					// If resuming didn't work, reconnect
+					return self.reconnect().map(Event::Ready);
+				}
+				Err(error) => return Err(error),
+				Ok(GatewayEvent::Hello(interval)) => {
+					debug!("Mysterious late-game hello: {}", interval);
+				}
+				Ok(GatewayEvent::Dispatch(sequence, event)) => {
+					self.last_sequence = sequence;
+					let _ = self.keepalive_channel.send(Status::Sequence(sequence));
+					voice_only! {{
+						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
+							self.voice(server_id).__update_state(voice_state);
+						}
+						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
+							self.voice(server_id).__update_server(endpoint, token);
+						}
+					}}
+					return Ok(event);
+				}
+				Ok(GatewayEvent::Heartbeat(sequence)) => {
+					debug!("Heartbeat received with seq {}", sequence);
+					let map = ObjectBuilder::new()
+						.insert("op", 1)
+						.insert("d", sequence)
+						.build();
+					let _ = self.keepalive_channel.send(Status::SendMessage(map));
+				}
+				Ok(GatewayEvent::HeartbeatAck) => {
+				}
+				Ok(GatewayEvent::Reconnect) => {
+					return self.reconnect().map(Event::Ready);
+				}
+				Ok(GatewayEvent::InvalidateSession) => {
+					debug!("Session invalidated, reidentifying");
+					self.session_id = None;
+					let _ = self.keepalive_channel.send(Status::SendMessage(identify(&self.token, self.shard_info)));
+				}
 			}
 		}
 	}
