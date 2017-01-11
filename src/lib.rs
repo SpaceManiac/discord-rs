@@ -259,6 +259,12 @@ impl Discord {
 		check_status(result)
 	}
 
+    /// Create a role.
+    pub fn create_role(&self, server: ServerId) -> Result<Role>{
+        let response = request!(self, post, "/guilds/{}/roles", server);
+        Role::decode(try!(serde_json::from_reader(response)))
+    }
+
 	/// Create a channel.
 	pub fn create_channel(&self, server: ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
 		let map = ObjectBuilder::new()
