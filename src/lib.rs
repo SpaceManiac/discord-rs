@@ -265,6 +265,7 @@ impl Discord {
         Role::decode(try!(serde_json::from_reader(response)))
     }
 
+
 	/// Create a channel.
 	pub fn create_channel(&self, server: ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
 		let map = ObjectBuilder::new()
@@ -318,6 +319,14 @@ impl Discord {
 		let response = request!(self, patch(body), "/channels/{}", channel);
 		PublicChannel::decode(try!(serde_json::from_reader(response)))
 	}
+    
+    /// Edit a role
+    pub fn edit_role<F: FnOnce(EditRole) -> EditRole>(&self, server: ServerId, role: RoleId, f: F) -> Result<Role> {
+        let map = EditRole::__build(f, Default::default()).build();
+        let body = try!(serde_json::to_string(&map));
+        let response = request!(self, patch(body), "/guilds/{}/roles/{}", server, role);
+        Role::decode(try!(serde_json::from_reader(response)))
+    }
 
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
