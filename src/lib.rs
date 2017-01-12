@@ -276,6 +276,7 @@ impl Discord {
     /// Delete a role
     pub fn delete_role(&self, server: ServerId, role: RoleId) -> Result<Role> {
         let response = request!(self, delete, "/guilds/{}/roles/{}", server, role);
+        println!("{:?}", response);
         Role::decode(try!(serde_json::from_reader(response)))
     }
 
