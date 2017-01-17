@@ -30,15 +30,6 @@ macro_rules! finish_connection {
 	}}
 }
 
-#[cfg(feature="voice")]
-macro_rules! voice_only {
-	($b:block) => {$b}
-}
-#[cfg(not(feature="voice"))]
-macro_rules! voice_only {
-	($b:block) => {}
-}
-
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
@@ -231,14 +222,14 @@ impl Connection {
 				Ok(GatewayEvent::Dispatch(sequence, event)) => {
 					self.last_sequence = sequence;
 					let _ = self.keepalive_channel.send(Status::Sequence(sequence));
-					voice_only! {{
+					#[cfg(feature="voice")] {
 						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
 							self.voice(server_id).__update_state(voice_state);
 						}
 						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
 							self.voice(server_id).__update_server(endpoint, token);
 						}
-					}}
+					}
 					return Ok(event);
 				}
 				Ok(GatewayEvent::Heartbeat(sequence)) => {
