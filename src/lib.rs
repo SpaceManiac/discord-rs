@@ -452,6 +452,18 @@ impl Discord {
 		Message::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Edit the embed portion of a previously posted message.
+	///
+	/// The text is unmodified, but the previous embed is entirely replaced.
+	pub fn edit_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, message: MessageId, f: F) -> Result<Message> {
+		let map = ObjectBuilder::new()
+			.insert("embed", EmbedBuilder::__build(f, Default::default()).build())
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
+		Message::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
