@@ -41,7 +41,7 @@ extern crate base64;
 extern crate flate2;
 
 use std::collections::BTreeMap;
-use serde_json::builder::ObjectBuilder;
+use serde_json::builder::{ArrayBuilder, ObjectBuilder};
 
 mod ratelimit;
 mod error;
@@ -860,10 +860,101 @@ impl Discord {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
 	}
 
-	// Create role
-	// Edit role
-	// Reorder roles
-	// Delete roles
+	/// Create a new role for a server.
+	///
+	/// Note that `position` must be at least 1, as the @everyone role is always
+	/// at position 0.
+	///
+	/// # Examples
+	///
+	/// Creating a hoisted and unmentionable role with no permissions at
+	/// position 2:
+	///
+	/// ```ignore
+	/// discord.create_role(server.id, "test role", 0, true, false, permissions::empty(), 2);
+	/// ```
+	///
+	/// # Errors
+	///
+	/// Returns an `Error::Other` if `position` is less than 1.
+	pub fn create_role(&self, server: ServerId, name: &str, color: u64, hoist: bool, mentionable: bool, permissions: Permissions, position: u64) -> Result<Role> {
+		if position < 1 {
+			return Err(Error::Other("Position must be at least 1"))
+		}
+
+		// First create the role as the endpoint *only* allows the creation of
+		// an empty role at this point in time.
+		let creation_response = request!(self, post, "/guilds/{}/roles", server);
+		let role_created = try!(Role::decode(try!(serde_json::from_reader(creation_response))));
+		let map = ObjectBuilder::new()
+			.insert("name", name)
+			.insert("color", color)
+			.insert("hoist", hoist)
+			.insert("mentionable", mentionable)
+			.insert("permissions", permissions.bits())
+			.insert("position", position)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let update_response = request!(self, patch(body), "/guilds/{}/roles/{}", server, role_created.id);
+		Role::decode(try!(serde_json::from_reader(update_response)))
+	}
+
+	/// Edit a role within a server.
+	///
+	/// Use `move_role` if you need to move a role's position in the role list.
+	///
+	/// # Examples
+	///
+	/// ```ignore
+	/// use discord::model::permissions::*;
+	///
+	/// let permissions = READ_HISTORY | READ_MESSAGES | SEND_MESSAGE | VOICE_CONNECT;
+	/// discord.edit_role(server.id, role.id, "new name", 16711680, true, false, permissions, 2);
+	/// ```
+	pub fn edit_role(&self, server: ServerId, role: RoleId, name: &str, color: u64, hoist: bool, mentionable: bool, permissions: Permissions) -> Result<Role> {
+		let map = ObjectBuilder::new()
+			.insert("name", name)
+			.insert("color", color)
+			.insert("hoist", hoist)
+			.insert("mentionable", mentionable)
+			.insert("permissions", permissions.bits())
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/guilds/{}/roles/{}", server, role);
+		Role::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Move a role's position within the role list.
+	///
+	/// The updated set of roles is returned after modification.
+	///
+	/// `new_position` must be at least 1, as `@everyone` is always position 0.
+	///
+	/// # Errors
+	///
+	/// Returns a `Error::Other` if `new_position` is less than 1.
+	pub fn move_role(&self, server: ServerId, server_roles: &Vec<Role>, role: RoleId, new_position: i64) -> Result<Vec<Role>> {
+		if new_position < 1 {
+			return Err(Error::Other("Position must be at least 1"));
+		}
+		let mut roles_to_update = ArrayBuilder::new()
+			.push_object(|obj| obj
+				.insert("id", role.0)
+				.insert("position", new_position));
+		for server_role in server_roles {
+			roles_to_update = roles_to_update.push_object(|obj| obj
+				.insert("id", server_role.id.0)
+				.insert("position", if server_role.position >= new_position { server_role.position + 1 } else { server_role.position }));
+		}
+		let body = try!(serde_json::to_string(&roles_to_update.build()));
+		let response = request!(self, patch(body), "/guilds/{}/roles", server);
+		decode_array(try!(serde_json::from_reader(response)), Role::decode)
+	}
+
+	/// Delete a role from a server.
+	pub fn delete_role(&self, server: ServerId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/roles/{}", server, role))
+	}
 
 	/// Create a private channel with the given user, or return the existing
 	/// one if it exists.
