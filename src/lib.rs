@@ -37,6 +37,7 @@ extern crate log;
 #[cfg(feature="voice")]
 extern crate sodiumoxide;
 extern crate multipart;
+extern crate mime;
 extern crate base64;
 extern crate flate2;
 
@@ -468,16 +469,31 @@ impl Discord {
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+		use std::io::Write;
+
 		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
+		// NB: We're NOT using the Hyper itegration of multipart in order not to wrestle with the openssl-sys dependency hell.
+		let cr = multipart::mock::ClientRequest::default();
+		let mut multi = try!(multipart::client::Multipart::from_request(cr));
+		try!(multi.write_text("content", text));
+		try!(multi.write_stream("file", &mut file, Some(filename), None));
+		let http_buffer: multipart::mock::HttpBuffer = try!(multi.send());
+		fn multipart_mime(bound: &str) -> mime::Mime {
+			use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+			Mime(TopLevel::Multipart,
+				SubLevel::Ext("form-data".into()),
+				vec![(Attr::Ext("boundary".into()), Value::Ext(bound.into()))])
+		}
+
 		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
 		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
 		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
-		let mut request = try!(multipart::client::Multipart::from_request(request));
-		try!(request.write_text("content", text));
-		try!(request.write_stream("file", &mut file, Some(filename), None));
+		request.headers_mut().set(hyper::header::ContentType(multipart_mime(&http_buffer.boundary)));
+		let mut request = try!(request.start());
+		try!(request.write(&http_buffer.buf[..]));
 		Message::decode(try!(serde_json::from_reader(try!(check_status(request.send())))))
 	}
 
