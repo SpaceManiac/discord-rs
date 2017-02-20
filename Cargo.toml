@@ -17,9 +17,9 @@ voice = ["opus", "sodiumoxide"]
 
 [dependencies]
 hyper = { version = "0.10", default-features = false }
-hyper-rustls = "0.3.2"
+hyper-native-tls = "0.2.2"
 serde_json = "0.8"
-websocket = "0.17"
+websocket = { git = "https://github.com/avadacatavra/rust-websocket", branch = "hyper-bump" }
 bitflags = "0.7"
 byteorder = "0.5"
 time = "0.1"

@@ -24,6 +24,7 @@
 #![warn(missing_docs)]
 
 extern crate hyper;
+extern crate hyper_native_tls;
 extern crate serde_json;
 extern crate websocket;
 #[macro_use]
@@ -104,6 +105,12 @@ pub struct Discord {
 	token: String,
 }
 
+fn tls_client() -> hyper::Client {
+	let tls = hyper_native_tls::NativeTlsClient::new().expect("Error initializing NativeTlsClient");
+	let connector = hyper::net::HttpsConnector::new(tls);
+	hyper::Client::with_connector(connector)
+}
+
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
 	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
@@ -112,7 +119,7 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = hyper::Client::new();
+		let client = tls_client();
 		let response = try!(check_status(client.post(api_concat!("/auth/login"))
 			.header(hyper::header::ContentType::json())
 			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -163,7 +170,7 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = hyper::Client::new();
+			let client = tls_client();
 			let response = try!(check_status(client.post(api_concat!("/auth/login"))
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -211,7 +218,7 @@ impl Discord {
 	fn from_token_raw(token: String) -> Discord {
 		Discord {
 			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
+			client: tls_client(),
 			token: token,
 		}
 	}
@@ -1083,7 +1090,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(retry(|| client.get(
 		status_concat!("/incidents/unresolved.json"))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
@@ -1096,7 +1103,7 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/active.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
@@ -1109,7 +1116,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/upcoming.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
