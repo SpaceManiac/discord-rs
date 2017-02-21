@@ -869,26 +869,26 @@ impl Discord {
 	/// Create a new role on a server.
 	pub fn create_role(&self, server: ServerId, name: Option<&str>, permissions: Option<Permissions>,
 	                   color: Option<u64>, hoist: Option<bool>, mentionable: Option<bool>) -> Result<Role> {
-			let mut map = ObjectBuilder::new();
-			if let Some(name) = name {
-				map = map.insert("name", name);
-			}
-			if let Some(permissions) = permissions {
-				map = map.insert("permissions", permissions.bits());
-			}
-			if let Some(color) = color {
-				map = map.insert("color", color);
-			}
-			if let Some(hoist) = hoist {
-				map = map.insert("hoist", hoist);
-			}
-			if let Some(mentionable) = mentionable {
-				map = map.insert("mentionable", mentionable);
-			}
-			let map = map.build();
-			let body = try!(serde_json::to_string(&map));
-			let response = request!(self, post(body), "/guilds/{}/roles", server);
-			Role::decode(try!(serde_json::from_reader(response)))
+		let mut map = ObjectBuilder::new();
+		if let Some(name) = name {
+			map = map.insert("name", name);
+		}
+		if let Some(permissions) = permissions {
+			map = map.insert("permissions", permissions.bits());
+		}
+		if let Some(color) = color {
+			map = map.insert("color", color);
+		}
+		if let Some(hoist) = hoist {
+			map = map.insert("hoist", hoist);
+		}
+		if let Some(mentionable) = mentionable {
+			map = map.insert("mentionable", mentionable);
+		}
+		let map = map.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, post(body), "/guilds/{}/roles", server);
+		Role::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Remove specified role from a server.
