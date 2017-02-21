@@ -41,7 +41,7 @@ extern crate base64;
 extern crate flate2;
 
 use std::collections::BTreeMap;
-use serde_json::builder::ObjectBuilder;
+use serde_json::builder::{ObjectBuilder, ArrayBuilder};
 
 mod ratelimit;
 mod error;
@@ -860,10 +860,76 @@ impl Discord {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
 	}
 
-	// Create role
-	// Edit role
-	// Reorder roles
-	// Delete roles
+	/// Retrieve the list of roles for a server.
+	pub fn get_roles(&self, server: ServerId) -> Result<Vec<Role>> {
+			let response = request!(self, get, "/guilds/{}/roles", server);
+			decode_array(try!(serde_json::from_reader(response)), Role::decode)
+	}
+
+	/// Create a new role on a server.
+	pub fn create_role(&self, server: ServerId, name: Option<&str>, permissions: Option<Permissions>,
+	                   color: Option<u64>, hoist: Option<bool>, mentionable: Option<bool>) -> Result<Role> {
+			let mut map = ObjectBuilder::new();
+			if let Some(name) = name {
+				map = map.insert("name", name);
+			}
+			if let Some(permissions) = permissions {
+				map = map.insert("permissions", permissions.bits());
+			}
+			if let Some(color) = color {
+				map = map.insert("color", color);
+			}
+			if let Some(hoist) = hoist {
+				map = map.insert("hoist", hoist);
+			}
+			if let Some(mentionable) = mentionable {
+				map = map.insert("mentionable", mentionable);
+			}
+			let map = map.build();
+			let body = try!(serde_json::to_string(&map));
+			let response = request!(self, post(body), "/guilds/{}/roles", server);
+			Role::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Remove specified role from a server.
+	pub fn delete_role(&self, server: ServerId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/roles/{}", server, role))
+	}
+
+	/// Modify a role on a server.
+	pub fn edit_role<F: FnOnce(EditRole) -> EditRole>(&self, server: ServerId, role: RoleId, f: F) -> Result<Role> {
+		let map = EditRole::__build(f, Default::default()).build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/guilds/{}/roles/{}", server, role);
+		Role::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Add specified role to an user on a server.
+	pub fn add_user_to_role(&self, server: ServerId, user: UserId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, put, "/guilds/{}/members/{}/roles/{}", server, user, role))
+	}
+
+	/// Remove specified role from an user on a server.
+	pub fn remove_user_from_role(&self, server: ServerId, user: UserId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/members/{}/roles/{}", server, user, role))
+	}
+
+	/// Reorder roles on a server.
+	//  BROKEN: the trait `std::convert::From<&serde_json::Value>` is not implemented for `hyper::client::Body<'_>`
+	// pub fn reorder_roles(&self, server: ServerId, roles: &[(RoleId, usize)]) -> Result<Vec<Role>> {
+	// 	let mut body = ArrayBuilder::new();
+	// 	for &(role_id, position) in roles {
+	// 		body = body.push_object(|ob| {
+	// 			ob.insert("id", role_id.0);
+	// 			ob.insert("position", position);
+	// 			ob
+	// 		});
+	// 	}
+	// 	let body = body.build();
+
+	// 	let response = request!(self, patch(body), "/guilds/{}/roles", server);
+	// 	decode_array(try!(serde_json::from_reader(response)), Role::decode)
+	// }
 
 	/// Create a private channel with the given user, or return the existing
 	/// one if it exists.

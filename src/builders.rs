@@ -38,6 +38,9 @@ builder! {
 	/// Patch content for the `edit_user_profile` call.
 	EditUserProfile(ObjectBuilder);
 
+	/// Patch content for the `edit_role` call.
+	EditRole(ObjectBuilder);
+
 	/// Patch content for the `send_embed` call.
 	EmbedBuilder(ObjectBuilder);
 
@@ -185,6 +188,33 @@ impl EditUserProfile {
 	/// Edit the user's avatar. Use `None` to remove the avatar.
 	pub fn avatar(self, icon: Option<&str>) -> Self {
 		EditUserProfile(self.0.insert("avatar", icon))
+	}
+}
+
+impl EditRole {
+	/// Edit the role's name. Supply the empty string to remove a name.
+	pub fn name(self, name: &str) -> Self {
+		EditRole(self.0.insert("name", name))
+	}
+
+	/// Edit the role's permissions.
+	pub fn permissions(self, permissions: Permissions) -> Self {
+		EditRole(self.0.insert("permissions", permissions.bits()))
+	}
+
+	/// Edit the role's color.
+	pub fn color(self, color: u64) -> Self {
+		EditRole(self.0.insert("color", color))
+	}
+
+	/// Edit the role's hoist status (whether the role should be displayed separately in the sidebar).
+	pub fn hoist(self, hoist: bool) -> Self {
+		EditRole(self.0.insert("hoist", hoist))
+	}
+	
+	/// Edit the role's mentionable status.
+	pub fn mentionable(self, mentionable: bool) -> Self {
+		EditRole(self.0.insert("mentionable", mentionable))
 	}
 }
 
