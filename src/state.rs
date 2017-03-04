@@ -99,31 +99,22 @@ impl State {
 					}
 				}
 			},
-			Event::UserSettingsUpdate {
-				ref detect_platform_accounts, ref developer_mode,
-				ref enable_tts_command, ref inline_attachment_media,
-				ref inline_embed_media, ref locale,
-				ref message_display_compact,
-				ref render_embeds, ref server_positions,
-				ref show_current_game, ref status,
-				ref theme, ref convert_emoticons,
-				ref friend_source_flags,
-			} => {
+			Event::UserSettingsUpdate(ref update) => {
 				if let Some(settings) = self.settings.as_mut() {
-					opt_modify(&mut settings.detect_platform_accounts, detect_platform_accounts);
-					opt_modify(&mut settings.developer_mode, developer_mode);
-					opt_modify(&mut settings.enable_tts_command, enable_tts_command);
-					opt_modify(&mut settings.inline_attachment_media, inline_attachment_media);
-					opt_modify(&mut settings.inline_embed_media, inline_embed_media);
-					opt_modify(&mut settings.locale, locale);
-					opt_modify(&mut settings.message_display_compact, message_display_compact);
-					opt_modify(&mut settings.render_embeds, render_embeds);
-					opt_modify(&mut settings.server_positions, server_positions);
-					opt_modify(&mut settings.show_current_game, show_current_game);
-					opt_modify(&mut settings.status, status);
-					opt_modify(&mut settings.theme, theme);
-					opt_modify(&mut settings.convert_emoticons, convert_emoticons);
-					opt_modify(&mut settings.friend_source_flags, friend_source_flags);
+					opt_modify(&mut settings.detect_platform_accounts, &update.detect_platform_accounts);
+					opt_modify(&mut settings.developer_mode, &update.developer_mode);
+					opt_modify(&mut settings.enable_tts_command, &update.enable_tts_command);
+					opt_modify(&mut settings.inline_attachment_media, &update.inline_attachment_media);
+					opt_modify(&mut settings.inline_embed_media, &update.inline_embed_media);
+					opt_modify(&mut settings.locale, &update.locale);
+					opt_modify(&mut settings.message_display_compact, &update.message_display_compact);
+					opt_modify(&mut settings.render_embeds, &update.render_embeds);
+					opt_modify(&mut settings.server_positions, &update.server_positions);
+					opt_modify(&mut settings.show_current_game, &update.show_current_game);
+					opt_modify(&mut settings.status, &update.status);
+					opt_modify(&mut settings.theme, &update.theme);
+					opt_modify(&mut settings.convert_emoticons, &update.convert_emoticons);
+					opt_modify(&mut settings.friend_source_flags, &update.friend_source_flags);
 				}
 			}
 			Event::UserServerSettingsUpdate(ref settings) => {
@@ -172,10 +163,10 @@ impl State {
 					Entry::Occupied(mut e) => { e.get_mut().clone_from(call); }
 				}
 			}
-			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
-				if let Some(call) = self.calls.get_mut(&channel_id) {
-					call.region.clone_from(region);
-					call.ringing.clone_from(ringing);
+			Event::CallUpdate(ref update) => {
+				if let Some(call) = self.calls.get_mut(&update.channel_id) {
+					call.region.clone_from(&update.region);
+					call.ringing.clone_from(&update.ringing);
 				}
 			}
 			Event::CallDelete(channel_id) => {
@@ -191,19 +182,19 @@ impl State {
 					group.recipients.retain(|u| u.id != user.id);
 				}
 			}
-			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
-				if let Some(server_id) = server_id {
+			Event::PresenceUpdate(ref update) => {
+				if let Some(server_id) = update.server_id {
 					self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
 						// If the user was modified, update the member list
-						if let Some(user) = presence.user.as_ref() {
+						if let Some(user) = update.presence.user.as_ref() {
 							srv.members.iter_mut().find(|u| u.user.id == user.id).map(|member| {
 								member.user.clone_from(user);
 							});
 						}
-						update_presence(&mut srv.presences, presence);
+						update_presence(&mut srv.presences, &update.presence);
 					});
 				} else {
-					update_presence(&mut self.presences, presence);
+					update_presence(&mut self.presences, &update.presence);
 				}
 			}
 			Event::PresencesReplace(ref presences) => {
@@ -251,12 +242,12 @@ impl State {
 					srv.members.push(member.clone());
 				});
 			}
-			Event::ServerMemberUpdate { ref server_id, ref roles, ref user, ref nick } => {
-				self.servers.iter_mut().find(|s| s.id == *server_id).map(|srv| {
-					srv.members.iter_mut().find(|m| m.user.id == user.id).map(|member| {
-						member.user.clone_from(user);
-						member.roles.clone_from(roles);
-						member.nick.clone_from(nick);
+			Event::ServerMemberUpdate(ref update) => {
+				self.servers.iter_mut().find(|s| s.id == update.server_id).map(|srv| {
+					srv.members.iter_mut().find(|m| m.user.id == update.user.id).map(|member| {
+						member.user.clone_from(&update.user);
+						member.roles.clone_from(&update.roles);
+						member.nick.clone_from(&update.nick);
 					})
 				});
 			}
@@ -271,11 +262,11 @@ impl State {
 					srv.members.extend_from_slice(members);
 				});
 			}
-			Event::ServerSync { server_id, large, ref members, ref presences } => {
-				self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
-					srv.large = large;
-					srv.members.clone_from(members);
-					srv.presences.clone_from(presences);
+			Event::ServerSync(ref sync) => {
+				self.servers.iter_mut().find(|s| s.id == sync.server_id).map(|srv| {
+					srv.large = sync.large;
+					srv.members.clone_from(&sync.members);
+					srv.presences.clone_from(&sync.presences);
 				});
 			}
 			Event::ServerRoleCreate(ref server_id, ref role) => {
@@ -352,25 +343,25 @@ impl State {
 					});
 				}
 			},
-			Event::ChannelPinsUpdate { ref channel_id, ref last_pin_timestamp } => {
+			Event::ChannelPinsUpdate(ref update) => {
 				for server in &mut self.servers {
 					for channel in &mut server.channels {
-						if channel.id == *channel_id {
-							channel.last_pin_timestamp = last_pin_timestamp.clone();
+						if channel.id == update.channel_id {
+							channel.last_pin_timestamp = update.last_pin_timestamp.clone();
 							return
 						}
 					}
 				}
 
 				for channel in &mut self.private_channels {
-					if channel.id == *channel_id {
-						channel.last_pin_timestamp = last_pin_timestamp.clone();
+					if channel.id == update.channel_id {
+						channel.last_pin_timestamp = update.last_pin_timestamp.clone();
 						return
 					}
 				}
 
-				if let Some(group) = self.groups.get_mut(channel_id) {
-					group.last_pin_timestamp = last_pin_timestamp.clone();
+				if let Some(group) = self.groups.get_mut(&update.channel_id) {
+					group.last_pin_timestamp = update.last_pin_timestamp.clone();
 					return
 				}
 			}

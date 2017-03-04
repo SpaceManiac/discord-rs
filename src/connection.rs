@@ -226,8 +226,8 @@ impl Connection {
 						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
 							self.voice(server_id).__update_state(voice_state);
 						}
-						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
-							self.voice(server_id).__update_server(endpoint, token);
+						if let Event::VoiceServerUpdate(ref update) = event {
+							self.voice(update.server_id).__update_server(&update.endpoint, &update.token);
 						}
 					}
 					return Ok(event);

@@ -1775,6 +1775,138 @@ pub struct ReadyEvent {
 	pub shard: Option<[u8; 2]>,
 }
 
+// Contains information about a successful reconnection
+#[derive(Debug, Clone)]
+pub struct Resumed {
+	pub trace: Vec<Option<String>>,
+}
+
+/// Struct containing information about the logged-in user's preferences or
+/// client settings
+#[derive(Debug, Clone)]
+pub struct UserSettingsUpdate {
+	pub detect_platform_accounts: Option<bool>,
+	pub developer_mode: Option<bool>,
+	pub enable_tts_command: Option<bool>,
+	pub inline_attachment_media: Option<bool>,
+	pub inline_embed_media: Option<bool>,
+	pub locale: Option<String>,
+	pub message_display_compact: Option<bool>,
+	pub render_embeds: Option<bool>,
+	pub server_positions: Option<Vec<ServerId>>,
+	pub show_current_game: Option<bool>,
+	pub status: Option<String>,
+	pub theme: Option<String>,
+	pub convert_emoticons: Option<bool>,
+	pub friend_source_flags: Option<FriendSourceFlags>,
+}
+
+/// Voice server information
+#[derive(Debug, Clone)]
+pub struct VoiceServerUpdate {
+	pub server_id: Option<ServerId>,
+	pub channel_id: Option<ChannelId>,
+	pub endpoint: Option<String>,
+	pub token: String,
+}
+
+/// Group call update information
+#[derive(Debug, Clone)]
+pub struct CallUpdate {
+	pub channel_id: ChannelId,
+	pub message_id: MessageId,
+	pub region: String,
+	pub ringing: Vec<UserId>,
+}
+
+/// Received when a user started typing, the typing is considered to last 10
+/// seconds.
+#[derive(Debug, Clone)]
+pub struct TypingStart {
+	pub channel_id: ChannelId,
+	pub user_id: UserId,
+	pub timestamp: u64,
+}
+
+/// Contains information about the changed presence of a user
+#[derive(Debug, Clone)]
+pub struct PresenceUpdate {
+	pub presence: Presence,
+	pub server_id: Option<ServerId>,
+	pub roles: Option<Vec<RoleId>>,
+}
+
+/// Received when a message has been updated.
+#[derive(Debug, Clone)]
+pub struct MessageUpdate {
+	pub id: MessageId,
+	pub channel_id: ChannelId,
+	pub kind: Option<MessageType>,
+	pub content: Option<String>,
+	pub nonce: Option<String>,
+	pub tts: Option<bool>,
+	pub pinned: Option<bool>,
+	pub timestamp: Option<String>,
+	pub edited_timestamp: Option<String>,
+	pub author: Option<User>,
+	pub mention_everyone: Option<bool>,
+	pub mentions: Option<Vec<User>>,
+	pub mention_roles: Option<Vec<RoleId>>,
+	pub attachments: Option<Vec<Attachment>>,
+	pub embeds: Option<Vec<Value>>,
+}
+
+/// Holds information when a message was acknowledged by another logged-in
+/// device
+#[derive(Debug, Clone)]
+pub struct MessageAck {
+	pub channel_id: ChannelId,
+	/// May be `None` if a private channel with no messages has closed.
+	pub message_id: Option<MessageId>,
+}
+
+/// Received when a message was deleted
+#[derive(Debug, Clone)]
+pub struct MessageDelete {
+	pub channel_id: ChannelId,
+	pub message_id: MessageId,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageDeleteBulk {
+	pub channel_id: ChannelId,
+	pub ids: Vec<MessageId>,
+}
+
+/// Received when a member's roles have changed
+#[derive(Debug, Clone)]
+pub struct ServerMemberUpdate {
+	pub server_id: ServerId,
+	pub roles: Vec<RoleId>,
+	pub user: User,
+	pub nick: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServerSync {
+	pub server_id: ServerId,
+	pub large: bool,
+	pub members: Vec<Member>,
+	pub presences: Vec<Presence>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelPinsAck {
+	pub channel_id: ChannelId,
+	pub timestamp: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelPinsUpdate {
+	pub channel_id: ChannelId,
+	pub last_pin_timestamp: Option<String>,
+}
+
 /// Event received over a websocket connection
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -1783,129 +1915,64 @@ pub enum Event {
 	/// May also be received at a later time in the event of a reconnect.
 	Ready(ReadyEvent),
 	/// The connection has successfully resumed after a disconnect.
-	Resumed {
-		trace: Vec<Option<String>>,
-	},
-
+	Resumed(Resumed),
 	/// Update to the logged-in user's information
 	UserUpdate(CurrentUser),
 	/// Update to a note that the logged-in user has set for another user.
 	UserNoteUpdate(UserId, String),
 	/// Update to the logged-in user's preferences or client settings
-	UserSettingsUpdate {
-		detect_platform_accounts: Option<bool>,
-		developer_mode: Option<bool>,
-		enable_tts_command: Option<bool>,
-		inline_attachment_media: Option<bool>,
-		inline_embed_media: Option<bool>,
-		locale: Option<String>,
-		message_display_compact: Option<bool>,
-		render_embeds: Option<bool>,
-		server_positions: Option<Vec<ServerId>>,
-		show_current_game: Option<bool>,
-		status: Option<String>,
-		theme: Option<String>,
-		convert_emoticons: Option<bool>,
-		friend_source_flags: Option<FriendSourceFlags>,
-	},
+	UserSettingsUpdate(UserSettingsUpdate),
 	/// Update to the logged-in user's server-specific notification settings
 	UserServerSettingsUpdate(UserServerSettings),
 	/// A member's voice state has changed
 	VoiceStateUpdate(Option<ServerId>, VoiceState),
 	/// Voice server information is available
-	VoiceServerUpdate {
-		server_id: Option<ServerId>,
-		channel_id: Option<ChannelId>,
-		endpoint: Option<String>,
-		token: String,
-	},
+	VoiceServerUpdate(VoiceServerUpdate),
 	/// A new group call has been created
 	CallCreate(Call),
 	/// A group call has been updated
-	CallUpdate {
-		channel_id: ChannelId,
-		message_id: MessageId,
-		region: String,
-		ringing: Vec<UserId>,
-	},
+	CallUpdate(CallUpdate),
 	/// A group call has been deleted (the call ended)
 	CallDelete(ChannelId),
 	/// A user has been added to a group
 	ChannelRecipientAdd(ChannelId, User),
 	/// A user has been removed from a group
 	ChannelRecipientRemove(ChannelId, User),
-
-	/// A user is typing; considered to last 5 seconds
-	TypingStart {
-		channel_id: ChannelId,
-		user_id: UserId,
-		timestamp: u64,
-	},
+	/// A user is typing; considered to last 10 seconds
+	TypingStart(TypingStart),
 	/// A member's presence state (or username or avatar) has changed
-	PresenceUpdate {
-		presence: Presence,
-		server_id: Option<ServerId>,
-		roles: Option<Vec<RoleId>>,
-	},
+	PresenceUpdate(PresenceUpdate),
 	/// The precense list of the user's friends should be replaced entirely
 	PresencesReplace(Vec<Presence>),
 	RelationshipAdd(Relationship),
 	RelationshipRemove(UserId, RelationshipType),
 
+	/// A new message has been created (received).
+	/// This event is also received when `Discord::send_message` was used.
 	MessageCreate(Message),
-	/// A message has been edited, either by the user or the system
-	MessageUpdate {
-		id: MessageId,
-		channel_id: ChannelId,
-		kind: Option<MessageType>,
-		content: Option<String>,
-		nonce: Option<String>,
-		tts: Option<bool>,
-		pinned: Option<bool>,
-		timestamp: Option<String>,
-		edited_timestamp: Option<String>,
-		author: Option<User>,
-		mention_everyone: Option<bool>,
-		mentions: Option<Vec<User>>,
-		mention_roles: Option<Vec<RoleId>>,
-		attachments: Option<Vec<Attachment>>,
-		embeds: Option<Vec<Value>>,
-	},
+	/// A message has been edited, either by the user or the system.
+	/// If an embedded message is sent or a message with a link was transformed
+	/// into an embedded message, this event will be returned.
+	MessageUpdate(MessageUpdate),
 	/// Another logged-in device acknowledged this message
-	MessageAck {
-		channel_id: ChannelId,
-		/// May be `None` if a private channel with no messages has closed.
-		message_id: Option<MessageId>,
-	},
-	MessageDelete {
-		channel_id: ChannelId,
-		message_id: MessageId,
-	},
-	MessageDeleteBulk {
-		channel_id: ChannelId,
-		ids: Vec<MessageId>,
-	},
+	MessageAck(MessageAck),
+	MessageDelete(MessageDelete),
+	MessageDeleteBulk(MessageDeleteBulk),
 
+	/// A new server was created or this account has been added to a new server
+	/// or this account connected to a server.
 	ServerCreate(PossibleServer<LiveServer>),
 	ServerUpdate(Server),
+	/// A server was deleted or this account has been removed from the server.
 	ServerDelete(PossibleServer<Server>),
 
+	/// A new member joined the server
 	ServerMemberAdd(ServerId, Member),
 	/// A member's roles have changed
-	ServerMemberUpdate {
-		server_id: ServerId,
-		roles: Vec<RoleId>,
-		user: User,
-		nick: Option<String>,
-	},
+	ServerMemberUpdate(ServerMemberUpdate),
 	ServerMemberRemove(ServerId, User),
 	ServerMembersChunk(ServerId, Vec<Member>),
-	ServerSync {
-		server_id: ServerId,
-		large: bool,
-		members: Vec<Member>,
-		presences: Vec<Presence>,
-	},
+	ServerSync(ServerSync),
 
 	ServerRoleCreate(ServerId, Role),
 	ServerRoleUpdate(ServerId, Role),
@@ -1920,14 +1987,8 @@ pub enum Event {
 	ChannelCreate(Channel),
 	ChannelUpdate(Channel),
 	ChannelDelete(Channel),
-	ChannelPinsAck {
-		channel_id: ChannelId,
-		timestamp: String,
-	},
-	ChannelPinsUpdate {
-		channel_id: ChannelId,
-		last_pin_timestamp: Option<String>,
-	},
+	ChannelPinsAck(ChannelPinsAck),
+	ChannelPinsUpdate(ChannelPinsUpdate),
 
 	ReactionAdd(Reaction),
 	ReactionRemove(Reaction),
@@ -1963,9 +2024,9 @@ impl Event {
 				shard: try!(opt(&mut value, "shard", decode_shards)),
 			}))
 		} else if kind == "RESUMED" {
-			warn_json!(value, Event::Resumed {
+			warn_json!(value, Event::Resumed(Resumed {
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
-			})
+			}))
 		} else if kind == "USER_UPDATE" {
 			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else if kind == "USER_NOTE_UPDATE" {
@@ -1974,7 +2035,7 @@ impl Event {
 				try!(remove(&mut value, "note").and_then(into_string)),
 			))
 		} else if kind == "USER_SETTINGS_UPDATE" {
-			warn_json!(value, Event::UserSettingsUpdate {
+			warn_json!(value, Event::UserSettingsUpdate(UserSettingsUpdate {
 				detect_platform_accounts: remove(&mut value, "detect_platform_accounts").ok().and_then(|v| v.as_bool()),
 				developer_mode: remove(&mut value, "developer_mode").ok().and_then(|v| v.as_bool()),
 				enable_tts_command: remove(&mut value, "enable_tts_command").ok().and_then(|v| v.as_bool()),
@@ -1989,30 +2050,30 @@ impl Event {
 				theme: try!(opt(&mut value, "theme", into_string)),
 				convert_emoticons: remove(&mut value, "convert_emoticons").ok().and_then(|v| v.as_bool()),
 				friend_source_flags: try!(opt(&mut value, "friend_source_flags", FriendSourceFlags::decode)),
-			})
+			}))
 		} else if kind == "USER_GUILD_SETTINGS_UPDATE" {
 			UserServerSettings::decode(Value::Object(value)).map(Event::UserServerSettingsUpdate)
 		} else if kind == "VOICE_STATE_UPDATE" {
 			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
 			Ok(Event::VoiceStateUpdate(server_id, try!(VoiceState::decode(Value::Object(value)))))
 		} else if kind == "VOICE_SERVER_UPDATE" {
-			warn_json!(value, Event::VoiceServerUpdate {
+			warn_json!(value, Event::VoiceServerUpdate(VoiceServerUpdate {
 				server_id: try!(opt(&mut value, "guild_id", ServerId::decode)),
 				channel_id: try!(opt(&mut value, "channel_id", ChannelId::decode)),
 				endpoint: try!(opt(&mut value, "endpoint", into_string)),
 				token: try!(remove(&mut value, "token").and_then(into_string)),
-			})
+			}))
 		} else if kind == "CALL_CREATE" {
 			Ok(Event::CallCreate(try!(Call::decode(Value::Object(value)))))
 		} else if kind == "CALL_DELETE" {
 			Ok(Event::CallDelete(try!(remove(&mut value, "channel_id").and_then(ChannelId::decode))))
 		} else if kind == "CALL_UPDATE" {
-			warn_json!(value, Event::CallUpdate {
+			warn_json!(value, Event::CallUpdate(CallUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
 				region: try!(remove(&mut value, "region").and_then(into_string)),
 				ringing: try!(decode_array(try!(remove(&mut value, "ringing")), UserId::decode)),
-			})
+			}))
 		} else if kind == "CHANNEL_RECIPIENT_ADD" {
 			let channel_id = try!(remove(&mut value, "channel_id").and_then(ChannelId::decode));
 			let user = try!(remove(&mut value, "user").and_then(User::decode));
@@ -2022,20 +2083,20 @@ impl Event {
 			let user = try!(remove(&mut value, "user").and_then(User::decode));
 			Ok(Event::ChannelRecipientRemove(channel_id, user))
 		} else if kind == "TYPING_START" {
-			warn_json!(value, Event::TypingStart {
+			warn_json!(value, Event::TypingStart(TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
 				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
-			})
+			}))
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
 			let roles = try!(opt(&mut value, "roles", |v| decode_array(v, RoleId::decode)));
 			let presence = try!(Presence::decode(Value::Object(value)));
-			Ok(Event::PresenceUpdate {
+			Ok(Event::PresenceUpdate(PresenceUpdate {
 				server_id: server_id,
 				roles: roles,
 				presence: presence,
-			})
+			}))
 		} else if kind == "RELATIONSHIP_ADD" {
 			Relationship::decode(Value::Object(value)).map(Event::RelationshipAdd)
 		} else if kind == "RELATIONSHIP_REMOVE" {
@@ -2050,7 +2111,7 @@ impl Event {
 		} else if kind == "MESSAGE_CREATE" {
 			Message::decode(Value::Object(value)).map(Event::MessageCreate)
 		} else if kind == "MESSAGE_UPDATE" {
-			warn_json!(value, Event::MessageUpdate {
+			warn_json!(value, Event::MessageUpdate(MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				kind: try!(opt(&mut value, "type", MessageType::decode)),
@@ -2066,22 +2127,22 @@ impl Event {
 				mention_roles: try!(opt(&mut value, "mention_roles", |v| decode_array(v, RoleId::decode))),
 				attachments: try!(opt(&mut value, "attachments", |v| decode_array(v, Attachment::decode))),
 				embeds: try!(opt(&mut value, "embeds", |v| decode_array(v, Ok))),
-			})
+			}))
 		} else if kind == "MESSAGE_ACK" {
-			warn_json!(value, Event::MessageAck {
+			warn_json!(value, Event::MessageAck(MessageAck {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				message_id: try!(opt(&mut value, "message_id", MessageId::decode)),
-			})
+			}))
 		} else if kind == "MESSAGE_DELETE" {
-			warn_json!(value, Event::MessageDelete {
+			warn_json!(value, Event::MessageDelete(MessageDelete {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				message_id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
-			})
+			}))
 		} else if kind == "MESSAGE_DELETE_BULK" {
-			warn_json!(value, Event::MessageDeleteBulk {
+			warn_json!(value, Event::MessageDeleteBulk(MessageDeleteBulk {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				ids: try!(decode_array(try!(remove(&mut value, "ids")), MessageId::decode)),
-			})
+			}))
 		} else if kind == "GUILD_CREATE" {
 			PossibleServer::<LiveServer>::decode(Value::Object(value)).map(Event::ServerCreate)
 		} else if kind == "GUILD_UPDATE" {
@@ -2094,12 +2155,12 @@ impl Event {
 				try!(Member::decode(Value::Object(value))),
 			))
 		} else if kind == "GUILD_MEMBER_UPDATE" {
-			warn_json!(value, Event::ServerMemberUpdate {
+			warn_json!(value, Event::ServerMemberUpdate(ServerMemberUpdate {
 				server_id: try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
 				roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
 				user: try!(remove(&mut value, "user").and_then(User::decode)),
 				nick: try!(opt(&mut value, "nick", into_string)),
-			})
+			}))
 		} else if kind == "GUILD_MEMBER_REMOVE" {
 			warn_json!(value, Event::ServerMemberRemove(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
@@ -2111,12 +2172,12 @@ impl Event {
 				try!(remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))),
 			))
 		} else if kind == "GUILD_SYNC" {
-			warn_json!(value, Event::ServerSync {
+			warn_json!(value, Event::ServerSync(ServerSync {
 				server_id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
 				large: req!(try!(remove(&mut value, "large")).as_bool()),
 				members: try!(remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))),
 				presences: try!(decode_array(try!(remove(&mut value, "presences")), Presence::decode)),
-			})
+			}))
 		} else if kind == "GUILD_ROLE_CREATE" {
 			warn_json!(value, Event::ServerRoleCreate(
 				try!(remove(&mut value, "guild_id").and_then(ServerId::decode)),
@@ -2158,15 +2219,15 @@ impl Event {
 		} else if kind == "CHANNEL_DELETE" {
 			Channel::decode(Value::Object(value)).map(Event::ChannelDelete)
 		} else if kind == "CHANNEL_PINS_ACK" {
-			warn_json!(value, Event::ChannelPinsAck {
+			warn_json!(value, Event::ChannelPinsAck(ChannelPinsAck {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
-			})
+			}))
 		} else if kind == "CHANNEL_PINS_UPDATE" {
-			warn_json!(value, Event::ChannelPinsUpdate {
+			warn_json!(value, Event::ChannelPinsUpdate(ChannelPinsUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
-			})
+			}))
 		} else {
 			Ok(Event::Unknown(kind, value))
 		}
