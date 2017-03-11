@@ -244,7 +244,7 @@ map_numbers! { ChannelType;
 }
 
 /// The basic information about a server only
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ServerInfo {
 	pub id: ServerId,
 	pub name: String,
@@ -275,7 +275,7 @@ impl ServerInfo {
 }
 
 /// Static information about a server
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Server {
 	pub id: ServerId,
 	pub name: String,
@@ -329,7 +329,7 @@ impl Server {
 
 /// Representation of the number of member that would be pruned by a server
 /// prune operation.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ServerPrune {
 	pub pruned: u64,
 }
@@ -344,7 +344,7 @@ impl ServerPrune {
 }
 
 /// Information about a role
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Role {
 	pub id: RoleId,
 	pub name: String,
@@ -378,7 +378,7 @@ impl Role {
 }
 
 /// A banning of a user
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Ban {
 	reason: Option<String>,
 	user: User,
@@ -395,7 +395,7 @@ impl Ban {
 }
 
 /// Broadly-applicable user information
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct User {
 	pub id: UserId,
 	pub name: String,
@@ -430,7 +430,7 @@ impl User {
 }
 
 /// Information about a member of a server
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Member {
 	pub user: User,
 	pub roles: Vec<RoleId>,
@@ -463,7 +463,7 @@ impl Member {
 }
 
 /// A private or public channel
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Channel {
 	/// A group channel separate from a server
 	Group(Group),
@@ -487,7 +487,7 @@ impl Channel {
 }
 
 /// A group channel, potentially including other users, separate from a server.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Group {
 	pub channel_id: ChannelId,
 	pub icon: Option<String>,
@@ -541,7 +541,7 @@ impl Group {
 }
 
 /// An active group or private call
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Call {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
@@ -566,7 +566,7 @@ impl Call {
 }
 
 /// Private text channel to another user
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
 	pub kind: ChannelType,
@@ -593,7 +593,7 @@ impl PrivateChannel {
 }
 
 /// Public voice or text channel within a server
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PublicChannel {
 	pub id: ChannelId,
 	pub name: String,
@@ -645,7 +645,7 @@ pub enum PermissionOverwriteType {
 }
 
 /// A channel-specific permission overwrite for a role or member.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PermissionOverwrite {
 	pub kind: PermissionOverwriteType,
 	pub allow: Permissions,
@@ -732,7 +732,7 @@ pub mod permissions {
 }
 
 /// File upload attached to a message
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Attachment {
 	pub id: String,
 	/// Short filename for the attachment
@@ -841,7 +841,7 @@ map_numbers! { MessageType;
 }
 
 /// Information about an invite
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Invite {
 	pub code: String,
 	pub server_id: ServerId,
@@ -878,7 +878,7 @@ impl Invite {
 }
 
 /// Detailed information about an invite, available to server managers
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RichInvite {
 	pub code: String,
 	pub server_icon: Option<String>,
@@ -933,7 +933,7 @@ impl RichInvite {
 }
 
 /// Information about an available voice region
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct VoiceRegion {
 	pub id: String,
 	pub name: String,
@@ -961,7 +961,7 @@ impl VoiceRegion {
 // Event model
 
 /// Summary of messages since last login
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ReadState {
 	/// Id of the relevant channel
 	pub id: ChannelId,
@@ -1013,7 +1013,7 @@ map_numbers! { GameType;
 }
 
 /// Information about a game being played
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Game {
 	pub name: String,
 	pub url: Option<String>,
@@ -1057,7 +1057,7 @@ impl Game {
 }
 
 /// A members's online status
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Presence {
 	pub user_id: UserId,
 	pub status: OnlineStatus,
@@ -1094,7 +1094,7 @@ impl Presence {
 }
 
 /// A member's state within a voice channel
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct VoiceState {
 	pub user_id: UserId,
 	pub channel_id: Option<ChannelId>,
@@ -1145,7 +1145,7 @@ map_numbers! { VerificationLevel;
 }
 
 /// A parter custom emoji
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Emoji {
 	pub id: EmojiId,
 	pub name: String,
@@ -1168,7 +1168,7 @@ impl Emoji {
 }
 
 /// A full single reaction
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Reaction {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
@@ -1189,7 +1189,7 @@ impl Reaction {
 }
 
 /// Information on a reaction as available at a glance on a message.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MessageReaction {
 	pub count: u64,
 	pub me: bool,
@@ -1208,7 +1208,7 @@ impl MessageReaction {
 }
 
 /// Emoji information sent only from reaction events
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ReactionEmoji {
 	Unicode(String),
 	Custom { name: String, id: EmojiId },
@@ -1226,7 +1226,7 @@ impl ReactionEmoji {
 }
 
 /// Live server information
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct LiveServer {
 	pub id: ServerId,
 	pub name: String,
@@ -1365,7 +1365,7 @@ impl LiveServer {
 }
 
 /// A server which may be unavailable
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum PossibleServer<T> {
 	/// An offline server, the ID of which is known
 	Offline(ServerId),
@@ -1410,7 +1410,7 @@ impl PossibleServer<Server> {
 }
 
 /// Information about the logged-in user
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
@@ -1439,7 +1439,7 @@ impl CurrentUser {
 }
 
 /// Information about the current application and the owner.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ApplicationInfo {
 	pub description: String,
 	pub flags: u64,
@@ -1494,7 +1494,7 @@ impl RelationshipType {
 }
 
 /// Information on a friendship relationship this user has with another.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Relationship {
 	pub id: UserId,
 	pub kind: RelationshipType,
@@ -1513,7 +1513,7 @@ impl Relationship {
 }
 
 /// Flags for who may add this user as a friend.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FriendSourceFlags {
 	pub all: bool,
 	pub mutual_friends: bool,
@@ -1532,7 +1532,7 @@ impl FriendSourceFlags {
 }
 
 /// User settings usually used to influence client behavior
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UserSettings {
 	pub detect_platform_accounts: bool,
 	pub developer_mode: bool,
@@ -1599,7 +1599,7 @@ map_numbers! { NotificationLevel;
 }
 
 /// A channel-specific notification settings override
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ChannelOverride {
 	pub channel_id: ChannelId,
 	pub message_notifications: NotificationLevel,
@@ -1618,7 +1618,7 @@ impl ChannelOverride {
 }
 
 /// User settings which influence per-server notification behavior
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UserServerSettings {
 	pub server_id: Option<ServerId>,
 	pub message_notifications: NotificationLevel,
@@ -1643,7 +1643,7 @@ impl UserServerSettings {
 }
 
 /// Progress through the Discord tutorial
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Tutorial {
 	pub indicators_suppressed: bool,
 	pub indicators_confirmed: Vec<String>,
@@ -1662,7 +1662,7 @@ impl Tutorial {
 /// Discord status maintenance message.
 ///
 /// This can be either for active maintenances or scheduled maintenances.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Maintenance {
 	pub description: String,
 	pub id: String,
@@ -1754,7 +1754,7 @@ impl IncidentUpdate {
 }
 
 /// The "Ready" event, containing initial state
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ReadyEvent {
 	pub version: u64,
 	pub user: CurrentUser,
@@ -1776,14 +1776,14 @@ pub struct ReadyEvent {
 }
 
 // Contains information about a successful reconnection
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Resumed {
 	pub trace: Vec<Option<String>>,
 }
 
 /// Struct containing information about the logged-in user's preferences or
 /// client settings
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct UserSettingsUpdate {
 	pub detect_platform_accounts: Option<bool>,
 	pub developer_mode: Option<bool>,
@@ -1802,7 +1802,7 @@ pub struct UserSettingsUpdate {
 }
 
 /// Voice server information
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct VoiceServerUpdate {
 	pub server_id: Option<ServerId>,
 	pub channel_id: Option<ChannelId>,
@@ -1811,7 +1811,7 @@ pub struct VoiceServerUpdate {
 }
 
 /// Group call update information
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CallUpdate {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
@@ -1821,7 +1821,7 @@ pub struct CallUpdate {
 
 /// Received when a user started typing, the typing is considered to last 10
 /// seconds.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TypingStart {
 	pub channel_id: ChannelId,
 	pub user_id: UserId,
@@ -1829,7 +1829,7 @@ pub struct TypingStart {
 }
 
 /// Contains information about the changed presence of a user
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PresenceUpdate {
 	pub presence: Presence,
 	pub server_id: Option<ServerId>,
@@ -1858,7 +1858,7 @@ pub struct MessageUpdate {
 
 /// Holds information when a message was acknowledged by another logged-in
 /// device
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MessageAck {
 	pub channel_id: ChannelId,
 	/// May be `None` if a private channel with no messages has closed.
@@ -1866,20 +1866,20 @@ pub struct MessageAck {
 }
 
 /// Received when a message was deleted
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MessageDelete {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MessageDeleteBulk {
 	pub channel_id: ChannelId,
 	pub ids: Vec<MessageId>,
 }
 
 /// Received when a member's roles have changed
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ServerMemberUpdate {
 	pub server_id: ServerId,
 	pub roles: Vec<RoleId>,
@@ -1887,7 +1887,7 @@ pub struct ServerMemberUpdate {
 	pub nick: Option<String>,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ServerSync {
 	pub server_id: ServerId,
 	pub large: bool,
@@ -1895,13 +1895,13 @@ pub struct ServerSync {
 	pub presences: Vec<Presence>,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ChannelPinsAck {
 	pub channel_id: ChannelId,
 	pub timestamp: String,
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ChannelPinsUpdate {
 	pub channel_id: ChannelId,
 	pub last_pin_timestamp: Option<String>,
