@@ -1,6 +1,6 @@
 [package]
 name = "discord"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
 
 description = "Client library for the Discord API"
@@ -9,7 +9,7 @@ license = "MIT"
 keywords = ["discord", "chat", "bot", "api", "voice"]
 
 repository = "https://github.com/SpaceManiac/discord-rs"
-documentation = "http://wombat.platymuus.com/rustdoc/discord_0.7.0/"
+documentation = "https://docs.rs/discord/0.8.0"
 
 [features]
 default = ["voice"]
