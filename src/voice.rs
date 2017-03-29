@@ -327,6 +327,8 @@ impl Drop for ProcessStream {
 	fn drop(&mut self) {
 		// If we can't kill it, it's dead already or out of our hands
 		let _ = self.0.kill();
+		// To avoid zombie processes, we must also wait on it
+		let _ = self.0.wait();
 	}
 }
 
