@@ -891,6 +891,12 @@ impl Discord {
 		Ok(vec)
 	}
 
+	/// Get the logged-in user's profile.
+	pub fn get_current_user(&self) -> Result<CurrentUser> {
+		let response = request!(self, get, "/users/@me");
+		CurrentUser::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Edit the logged-in bot or user's profile. See `EditProfile` for editable fields.
 	///
 	/// Usable for bot and user accounts. Only allows updating the username and
