@@ -3,16 +3,23 @@
 //! These types do not usually need to be imported, but the methods available
 //! on them are very relevant to where they are used.
 
+use serde_json;
 use serde_json::builder::{ObjectBuilder, ArrayBuilder};
 use model::*;
 
 macro_rules! builder {
-	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
+	($(#[$attr:meta] $name:ident($inner:ident);)*) => {
 		$(
 			#[$attr]
-			pub struct $name(pub $inner);
+			pub struct $name($inner);
 
 			impl $name {
+				/// Make a new builder. You'd only need to call this in unit tests.
+				pub fn new() -> $name {$name ($inner::new())}
+
+				/// Generate the JSON value. You'd only need to call this in unit tests.
+				pub fn build (self) -> serde_json::Value {self.0.build()}
+
 				#[doc(hidden)]
 				pub fn __build<F: FnOnce($name) -> $name>(f: F, inp: $inner) -> $inner {
 					f($name(inp)).0
