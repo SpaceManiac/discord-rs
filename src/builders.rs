@@ -10,7 +10,7 @@ macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
 		$(
 			#[$attr]
-			pub struct $name($inner);
+			pub struct $name(pub $inner);
 
 			impl $name {
 				#[doc(hidden)]
