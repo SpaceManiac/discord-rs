@@ -87,6 +87,7 @@ macro_rules! map_numbers {
 fn decode_id(value: Value) -> Result<u64> {
 	match value {
 		Value::U64(num) => Ok(num),
+		Value::I64(num) if num >= 0 => Ok(num as u64),
 		Value::String(text) => match text.parse::<u64>() {
 			Ok(num) => Ok(num),
 			Err(_) => Err(Error::Decode("Expected numeric ID", Value::String(text)))
@@ -143,6 +144,20 @@ id! {
 	RoleId;
 	/// An identifier for an Emoji
 	EmojiId;
+}
+
+impl ServerId {
+	/// Get the `ChannelId` of this server's main text channel.
+	#[inline(always)]
+	pub fn main(self) -> ChannelId {
+		ChannelId(self.0)
+	}
+
+	/// Get the `RoleId` of this server's `@everyone` role.
+	#[inline(always)]
+	pub fn everyone(self) -> RoleId {
+		RoleId(self.0)
+	}
 }
 
 /// A mention targeted at a specific user, channel, or other entity.
@@ -1217,6 +1232,7 @@ pub struct LiveServer {
 	pub id: ServerId,
 	pub name: String,
 	pub owner_id: UserId,
+	pub application_id: Option<u64>,
 	pub voice_states: Vec<VoiceState>,
 	pub roles: Vec<Role>,
 	pub region: String,
@@ -1242,8 +1258,10 @@ impl LiveServer {
 		let mut value = try!(into_map(value));
 		let id = try!(remove(&mut value, "id").and_then(ServerId::decode));
 		warn_json!(value, LiveServer {
+			id: id,
 			name: try!(remove(&mut value, "name").and_then(into_string)),
 			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
+			application_id: try!(opt(&mut value, "application_id", decode_id)),
 			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
@@ -1256,14 +1274,13 @@ impl LiveServer {
 			large: req!(try!(remove(&mut value, "large")).as_bool()),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
-			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id.clone()))),
+			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
-			id: id,
 		})
 	}
 
@@ -1284,7 +1301,7 @@ impl LiveServer {
 			return Permissions::all();
 		}
 		// OR together all the user's roles
-		let everyone = match self.roles.iter().find(|r| r.id.0 == self.id.0) {
+		let everyone = match self.roles.iter().find(|r| r.id == self.id.everyone()) {
 			Some(r) => r,
 			None => {
 				error!("Missing @everyone role in permissions lookup on {} ({})", self.name, self.id);
@@ -1770,7 +1787,6 @@ pub enum Event {
 	Ready(ReadyEvent),
 	/// The connection has successfully resumed after a disconnect.
 	Resumed {
-		heartbeat_interval: u64,
 		trace: Vec<Option<String>>,
 	},
 
@@ -1951,7 +1967,6 @@ impl Event {
 			}))
 		} else if kind == "RESUMED" {
 			warn_json!(value, Event::Resumed {
-				heartbeat_interval: req!(try!(remove(&mut value, "heartbeat_interval")).as_u64()),
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			})
 		} else if kind == "USER_UPDATE" {

@@ -18,7 +18,7 @@ fn main() {
 			Ok(Event::MessageCreate(message)) => {
 				println!("{} says: {}", message.author.name, message.content);
 				if message.content == "!test" {
-					let _ = discord.send_message(&message.channel_id, "This is a reply to the test.", "", false);
+					let _ = discord.send_message(message.channel_id, "This is a reply to the test.", "", false);
 				} else if message.content == "!quit" {
 					println!("Quitting.");
 					break

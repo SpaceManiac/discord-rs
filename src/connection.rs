@@ -30,15 +30,6 @@ macro_rules! finish_connection {
 	}}
 }
 
-#[cfg(feature="voice")]
-macro_rules! voice_only {
-	($b:block) => {$b}
-}
-#[cfg(not(feature="voice"))]
-macro_rules! voice_only {
-	($b:block) => {}
-}
-
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
@@ -196,84 +187,81 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		match self.receiver.recv_json(GatewayEvent::decode) {
-			Err(Error::WebSocket(err)) => {
-				warn!("Websocket error, reconnecting: {:?}", err);
-				// Try resuming if we haven't received an InvalidateSession
-				if let Some(session_id) = self.session_id.clone() {
-					match self.resume(session_id) {
-						Ok(event) => return Ok(event),
-						Err(e) => debug!("Failed to resume: {:?}", e),
-					}
-				}
-				self.reconnect().map(Event::Ready)
-			}
-			Err(Error::Closed(num, message)) => {
-				warn!("Closure, reconnecting: {:?}: {}", num, message);
-				// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
-				if num != Some(1000) && num != Some(4006) {
+		loop {
+			match self.receiver.recv_json(GatewayEvent::decode) {
+				Err(Error::WebSocket(err)) => {
+					warn!("Websocket error, reconnecting: {:?}", err);
+					// Try resuming if we haven't received an InvalidateSession
 					if let Some(session_id) = self.session_id.clone() {
 						match self.resume(session_id) {
 							Ok(event) => return Ok(event),
 							Err(e) => debug!("Failed to resume: {:?}", e),
 						}
 					}
+					// If resuming didn't work, reconnect
+					return self.reconnect().map(Event::Ready);
 				}
-				self.reconnect().map(Event::Ready)
-			}
-			Err(error) => Err(error),
-			Ok(GatewayEvent::Hello(interval)) => {
-				debug!("Mysterious late-game hello: {}", interval);
-				self.recv_event()
-			}
-			Ok(GatewayEvent::Dispatch(sequence, event)) => {
-				self.last_sequence = sequence;
-				let _ = self.keepalive_channel.send(Status::Sequence(sequence));
-				if let Event::Resumed { heartbeat_interval, .. } = event {
-					debug!("Resumed successfully");
-					let _ = self.keepalive_channel.send(Status::ChangeInterval(heartbeat_interval));
+				Err(Error::Closed(num, message)) => {
+					warn!("Closure, reconnecting: {:?}: {}", num, message);
+					// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
+					if num != Some(1000) && num != Some(4006) {
+						if let Some(session_id) = self.session_id.clone() {
+							match self.resume(session_id) {
+								Ok(event) => return Ok(event),
+								Err(e) => debug!("Failed to resume: {:?}", e),
+							}
+						}
+					}
+					// If resuming didn't work, reconnect
+					return self.reconnect().map(Event::Ready);
 				}
-				voice_only! {{
-					if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
-						self.voice(server_id).__update_state(voice_state);
+				Err(error) => return Err(error),
+				Ok(GatewayEvent::Hello(interval)) => {
+					debug!("Mysterious late-game hello: {}", interval);
+				}
+				Ok(GatewayEvent::Dispatch(sequence, event)) => {
+					self.last_sequence = sequence;
+					let _ = self.keepalive_channel.send(Status::Sequence(sequence));
+					#[cfg(feature="voice")] {
+						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
+							self.voice(server_id).__update_state(voice_state);
+						}
+						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
+							self.voice(server_id).__update_server(endpoint, token);
+						}
 					}
-					if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
-						self.voice(server_id).__update_server(endpoint, token);
-					}
-				}}
-				Ok(event)
-			}
-			Ok(GatewayEvent::Heartbeat(sequence)) => {
-				debug!("Heartbeat received with seq {}", sequence);
-				let map = ObjectBuilder::new()
-					.insert("op", 1)
-					.insert("d", sequence)
-					.build();
-				let _ = self.keepalive_channel.send(Status::SendMessage(map));
-				self.recv_event()
-			}
-			Ok(GatewayEvent::HeartbeatAck) => {
-				self.recv_event()
-			}
-			Ok(GatewayEvent::Reconnect) => {
-				self.reconnect().map(Event::Ready)
-			}
-			Ok(GatewayEvent::InvalidateSession) => {
-				debug!("Session invalidated, reidentifying");
-				self.session_id = None;
-				let _ = self.keepalive_channel.send(Status::SendMessage(identify(&self.token, self.shard_info)));
-				self.recv_event()
+					return Ok(event);
+				}
+				Ok(GatewayEvent::Heartbeat(sequence)) => {
+					debug!("Heartbeat received with seq {}", sequence);
+					let map = ObjectBuilder::new()
+						.insert("op", 1)
+						.insert("d", sequence)
+						.build();
+					let _ = self.keepalive_channel.send(Status::SendMessage(map));
+				}
+				Ok(GatewayEvent::HeartbeatAck) => {
+				}
+				Ok(GatewayEvent::Reconnect) => {
+					return self.reconnect().map(Event::Ready);
+				}
+				Ok(GatewayEvent::InvalidateSession) => {
+					debug!("Session invalidated, reidentifying");
+					self.session_id = None;
+					let _ = self.keepalive_channel.send(Status::SendMessage(identify(&self.token, self.shard_info)));
+				}
 			}
 		}
 	}
 
 	/// Reconnect after receiving an OP7 RECONNECT
 	fn reconnect(&mut self) -> Result<ReadyEvent> {
+		::sleep_ms(1000);
 		debug!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
 			if let Ok((conn, ready)) = Connection::new(&self.ws_url, &self.token, self.shard_info) {
-				try!(::std::mem::replace(self, conn).shutdown());
+				::std::mem::replace(self, conn).raw_shutdown();
 				self.session_id = Some(ready.session_id.clone());
 				return Ok(ready)
 			}
@@ -281,13 +269,14 @@ impl Connection {
 		}
 		// If those fail, hit REST for a new endpoint
 		let (conn, ready) = try!(::Discord::from_token_raw(self.token.to_owned()).connect());
-		try!(::std::mem::replace(self, conn).shutdown());
+		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
 	}
 
 	/// Resume using our existing session
 	fn resume(&mut self, session_id: String) -> Result<Event> {
+		::sleep_ms(1000);
 		debug!("Resuming...");
 		// close connection and re-establish
 		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
@@ -311,7 +300,13 @@ impl Connection {
 		let first_event;
 		loop {
 			match try!(receiver.recv_json(GatewayEvent::decode)) {
+				GatewayEvent::Hello(interval) => {
+					let _ = self.keepalive_channel.send(Status::ChangeInterval(interval));
+				}
 				GatewayEvent::Dispatch(seq, event) => {
+					if let Event::Resumed { .. } = event {
+						debug!("Resumed successfully");
+					}
 					if let Event::Ready(ReadyEvent { ref session_id, .. }) = event {
 						self.session_id = Some(session_id.clone());
 					}
@@ -348,6 +343,13 @@ impl Connection {
 		try!(stream.flush());
 		try!(stream.shutdown(::std::net::Shutdown::Both));
 		Ok(())
+	}
+
+	fn raw_shutdown(mut self) {
+		use std::io::Write;
+		let stream = self.receiver.get_mut().get_mut();
+		let _ = stream.flush();
+		let _ = stream.shutdown(::std::net::Shutdown::Both);
 	}
 
 	#[doc(hidden)]

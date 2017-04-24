@@ -3,6 +3,7 @@ extern crate discord;
 use discord::Discord;
 use std::env;
 
+#[allow(deprecated)]
 fn main() {
 	// To see the token cache in action, try the following sequence of commands:
 	// $ cargo run --example login_cache <email>

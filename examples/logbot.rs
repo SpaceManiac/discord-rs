@@ -38,7 +38,7 @@ fn main() {
 		// Log messages
 		match event {
 			Event::MessageCreate(message) => {
-				match state.find_channel(&message.channel_id) {
+				match state.find_channel(message.channel_id) {
 					Some(ChannelRef::Public(server, channel)) => {
 						println!("[{} #{}] {}: {}", server.name, channel.name, message.author.name, message.content);
 					}

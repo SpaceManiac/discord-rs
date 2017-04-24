@@ -13,7 +13,7 @@ use discord::model::{Event, UserId};
 struct VoiceTest;
 
 impl AudioReceiver for VoiceTest {
-	fn speaking_update(&mut self, ssrc: u32, user_id: &UserId, speaking: bool) {
+	fn speaking_update(&mut self, ssrc: u32, user_id: UserId, speaking: bool) {
 		println!("[{}] is {:?} -> {}", ssrc, user_id, speaking);
 	}
 
@@ -79,7 +79,7 @@ pub fn main() {
 							voice.connect(channel_id);
 							voice.set_receiver(Box::new(VoiceTest));
 						} else {
-							warn(discord.send_message(&message.channel_id, "You must be in a voice channel.", "", false));
+							warn(discord.send_message(message.channel_id, "You must be in a voice channel.", "", false));
 						}
 					}
 				}

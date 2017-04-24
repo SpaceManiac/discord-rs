@@ -55,11 +55,13 @@ macro_rules! cdn_concat {
 }
 
 pub mod model;
+pub mod builders;
 
 pub use error::{Result, Error};
 pub use connection::Connection;
 pub use state::{State, ChannelRef};
 use model::*;
+use builders::*;
 use ratelimit::RateLimits;
 
 const USER_AGENT: &'static str = concat!("DiscordBot (https://github.com/SpaceManiac/discord-rs, ", env!("CARGO_PKG_VERSION"), ")");
@@ -103,6 +105,7 @@ pub struct Discord {
 
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
+	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
 	pub fn new(email: &str, password: &str) -> Result<Discord> {
 		let mut map = BTreeMap::new();
 		map.insert("email", email);
@@ -131,6 +134,8 @@ impl Discord {
 	/// Cached login tokens are keyed to the email address and will be read from
 	/// and written to the specified path. If no cached token was found and no
 	/// password was specified, an error is returned.
+	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
+	#[allow(deprecated)]
 	pub fn new_cache<P: AsRef<std::path::Path>>(path: P, email: &str, password: Option<&str>) -> Result<Discord> {
 		use std::io::{Write, BufRead, BufReader};
 		use std::fs::File;
@@ -211,15 +216,19 @@ impl Discord {
 	}
 
 	/// Log in as a bot account using the given authentication token.
+	///
+	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
-		Ok(Discord {
-			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
-			token: format!("Bot {}", token.trim()),
-		})
+		Ok(Discord::from_token_raw(format!("Bot {}", token.trim())))
+	}
+
+	/// Log in as a user account using the given authentication token.
+	pub fn from_user_token(token: &str) -> Result<Discord> {
+		Ok(Discord::from_token_raw(token.trim().to_owned()))
 	}
 
 	/// Log out from the Discord API, invalidating this clients's token.
+	#[deprecated(note="Accomplishes nothing and may fail for no reason.")]
 	pub fn logout(self) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("provider", serde_json::Value::Null)
@@ -251,7 +260,7 @@ impl Discord {
 	}
 
 	/// Create a channel.
-	pub fn create_channel(&self, server: &ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
+	pub fn create_channel(&self, server: ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
 		let map = ObjectBuilder::new()
 			.insert("name", name)
 			.insert("type", kind.name())
@@ -298,20 +307,20 @@ impl Discord {
 			},
 			Channel::Group(group) => ObjectBuilder::new().insert("name", group.name),
 		};
-		let map = f(EditChannel(map)).0.build();
+		let map = EditChannel::__build(f, map).build();
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}", channel);
 		PublicChannel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete a channel.
-	pub fn delete_channel(&self, channel: &ChannelId) -> Result<Channel> {
+	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, delete, "/channels/{}", channel);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Indicate typing on a channel for the next 5 seconds.
-	pub fn broadcast_typing(&self, channel: &ChannelId) -> Result<()> {
+	pub fn broadcast_typing(&self, channel: ChannelId) -> Result<()> {
 		check_empty(request!(self, post, "/channels/{}/typing", channel))
 	}
 
@@ -364,7 +373,7 @@ impl Discord {
 	///
 	/// The `nonce` will be returned in the result and also transmitted to other
 	/// clients. The empty string is a good default if you don't care.
-	pub fn send_message(&self, channel: &ChannelId, text: &str, nonce: &str, tts: bool) -> Result<Message> {
+	pub fn send_message(&self, channel: ChannelId, text: &str, nonce: &str, tts: bool) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
 			.insert("nonce", nonce)
@@ -379,7 +388,7 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
-	pub fn edit_message(&self, channel: &ChannelId, message: &MessageId, text: &str) -> Result<Message> {
+	pub fn edit_message(&self, channel: ChannelId, message: MessageId, text: &str) -> Result<Message> {
 		let map = ObjectBuilder::new()
 			.insert("content", text)
 			.build();
@@ -392,7 +401,7 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
-	pub fn delete_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+	pub fn delete_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
 		check_empty(request!(self, delete, "/channels/{}/messages/{}", channel, message))
 	}
 
@@ -429,10 +438,36 @@ impl Discord {
 		check_empty(request!(self, post(body), "/channels/{}/messages/bulk_delete", channel))
 	}
 
+	/// Send some embedded rich content attached to a message on a given channel.
+	///
+	/// See the `EmbedBuilder` struct for the editable fields.
+	/// `text` may be empty.
+	pub fn send_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, text: &str, f: F) -> Result<Message> {
+		let map = ObjectBuilder::new()
+			.insert("content", text)
+			.insert("embed", EmbedBuilder::__build(f, Default::default()).build())
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, post(body), "/channels/{}/messages", channel);
+		Message::decode(try!(serde_json::from_reader(response)))
+	}
+
+	/// Edit the embed portion of a previously posted message.
+	///
+	/// The text is unmodified, but the previous embed is entirely replaced.
+	pub fn edit_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, message: MessageId, f: F) -> Result<Message> {
+		let map = ObjectBuilder::new()
+			.insert("embed", EmbedBuilder::__build(f, Default::default()).build())
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
+		Message::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
-	pub fn send_file<R: ::std::io::Read>(&self, channel: &ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
 		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
@@ -447,7 +482,7 @@ impl Discord {
 	}
 
 	/// Acknowledge this message as "read" by this client.
-	pub fn ack_message(&self, channel: &ChannelId, message: &MessageId) -> Result<()> {
+	pub fn ack_message(&self, channel: ChannelId, message: MessageId) -> Result<()> {
 		check_empty(request!(self, post, "/channels/{}/messages/{}/ack", channel, message))
 	}
 
@@ -672,20 +707,20 @@ impl Discord {
 	/// );
 	/// ```
 	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
-		let map = f(EditServer(ObjectBuilder::new())).0.build();
+		let map = EditServer::__build(f, Default::default()).build();
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/guilds/{}", server_id);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Leave the given server.
-	pub fn leave_server(&self, server: &ServerId) -> Result<Server> {
+	pub fn leave_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/users/@me/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
 
 	/// Delete the given server. Only available to the server owner.
-	pub fn delete_server(&self, server: &ServerId) -> Result<Server> {
+	pub fn delete_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/guilds/{}", server);
 		Server::decode(try!(serde_json::from_reader(response)))
 	}
@@ -727,7 +762,7 @@ impl Discord {
 	}
 
 	/// Get the ban list for the given server.
-	pub fn get_bans(&self, server: &ServerId) -> Result<Vec<Ban>> {
+	pub fn get_bans(&self, server: ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
 		decode_array(try!(serde_json::from_reader(response)), Ban::decode)
 	}
@@ -735,13 +770,13 @@ impl Discord {
 	/// Ban a user from the server, optionally deleting their recent messages.
 	///
 	/// Zero may be passed for `delete_message_days` if no deletion is desired.
-	pub fn add_ban(&self, server: &ServerId, user: &UserId, delete_message_days: u32) -> Result<()> {
+	pub fn add_ban(&self, server: ServerId, user: UserId, delete_message_days: u32) -> Result<()> {
 		check_empty(request!(self, put, "/guilds/{}/bans/{}?delete_message_days={}",
 			server, user, delete_message_days))
 	}
 
 	/// Unban a user from the server.
-	pub fn remove_ban(&self, server: &ServerId, user: &UserId) -> Result<()> {
+	pub fn remove_ban(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/bans/{}", server, user))
 	}
 
@@ -807,21 +842,21 @@ impl Discord {
 	}
 
 	/// Edit the list of roles assigned to a member of a server.
-	pub fn edit_member_roles(&self, server: &ServerId, user: &UserId, roles: &[RoleId]) -> Result<()> {
-		self.edit_member(*server, *user, |m| m.roles(roles))
+	pub fn edit_member_roles(&self, server: ServerId, user: UserId, roles: &[RoleId]) -> Result<()> {
+		self.edit_member(server, user, |m| m.roles(roles))
 	}
 
 	/// Edit member information, including roles, nickname, and voice state.
 	///
 	/// See the `EditMember` struct for the editable fields.
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
-		let map = f(EditMember(ObjectBuilder::new())).0.build();
+		let map = EditMember::__build(f, Default::default()).build();
 		let body = try!(serde_json::to_string(&map));
 		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
 
 	/// Kick a member from a server.
-	pub fn kick_member(&self, server: &ServerId, user: &UserId) -> Result<()> {
+	pub fn kick_member(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
 	}
 
@@ -832,7 +867,7 @@ impl Discord {
 
 	/// Create a private channel with the given user, or return the existing
 	/// one if it exists.
-	pub fn create_private_channel(&self, recipient: &UserId) -> Result<PrivateChannel> {
+	pub fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
 		let map = ObjectBuilder::new()
 			.insert("recipient_id", recipient.0)
 			.build();
@@ -842,12 +877,12 @@ impl Discord {
 	}
 
 	/// Get the URL at which a user's avatar is located.
-	pub fn get_user_avatar_url(&self, user: &UserId, avatar: &str) -> String {
+	pub fn get_user_avatar_url(&self, user: UserId, avatar: &str) -> String {
 		format!(api_concat!("/users/{}/avatars/{}.jpg"), user, avatar)
 	}
 
 	/// Download a user's avatar.
-	pub fn get_user_avatar(&self, user: &UserId, avatar: &str) -> Result<Vec<u8>> {
+	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
 		let mut response = try!(retry(||
 			self.client.get(&self.get_user_avatar_url(user, avatar))));
@@ -856,13 +891,37 @@ impl Discord {
 		Ok(vec)
 	}
 
-	/// Edit the logged-in user's profile. See `EditProfile` for editable fields.
+	/// Edit the logged-in bot or user's profile. See `EditProfile` for editable fields.
 	///
-	/// This method requires mutable access because editing the profile generates a new token.
-	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&mut self, f: F) -> Result<CurrentUser> {
+	/// Usable for bot and user accounts. Only allows updating the username and
+	/// avatar.
+	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
 		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		let map = ObjectBuilder::new()
+			.insert("username", user.username)
+			.insert("avatar", user.avatar);
+
+		// Then, send the profile patch.
+		let map = EditProfile::__build(f, map).build();
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, patch(body), "/users/@me");
+		let json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+		CurrentUser::decode(serde_json::Value::Object(json))
+	}
+
+	/// Edit the logged-in non-bot user's profile. See `EditUserProfile` for editable fields.
+	///
+	/// Usable only for user (non-bot) accounts. Requires mutable access in order
+	/// to keep the login token up to date in the event of a password change.
+	pub fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(&mut self, f: F) -> Result<CurrentUser> {
+		// First, get the current profile, so that providing username and avatar is optional.
+		let response = request!(self, get, "/users/@me");
+		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		if user.bot {
+			return Err(Error::Other("Cannot call edit_user_profile on a bot account"))
+		}
 		let mut map = ObjectBuilder::new()
 			.insert("username", user.username)
 			.insert("avatar", user.avatar);
@@ -871,10 +930,11 @@ impl Discord {
 		}
 
 		// Then, send the profile patch.
-		let map = f(EditProfile(map)).0.build();
+		let map = EditUserProfile::__build(f, map).build();
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
 		let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
+
 		// If a token was included in the response, switch to it. Important because if the
 		// password was changed, the old token is invalidated.
 		if let Some(serde_json::Value::String(token)) = json.remove("token") {
@@ -890,7 +950,7 @@ impl Discord {
 	}
 
 	/// Move a server member to another voice channel.
-	pub fn move_member_voice(&self, server: &ServerId, user: &UserId, channel: &ChannelId) -> Result<()> {
+	pub fn move_member_voice(&self, server: ServerId, user: UserId, channel: ChannelId) -> Result<()> {
 		let map = ObjectBuilder::new()
 			.insert("channel_id", &channel.0)
 			.build();
@@ -1054,139 +1114,6 @@ pub enum GetMessages {
 	After(MessageId),
 	/// Get N/2 messages before, N/2 messages after, and the specified message.
 	Around(MessageId),
-}
-
-/// Patch content for the `edit_server` call.
-pub struct EditServer(ObjectBuilder);
-
-impl EditServer {
-	/// Edit the server's name.
-	pub fn name(self, name: &str) -> Self {
-		EditServer(self.0.insert("name", name))
-	}
-	/// Edit the server's voice region.
-	pub fn region(self, region: &str) -> Self {
-		EditServer(self.0.insert("region", region))
-	}
-	/// Edit the server's icon. Use `None` to remove the icon.
-	pub fn icon(self, icon: Option<&str>) -> Self {
-		EditServer(match icon {
-			Some(icon) => self.0.insert("icon", icon),
-			None => self.0.insert("icon", serde_json::Value::Null),
-		})
-	}
-	/// Edit the server's AFK channel. Use `None` to select no AFK channel.
-	pub fn afk_channel(self, channel: Option<ChannelId>) -> Self {
-		EditServer(match channel {
-			Some(ch) => self.0.insert("afk_channel_id", ch.0),
-			None => self.0.insert("afk_channel_id", serde_json::Value::Null),
-		})
-	}
-	/// Edit the server's AFK timeout.
-	pub fn afk_timeout(self, timeout: u64) -> Self {
-		EditServer(self.0.insert("afk_timeout", timeout))
-	}
-
-	/// Transfer ownership of the server to a new owner.
-	pub fn owner(self, owner: UserId) -> Self {
-		EditServer(self.0.insert("owner_id", owner.0))
-	}
-
-	/// Edit the verification level of the server.
-	pub fn verification_level(self, verification_level: VerificationLevel) -> Self {
-		EditServer(self.0.insert("verification_level", verification_level.num()))
-	}
-
-	/// Edit the server's splash. Use `None` to remove the splash.
-	pub fn splash(self, splash: Option<&str>) -> Self {
-		EditServer(match splash {
-			Some(splash) => self.0.insert("splash", splash),
-			None => self.0.insert("splash", serde_json::Value::Null),
-		})
-	}
-}
-
-/// Patch content for the `edit_channel` call.
-pub struct EditChannel(ObjectBuilder);
-
-impl EditChannel {
-	/// Edit the channel's name.
-	pub fn name(self, name: &str) -> Self {
-		EditChannel(self.0.insert("name", name))
-	}
-	/// Edit the text channel's topic.
-	pub fn topic(self, topic: &str) -> Self {
-		EditChannel(self.0.insert("topic", topic))
-	}
-	/// Edit the channel's position in the list.
-	pub fn position(self, position: u64) -> Self {
-		EditChannel(self.0.insert("position", position))
-	}
-	/// Edit the voice channel's bitrate.
-	pub fn bitrate(self, bitrate: u64) -> Self {
-		EditChannel(self.0.insert("bitrate", bitrate))
-	}
-	/// Edit the voice channel's user limit. Both `None` and `Some(0)` mean "unlimited".
-	pub fn user_limit(self, user_limit: u64) -> Self {
-		EditChannel(self.0.insert("user_limit", user_limit))
-	}
-}
-
-/// Patch content for the `edit_member` call.
-pub struct EditMember(ObjectBuilder);
-
-impl EditMember {
-	/// Edit the member's nickname. Supply the empty string to remove a nickname.
-	pub fn nickname(self, nick: &str) -> Self {
-		EditMember(self.0.insert("nick", nick))
-	}
-	/// Edit whether the member is server-muted.
-	pub fn mute(self, mute: bool) -> Self {
-		EditMember(self.0.insert("mute", mute))
-	}
-	/// Edit whether the member is server-deafened.
-	pub fn deaf(self, deafen: bool) -> Self {
-		EditMember(self.0.insert("deaf", deafen))
-	}
-	/// Edit the member's assigned roles.
-	pub fn roles(self, roles: &[RoleId]) -> Self {
-		EditMember(self.0.insert_array("roles",
-			|ab| roles.iter().fold(ab, |ab, id| ab.push(id.0))))
-	}
-	/// Move the member to another voice channel.
-	pub fn channel(self, channel: ChannelId) -> Self {
-		EditMember(self.0.insert("channel_id", channel.0))
-	}
-}
-
-/// Patch content for the `edit_profile` call.
-pub struct EditProfile(ObjectBuilder);
-
-impl EditProfile {
-	/// Edit the user's username. Must be between 2 and 32 characters long.
-	pub fn username(self, username: &str) -> Self {
-		EditProfile(self.0.insert("username", username))
-	}
-	/// Edit the user's avatar. Use `None` to remove the avatar.
-	pub fn avatar(self, icon: Option<&str>) -> Self {
-		EditProfile(match icon {
-			Some(icon) => self.0.insert("avatar", icon),
-			None => self.0.insert("avatar", serde_json::Value::Null),
-		})
-	}
-	/// Provide the user's current password for authentication. Does not apply to bot accounts, and
-	/// must be supplied for user accounts.
-	pub fn password(self, password: &str) -> Self {
-		EditProfile(self.0.insert("password", password))
-	}
-	/// Edit the user's email address. Does not apply to bot accounts.
-	pub fn email(self, email: &str) -> Self {
-		EditProfile(self.0.insert("email", email))
-	}
-	/// Edit the user's password. Does not apply to bot accounts.
-	pub fn new_password(self, password: &str) -> Self {
-		EditProfile(self.0.insert("new_password", password))
-	}
 }
 
 /// Send a request with the correct `UserAgent`, retrying it a second time if the

@@ -66,7 +66,7 @@ pub trait AudioReceiver: Send {
 	/// This method is the only way to know the `ssrc` to `user_id` mapping, but is unreliable and
 	/// only a hint for when users are actually speaking, due both to latency differences and that
 	/// it is possible for a user to leave `speaking` true even when they are not sending audio.
-	fn speaking_update(&mut self, ssrc: u32, user_id: &UserId, speaking: bool);
+	fn speaking_update(&mut self, ssrc: u32, user_id: UserId, speaking: bool);
 
 	/// Called when a voice packet is received.
 	///
@@ -327,6 +327,8 @@ impl Drop for ProcessStream {
 	fn drop(&mut self) {
 		// If we can't kill it, it's dead already or out of our hands
 		let _ = self.0.kill();
+		// To avoid zombie processes, we must also wait on it
+		let _ = self.0.wait();
 	}
 }
 
@@ -605,7 +607,7 @@ impl InternalConnection {
 			silence_frames: 0,
 
 			decoder_map: HashMap::new(),
-			encoder: try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::CodingMode::Audio)),
+			encoder: try!(opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::Application::Audio)),
 			encoder_stereo: false,
 			keepalive_timer: ::Timer::new(interval),
 			// after 5 minutes of us sending nothing, Discord will stop sending voice data to us
@@ -627,7 +629,7 @@ impl InternalConnection {
 			while let Ok(status) = self.receive_chan.try_recv() {
 				match status {
 					RecvStatus::Websocket(VoiceEvent::SpeakingUpdate { user_id, ssrc, speaking }) => {
-						receiver.speaking_update(ssrc, &user_id, speaking);
+						receiver.speaking_update(ssrc, user_id, speaking);
 					},
 					RecvStatus::Websocket(_) => {},
 					RecvStatus::Udp(packet) => {
@@ -675,7 +677,7 @@ impl InternalConnection {
 			let stereo = source.is_stereo();
 			if stereo != self.encoder_stereo {
 				let channels = if stereo { opus::Channels::Stereo } else { opus::Channels::Mono };
-				self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::CodingMode::Audio));
+				self.encoder = try!(opus::Encoder::new(SAMPLE_RATE, channels, opus::Application::Audio));
 				self.encoder_stereo = stereo;
 			}
 			let buffer_len = if stereo { 960 * 2 } else { 960 };
