@@ -855,6 +855,18 @@ impl Discord {
 		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
 
+	/// Server-mutes or deafens a member.
+	pub fn edit_member_voice_state(&self, server: ServerId, user: UserId, mute: bool, deafen: bool) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("mute", mute)
+			.insert("deaf", deafen)
+			.unwrap();
+		let body = try!(serde_json::to_string(&map));
+		try!(self.request(|| self.client.patch(
+			&format!("{}/guilds/{}/members/{}", API_BASE, server.0, user.0)).body(&body)));
+		Ok(())
+	}
+
 	/// Kick a member from a server.
 	pub fn kick_member(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
