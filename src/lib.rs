@@ -332,19 +332,13 @@ impl Discord {
 
 	/// Get messages in the backlog for a given channel.
 	///
-	/// The `what` argument should be one of the options in the `GetMessages`
+	/// The `what` argument should be one of the options in the `Paginator`
 	/// enum, and will determine which messages will be returned. A message
 	/// limit can also be specified, and defaults to 50. More recent messages
 	/// will appear first in the list.
-	pub fn get_messages(&self, channel: ChannelId, what: GetMessages, limit: Option<u64>) -> Result<Vec<Message>> {
-		use std::fmt::Write;
+	pub fn get_messages(&self, channel: ChannelId, what: Paginator, limit: Option<u64>) -> Result<Vec<Message>> {
 		let mut url = format!(api_concat!("/channels/{}/messages?limit={}"), channel, limit.unwrap_or(50));
-		match what {
-			GetMessages::MostRecent => {},
-			GetMessages::Before(id) => { let _ = write!(url, "&before={}", id); },
-			GetMessages::After(id) => { let _ = write!(url, "&after={}", id); },
-			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id); },
-		}
+		what.generate_param(&mut url);
 		let response = try!(self.request(&url, || self.client.get(&url)));
 		decode_array(try!(serde_json::from_reader(response)), Message::decode)
 	}
@@ -676,8 +670,10 @@ impl Discord {
 	}
 
 	/// Get the list of servers this user knows about.
-	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
-		let response = request!(self, get, "/users/@me/guilds");
+	pub fn get_servers(&self, what: Paginator, limit: Option<u64>) -> Result<Vec<ServerInfo>> {
+		let mut url = format!(api_concat!("/users/@me/guilds?limit={}"), limit.unwrap_or(100));
+		what.generate_param(&mut url);
+		let response = try!(self.request(&url, || self.client.get(&url)));
 		decode_array(try!(serde_json::from_reader(response)), ServerInfo::decode)
 	}
 
@@ -1104,16 +1100,31 @@ pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	}
 }
 
-/// Argument to `get_messages` to specify the desired message retrieval.
-pub enum GetMessages {
-	/// Get the N most recent messages.
+/// Argument to endpoints that use a pagination method.
+///
+/// This is used for the `get_messages` and `get_servers` methods.
+pub enum Paginator {
+	/// Get the N most recent items.
 	MostRecent,
-	/// Get the first N messages before the specified message.
-	Before(MessageId),
-	/// Get the first N messages after the specified message.
-	After(MessageId),
-	/// Get N/2 messages before, N/2 messages after, and the specified message.
-	Around(MessageId),
+	/// Get the first N items before the specified ID.
+	Before(u64),
+	/// Get the first N items after the specified ID.
+	After(u64),
+	/// Get N/2 items before, N/2 items after, and the specified item.
+	Around(u64),
+}
+
+impl Paginator {
+	/// Appends the query parameter to use for the type of pagination.
+	pub fn generate_param(&self, url: &mut String) {
+		use std::fmt::Write;
+		match *self {
+			Paginator::After(id) => { let _ = write!(url, "&after={}", id); },
+			Paginator::Around(id) => { let _ = write!(url, "&around={}", id); },
+			Paginator::Before(id) => { let _ = write!(url, "&before={}", id); },
+			Paginator::MostRecent => {},
+		}
+	}
 }
 
 /// Send a request with the correct `UserAgent`, retrying it a second time if the
