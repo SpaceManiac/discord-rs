@@ -222,7 +222,7 @@ impl Discord {
 	///
 	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
-		Ok(Discord::from_token_raw("Bot ".to_string() + token.trim()))
+		Ok(Discord::from_token_raw(format!("Bot {}", token.trim())))
 	}
 
 	/// Log in as a user account using the given authentication token.
