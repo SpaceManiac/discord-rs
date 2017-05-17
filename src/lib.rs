@@ -24,6 +24,7 @@
 #![warn(missing_docs)]
 
 extern crate hyper;
+extern crate hyper_native_tls;
 extern crate serde_json;
 extern crate websocket;
 #[macro_use]
@@ -37,6 +38,7 @@ extern crate log;
 #[cfg(feature="voice")]
 extern crate sodiumoxide;
 extern crate multipart;
+extern crate mime;
 extern crate base64;
 extern crate flate2;
 
@@ -103,6 +105,12 @@ pub struct Discord {
 	token: String,
 }
 
+fn tls_client() -> hyper::Client {
+	let tls = hyper_native_tls::NativeTlsClient::new().expect("Error initializing NativeTlsClient");
+	let connector = hyper::net::HttpsConnector::new(tls);
+	hyper::Client::with_connector(connector)
+}
+
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
 	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
@@ -111,7 +119,7 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = hyper::Client::new();
+		let client = tls_client();
 		let response = try!(check_status(client.post(api_concat!("/auth/login"))
 			.header(hyper::header::ContentType::json())
 			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -162,7 +170,7 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = hyper::Client::new();
+			let client = tls_client();
 			let response = try!(check_status(client.post(api_concat!("/auth/login"))
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -210,7 +218,7 @@ impl Discord {
 	fn from_token_raw(token: String) -> Discord {
 		Discord {
 			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
+			client: tls_client(),
 			token: token,
 		}
 	}
@@ -468,16 +476,31 @@ impl Discord {
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+		use std::io::Write;
+
 		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
+		// NB: We're NOT using the Hyper itegration of multipart in order not to wrestle with the openssl-sys dependency hell.
+		let cr = multipart::mock::ClientRequest::default();
+		let mut multi = try!(multipart::client::Multipart::from_request(cr));
+		try!(multi.write_text("content", text));
+		try!(multi.write_stream("file", &mut file, Some(filename), None));
+		let http_buffer: multipart::mock::HttpBuffer = try!(multi.send());
+		fn multipart_mime(bound: &str) -> mime::Mime {
+			use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+			Mime(TopLevel::Multipart,
+				SubLevel::Ext("form-data".into()),
+				vec![(Attr::Ext("boundary".into()), Value::Ext(bound.into()))])
+		}
+
 		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
 		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
 		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
-		let mut request = try!(multipart::client::Multipart::from_request(request));
-		try!(request.write_text("content", text));
-		try!(request.write_stream("file", &mut file, Some(filename), None));
+		request.headers_mut().set(hyper::header::ContentType(multipart_mime(&http_buffer.boundary)));
+		let mut request = try!(request.start());
+		try!(request.write(&http_buffer.buf[..]));
 		Message::decode(try!(serde_json::from_reader(try!(check_status(request.send())))))
 	}
 
@@ -1067,7 +1090,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(retry(|| client.get(
 		status_concat!("/incidents/unresolved.json"))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
@@ -1080,7 +1103,7 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/active.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
@@ -1093,7 +1116,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = tls_client();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/upcoming.json")))));
 	let mut json: BTreeMap<String, serde_json::Value> = try!(serde_json::from_reader(response));
