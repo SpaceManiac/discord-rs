@@ -441,7 +441,7 @@ impl State {
 				return Some(server);
 			}
 		}
-		return None;
+		None
 	}
 
 	/// Look up a private or public channel by its ID.
