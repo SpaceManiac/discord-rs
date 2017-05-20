@@ -400,7 +400,7 @@ impl Connection {
 }
 
 fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
-	json! {{
+	let mut result = json! {{
 		"op": 2,
 		"d": {
 			"token": token,
@@ -414,9 +414,12 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 			"large_threshold": 250,
 			"compress": true,
 			"v": GATEWAY_VERSION,
-			"shard": shard_info.map(|info| json![[info[0], info[1]]]),
 		}
-	}}
+	}};
+	if let Some(info) = shard_info {
+		result["shard"] = json![[info[0], info[1]]];
+	}
+	result
 }
 
 #[inline]
