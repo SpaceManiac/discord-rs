@@ -1,11 +1,13 @@
 //! Struct and enum definitions of values in the Discord model.
 #![allow(missing_docs)]
 
-use super::{Error, Result};
-use serde_json::Value;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+
+use serde_json::{Map, Value};
+
+use super::{Error, Result};
 
 pub use self::permissions::Permissions;
 
@@ -86,8 +88,10 @@ macro_rules! map_numbers {
 
 fn decode_id(value: Value) -> Result<u64> {
 	match value {
-		Value::U64(num) => Ok(num),
-		Value::I64(num) if num >= 0 => Ok(num as u64),
+		Value::Number(number) => match number.as_u64() {
+			Some(id) => Ok(id),
+			None => Err(Error::Decode("Expected numeric ID", Value::Number(number)))
+		},
 		Value::String(text) => match text.parse::<u64>() {
 			Ok(num) => Ok(num),
 			Err(_) => Err(Error::Decode("Expected numeric ID", Value::String(text)))
@@ -105,6 +109,7 @@ macro_rules! id {
 			/// raw number value printed using the `{}` specifier.
 			/// Some identifiers have `mention()` methods as well.
 			#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
+			#[derive(Serialize)]
 			pub struct $name(pub u64);
 
 			impl $name {
@@ -482,7 +487,7 @@ impl Channel {
 			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
-			other => Err(Error::Decode("Expected value Channel type", Value::U64(other))),
+			other => Err(Error::Decode("Expected value Channel type", Value::from(other))),
 		}
 	}
 }
@@ -1041,17 +1046,13 @@ impl Game {
 		}
 
 		let kind = match value.remove("type") {
-			Some(Value::U64(v)) => Value::U64(v),
-			Some(Value::String(v)) => match v.parse::<u64>() {
-				Ok(v) => Value::U64(v),
-				Err(_) => return Err(Error::Decode("Expected valid GameType", Value::String(v))),
-			},
-			Some(other) => return Err(Error::Decode("Expected valid GameType", other)),
-			None => Value::Null,
+			Some(Value::Number(number)) => number.as_u64(),
+			Some(Value::String(v)) => v.parse::<u64>().ok(), // ignore errors
+			_ => None,
 		};
 		warn_json!(@"Game", value, Some(Game {
 			name: name,
-			kind: GameType::decode(kind).unwrap_or(GameType::Playing),
+			kind: kind.and_then(GameType::from_num).unwrap_or(GameType::Playing),
 			url: try!(opt(&mut value, "url", into_string)),
 		}))
 	}
@@ -1936,7 +1937,7 @@ pub enum Event {
 	ReactionRemove(Reaction),
 
 	/// An event type not covered by the above
-	Unknown(String, BTreeMap<String, Value>),
+	Unknown(String, Map<String, Value>),
 	// Any other event. Should never be used directly.
 	#[doc(hidden)]
 	__Nonexhaustive,
@@ -2284,11 +2285,11 @@ impl VoiceEvent {
 //=================
 // Decode helpers
 
-fn remove(map: &mut BTreeMap<String, Value>, key: &str) -> Result<Value> {
+fn remove(map: &mut Map<String, Value>, key: &str) -> Result<Value> {
 	map.remove(key).ok_or_else(|| Error::Decode("Unexpected absent key", Value::String(key.into())))
 }
 
-fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut BTreeMap<String, Value>, key: &str, f: F) -> Result<Option<T>> {
+fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut Map<String, Value>, key: &str, f: F) -> Result<Option<T>> {
 	match map.remove(key) {
 		None | Some(Value::Null) => Ok(None),
 		Some(val) => f(val).map(Some),
@@ -2297,9 +2298,11 @@ fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut BTreeMap<String, Value>, key:
 
 fn decode_discriminator(value: Value) -> Result<u16> {
 	match value {
-		Value::I64(v) => Ok(v as u16),
-		Value::U64(v) => Ok(v as u16),
-		Value::String(s) => s.parse::<u16>().or(Err(Error::Other("Error parsing discriminator as u16"))),
+		Value::Number(num) => match num.as_u64() {
+			Some(num) if num <= u16::max_value() as u64 => Ok(num as u16),
+			_ => Err(Error::Decode("Discriminator out of u16 range", Value::Number(num)))
+		},
+		Value::String(s) => s.parse::<u16>().or(Err(Error::Decode("Error parsing discriminator as u16", Value::String(s)))),
 		value => Err(Error::Decode("Expected string or u64", value)),
 	}
 }
@@ -2334,7 +2337,7 @@ fn into_array(value: Value) -> Result<Vec<Value>> {
 	}
 }
 
-fn into_map(value: Value) -> Result<BTreeMap<String, Value>> {
+fn into_map(value: Value) -> Result<Map<String, Value>> {
 	match value {
 		Value::Object(m) => Ok(m),
 		value => Err(Error::Decode("Expected object", value)),
@@ -2346,7 +2349,7 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 	into_array(value).and_then(|x| x.into_iter().map(f).collect())
 }
 
-fn warn_field(name: &str, map: BTreeMap<String, Value>) {
+fn warn_field(name: &str, map: Map<String, Value>) {
 	if !map.is_empty() {
 		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}

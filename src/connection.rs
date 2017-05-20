@@ -6,7 +6,6 @@ use websocket::client::{Client, Sender, Receiver};
 use websocket::stream::WebSocketStream;
 
 use serde_json;
-use serde_json::builder::ObjectBuilder;
 
 use model::*;
 use internal::Status;
@@ -148,18 +147,19 @@ impl Connection {
 			OnlineStatus::Offline => OnlineStatus::Invisible,
 			other => other,
 		};
-		let msg = ObjectBuilder::new()
-			.insert("op", 3)
-			.insert_object("d", move |mut object| {
-				object = object.insert("afk", afk)
-					.insert("since", 0)
-					.insert("status", status.name());
-				match game {
-					Some(game) => object.insert_object("game", move |o| o.insert("name", game.name)),
-					None => object.insert("game", serde_json::Value::Null),
-				}
-			})
-			.build();
+		let game = match game {
+			Some(game) => json! {{ "name": game.name }},
+			None => json!(null),
+		};
+		let msg = json! {{
+			"op": 3,
+			"d": {
+				"afk": afk,
+				"since": 0,
+				"status": status.name(),
+				"game": game,
+			}
+		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
@@ -234,10 +234,10 @@ impl Connection {
 				}
 				Ok(GatewayEvent::Heartbeat(sequence)) => {
 					debug!("Heartbeat received with seq {}", sequence);
-					let map = ObjectBuilder::new()
-						.insert("op", 1)
-						.insert("d", sequence)
-						.build();
+					let map = json! {{
+						"op": 1,
+						"d": sequence,
+					}};
 					let _ = self.keepalive_channel.send(Status::SendMessage(map));
 				}
 				Ok(GatewayEvent::HeartbeatAck) => {
@@ -286,14 +286,14 @@ impl Connection {
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the resume request
-		let resume = ObjectBuilder::new()
-			.insert("op", 6)
-			.insert_object("d", |o| o
-				.insert("seq", self.last_sequence)
-				.insert("token", &self.token)
-				.insert("session_id", session_id)
-			)
-			.build();
+		let resume = json! {{
+			"op": 6,
+			"d": {
+				"seq": self.last_sequence,
+				"token": self.token,
+				"session_id": session_id,
+			}
+		}};
 		try!(sender.send_json(&resume));
 
 		// TODO: when Discord has implemented it, observe the RESUMING event here
@@ -352,19 +352,6 @@ impl Connection {
 		let _ = stream.shutdown(::std::net::Shutdown::Both);
 	}
 
-	#[doc(hidden)]
-	pub fn __download_members(&self, servers: &[ServerId]) {
-		let msg = ObjectBuilder::new()
-			.insert("op", 8)
-			.insert_object("d", |o| o
-				.insert_array("guild_id", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
-				.insert("query", "")
-				.insert("limit", 0)
-			)
-			.build();
-		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
-	}
-
 	/// Requests a download of online member lists.
 	///
 	/// It is recommended to avoid calling this method until the online member list
@@ -373,10 +360,10 @@ impl Connection {
 	///
 	/// Can be used with `State::all_servers`.
 	pub fn sync_servers(&self, servers: &[ServerId]) {
-		let msg = ObjectBuilder::new()
-			.insert("op", 12)
-			.insert_array("d", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
-			.build();
+		let msg = json! {{
+			"op": 12,
+			"d": servers,
+		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 
@@ -385,12 +372,10 @@ impl Connection {
 	/// Can be used with `State::all_private_channels`.
 	pub fn sync_calls(&self, channels: &[ChannelId]) {
 		for &channel in channels {
-			let msg = ObjectBuilder::new()
-				.insert("op", 13)
-				.insert_object("d", |o| o
-					.insert("channel_id", channel.0)
-				)
-				.build();
+			let msg = json! {{
+				"op": 13,
+				"d": { "channel_id": channel }
+			}};
 			let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 		}
 	}
@@ -402,42 +387,36 @@ impl Connection {
 	pub fn download_all_members(&mut self, state: &mut ::State) {
 		if state.unknown_members() == 0 { return }
 		let servers = state.__download_members();
-		let msg = ObjectBuilder::new()
-			.insert("op", 8)
-			.insert_object("d", |o| o
-				.insert_array("guild_id", |a| servers.iter().fold(a, |a, s| a.push(s.0)))
-				.insert("query", "")
-				.insert("limit", 0)
-			)
-			.build();
+		let msg = json! {{
+			"op": 8,
+			"d": {
+				"guild_id": servers,
+				"query": "",
+				"limit": 0,
+			}
+		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 }
 
 fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
-	ObjectBuilder::new()
-		.insert("op", 2)
-		.insert_object("d", |mut object| {
-			object = object
-				.insert("token", token)
-				.insert_object("properties", |object| object
-					.insert("$os", ::std::env::consts::OS)
-					.insert("$browser", "Discord library for Rust")
-					.insert("$device", "discord-rs")
-					.insert("$referring_domain", "")
-					.insert("$referrer", "")
-				)
-				.insert("large_threshold", 250)
-				.insert("compress", true)
-				.insert("v", GATEWAY_VERSION);
-
-			if let Some(shard_info) = shard_info {
-				object = object.insert_array("shard", |array| array.push(shard_info[0]).push(shard_info[1]));
-			}
-
-			object
-		})
-		.build()
+	json! {{
+		"op": 2,
+		"d": {
+			"token": token,
+			"properties": {
+				"$os": ::std::env::consts::OS,
+				"$browser": "Discord library for Rust",
+				"$device": "discord-rs",
+				"$referring_domain": "",
+				"$referrer": "",
+			},
+			"large_threshold": 250,
+			"compress": true,
+			"v": GATEWAY_VERSION,
+			"shard": shard_info.map(|info| json![[info[0], info[1]]]),
+		}
+	}}
 }
 
 #[inline]
@@ -476,10 +455,10 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 		}
 
 		if timer.check_tick() {
-			let map = ObjectBuilder::new()
-				.insert("op", 1)
-				.insert("d", last_sequence)
-				.build();
+			let map = json! {{
+				"op": 1,
+				"d": last_sequence
+			}};
 			match sender.send_json(&map) {
 				Ok(()) => {},
 				Err(e) => warn!("Error sending gateway keeaplive: {:?}", e)

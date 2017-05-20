@@ -11,7 +11,6 @@ use std::net::UdpSocket;
 use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 use opus;
 use serde_json;
-use serde_json::builder::ObjectBuilder;
 use sodiumoxide::crypto::secretbox as crypto;
 use websocket::client::{Client, Sender};
 use websocket::stream::WebSocketStream;
@@ -136,16 +135,15 @@ impl VoiceConnection {
 
 	/// Send the connect/disconnect command over the main websocket
 	fn send_connect(&self) {
-		let _ = self.main_ws.send(::internal::Status::SendMessage(ObjectBuilder::new()
-			.insert("op", 4)
-			.insert_object("d", |object| object
-				.insert("guild_id", self.server_id.map(|s| s.0))
-				.insert("channel_id", self.channel_id.map(|c| c.0))
-				.insert("self_mute", self.mute)
-				.insert("self_deaf", self.deaf)
-			)
-			.build()
-		));
+		let _ = self.main_ws.send(::internal::Status::SendMessage(json! {{
+			"op": 4,
+			"d": {
+				"guild_id": self.server_id,
+				"channel_id": self.channel_id,
+				"self_mute": self.mute,
+				"self_deaf": self.deaf,
+			}
+		}}));
 	}
 
 	#[doc(hidden)]
@@ -474,15 +472,15 @@ impl InternalConnection {
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the handshake
-		let map = ObjectBuilder::new()
-			.insert("op", 0)
-			.insert_object("d", |object| object
-				.insert("server_id", server_id)
-				.insert("user_id", user_id.0)
-				.insert("session_id", session_id)
-				.insert("token", token)
-			)
-			.build();
+		let map = json! {{
+			"op": 0,
+			"d": {
+				"server_id": server_id,
+				"user_id": user_id,
+				"session_id": session_id,
+				"token": token,
+			}
+		}};
 		try!(sender.send_json(&map));
 
 		let stuff;
@@ -532,17 +530,17 @@ impl InternalConnection {
 			let port_number = try!((&bytes[len - 2..]).read_u16::<LittleEndian>());
 
 			// send the acknowledgement websocket message
-			let map = ObjectBuilder::new()
-				.insert("op", 1)
-				.insert_object("d", |object| object
-					.insert("protocol", "udp")
-					.insert_object("data", |object| object
-						.insert("address", own_address)
-						.insert("port", port_number)
-						.insert("mode", "xsalsa20_poly1305")
-					)
-				)
-				.build();
+			let map = json! {{
+				"op": 1,
+				"d": {
+					"protocol": "udp",
+					"data": {
+						"address": own_address,
+						"port": port_number,
+						"mode": "xsalsa20_poly1305",
+					}
+				}
+			}};
 			try!(sender.send_json(&map));
 		}
 
@@ -657,10 +655,10 @@ impl InternalConnection {
 
 		// Send the voice websocket keepalive if needed
 		if self.keepalive_timer.check_tick() {
-			let map = ObjectBuilder::new()
-				.insert("op", 3)
-				.insert("d", serde_json::Value::Null)
-				.build();
+			let map = json! {{
+				"op": 3,
+				"d": serde_json::Value::Null,
+			}};
 			try!(self.sender.send_json(&map));
 		}
 
@@ -746,13 +744,13 @@ impl InternalConnection {
 			return Ok(())
 		}
 		self.speaking = speaking;
-		let map = ObjectBuilder::new()
-			.insert("op", 5)
-			.insert_object("d", |object| object
-				.insert("speaking", speaking)
-				.insert("delay", 0)
-			)
-			.build();
+		let map = json! {{
+			"op": 5,
+			"d": {
+				"speaking": speaking,
+				"delay": 0,
+			}
+		}};
 		self.sender.send_json(&map)
 	}
 }
