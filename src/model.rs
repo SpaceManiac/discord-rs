@@ -1252,6 +1252,7 @@ pub struct LiveServer {
 	pub splash: Option<String>,
 	pub default_message_notifications: u64,
 	pub mfa_level: u64,
+	pub explicit_content_filter: u64,
 }
 
 impl LiveServer {
@@ -1282,6 +1283,7 @@ impl LiveServer {
 			splash: try!(opt(&mut value, "splash", into_string)),
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
+			explicit_content_filter: req!(try!(remove(&mut value, "explicit_content_filter")).as_u64()),
 		})
 	}
 
