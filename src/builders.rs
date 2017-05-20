@@ -3,11 +3,10 @@
 //! These types do not usually need to be imported, but the methods available
 //! on them are very relevant to where they are used.
 
-use serde_json::{Map, Value};
-use model::*;
+use serde_json::Value;
 
-type ObjectBuilder = Map<String, Value>;
-type ArrayBuilder = Vec<Value>;
+use model::*;
+use Object;
 
 macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
@@ -17,7 +16,13 @@ macro_rules! builder {
 
 			impl<'a> $name<'a> {
 				#[doc(hidden)]
-				pub fn __build<F: FnOnce($name) -> $name>(f: F, mut inp: $inner) -> $inner {
+				#[inline(always)]
+				pub fn __build<F: FnOnce($name) -> $name>(f: F) -> $inner where $inner: Default {
+					Self::__apply(f, Default::default())
+				}
+
+				#[doc(hidden)]
+				pub fn __apply<F: FnOnce($name) -> $name>(f: F, mut inp: $inner) -> $inner {
 					f($name(&mut inp));
 					inp
 				}
@@ -28,31 +33,31 @@ macro_rules! builder {
 
 builder! {
 	/// Patch content for the `edit_server` call.
-	EditServer(ObjectBuilder);
+	EditServer(Object);
 
 	/// Patch content for the `edit_channel` call.
-	EditChannel(ObjectBuilder);
+	EditChannel(Object);
 
 	/// Patch content for the `edit_member` call.
-	EditMember(ObjectBuilder);
+	EditMember(Object);
 
 	/// Patch content for the `edit_profile` call.
-	EditProfile(ObjectBuilder);
+	EditProfile(Object);
 
 	/// Patch content for the `edit_user_profile` call.
-	EditUserProfile(ObjectBuilder);
+	EditUserProfile(Object);
 
 	/// Patch content for the `send_embed` call.
-	EmbedBuilder(ObjectBuilder);
+	EmbedBuilder(Object);
 
 	/// Inner patch content for the `send_embed` call.
-	EmbedFooterBuilder(ObjectBuilder);
+	EmbedFooterBuilder(Object);
 
 	/// Inner patch content for the `send_embed` call.
-	EmbedAuthorBuilder(ObjectBuilder);
+	EmbedAuthorBuilder(Object);
 
 	/// Inner patch content for the `send_embed` call.
-	EmbedFieldsBuilder(ArrayBuilder);
+	EmbedFieldsBuilder(Vec<Value>);
 }
 
 macro_rules! set {
@@ -225,7 +230,7 @@ impl<'a> EmbedBuilder<'a> {
 
 	/// Add "footer information". See the `EmbedFooterBuilder` struct for the editable fields.
 	pub fn footer<F: FnOnce(EmbedFooterBuilder) -> EmbedFooterBuilder>(self, f: F) -> Self {
-		set!(self, "footer", EmbedFooterBuilder::__build(f, Default::default()))
+		set!(self, "footer", EmbedFooterBuilder::__build(f))
 	}
 
 	/// Add "source url of image". Only supports http(s).
@@ -240,12 +245,12 @@ impl<'a> EmbedBuilder<'a> {
 
 	/// Add "author information". See the `EmbedAuthorBuilder` struct for the editable fields.
 	pub fn author<F: FnOnce(EmbedAuthorBuilder) -> EmbedAuthorBuilder>(self, f: F) -> Self {
-		set!(self, "author", EmbedAuthorBuilder::__build(f, Default::default()))
+		set!(self, "author", EmbedAuthorBuilder::__build(f))
 	}
 
 	/// Add "fields information". See the `EmbedFieldsBuilder` struct for the editable fields.
 	pub fn fields<F: FnOnce(EmbedFieldsBuilder) -> EmbedFieldsBuilder>(self, f: F) -> Self {
-		set!(self, "fields", EmbedFieldsBuilder::__build(f, Default::default()))
+		set!(self, "fields", EmbedFieldsBuilder::__build(f))
 	}
 }
 

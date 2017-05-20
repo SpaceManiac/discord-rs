@@ -309,7 +309,7 @@ impl Discord {
 			},
 			Channel::Group(group) => { map.insert("name".into(), json!(group.name)); },
 		};
-		let map = EditChannel::__build(f, map);
+		let map = EditChannel::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}", channel);
 		PublicChannel::decode(try!(serde_json::from_reader(response)))
@@ -443,7 +443,7 @@ impl Discord {
 	pub fn send_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, text: &str, f: F) -> Result<Message> {
 		let map = json! {{
 			"content": text,
-			"embed": EmbedBuilder::__build(f, Default::default()),
+			"embed": EmbedBuilder::__build(f),
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
@@ -455,7 +455,7 @@ impl Discord {
 	/// The text is unmodified, but the previous embed is entirely replaced.
 	pub fn edit_embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(&self, channel: ChannelId, message: MessageId, f: F) -> Result<Message> {
 		let map = json! {{
-			"embed": EmbedBuilder::__build(f, Default::default())
+			"embed": EmbedBuilder::__build(f)
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
@@ -705,7 +705,7 @@ impl Discord {
 	/// );
 	/// ```
 	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
-		let map = EditServer::__build(f, Default::default());
+		let map = EditServer::__build(f);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/guilds/{}", server_id);
 		Server::decode(try!(serde_json::from_reader(response)))
@@ -848,7 +848,7 @@ impl Discord {
 	///
 	/// See the `EditMember` struct for the editable fields.
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
-		let map = EditMember::__build(f, Default::default());
+		let map = EditMember::__build(f);
 		let body = try!(serde_json::to_string(&map));
 		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
@@ -866,9 +866,7 @@ impl Discord {
 	/// Create a private channel with the given user, or return the existing
 	/// one if it exists.
 	pub fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
-		let map = json! {{
-			"recipient_id": recipient.0
-		}};
+		let map = json! {{ "recipient_id": recipient }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/users/@me/channels");
 		PrivateChannel::decode(try!(serde_json::from_reader(response)))
@@ -902,7 +900,7 @@ impl Discord {
 		map.insert("avatar".into(), json!(user.avatar));
 
 		// Then, send the profile patch.
-		let map = EditProfile::__build(f, map);
+		let map = EditProfile::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
 		let json: Object = try!(serde_json::from_reader(response));
@@ -928,7 +926,7 @@ impl Discord {
 		}
 
 		// Then, send the profile patch.
-		let map = EditUserProfile::__build(f, map);
+		let map = EditUserProfile::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
 		let mut json: Object = try!(serde_json::from_reader(response));
@@ -949,9 +947,7 @@ impl Discord {
 
 	/// Move a server member to another voice channel.
 	pub fn move_member_voice(&self, server: ServerId, user: UserId, channel: ChannelId) -> Result<()> {
-		let map = json! {{
-			"channel_id": channel.0
-		}};
+		let map = json! {{ "channel_id": channel }};
 		let body = try!(serde_json::to_string(&map));
 		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
@@ -960,9 +956,7 @@ impl Discord {
 	/// specified number of days. Members with a role assigned will never be
 	/// pruned.
 	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
-		let map = json! {{
-			"days": days
-		}};
+		let map = json! {{ "days": days }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/guilds/{}/prune", server);
 		ServerPrune::decode(try!(serde_json::from_reader(response)))
@@ -972,9 +966,7 @@ impl Discord {
 	/// number of days and would be pruned by a prune operation. Members with a
 	/// role assigned will never be pruned.
 	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
-		let map = json! {{
-			"days": days
-		}};
+		let map = json! {{ "days": days }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, get(body), "/guilds/{}/prune", server);
 		ServerPrune::decode(try!(serde_json::from_reader(response)))
