@@ -1,11 +1,20 @@
 //! Serde integration support.
 
 use std::fmt;
+use std::marker::PhantomData;
 
 use serde::*;
 use serde::de::{Visitor, Error, Unexpected};
 
-/// Deserialize a maybe-string ID into a u64
+fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E> {
+	if n >= 0 {
+		v.visit_u64(n as u64)
+	} else {
+		Err(E::invalid_value(Unexpected::Signed(n), &v))
+	}
+}
+
+/// Deserialize a maybe-string ID into a u64.
 pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 	struct IdVisitor;
 	impl<'d> Visitor<'d> for IdVisitor {
@@ -16,11 +25,7 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 		}
 
 		fn visit_i64<E: Error>(self, v: i64) -> Result<u64, E> {
-			if v >= 0 {
-				Ok(v as u64)
-			} else {
-				Err(E::invalid_value(Unexpected::Signed(v), &self))
-			}
+			i64_to_u64(self, v)
 		}
 
 		fn visit_u64<E: Error>(self, v: u64) -> Result<u64, E> {
@@ -39,15 +44,15 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 /// Also enforces 0 <= N <= 9999.
 #[allow(unused_comparisons)]
 pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Error> {
-    macro_rules! check {
-        ($self:ident, $v:ident, $wrong:expr) => {
-            if $v >= 0 && $v <= 9999 {
-                Ok($v as u16)
-            } else {
-                Err(E::invalid_value($wrong, &$self))
-            }
-        }
-    }
+	macro_rules! check {
+		($self:ident, $v:ident, $wrong:expr) => {
+			if $v >= 0 && $v <= 9999 {
+				Ok($v as u16)
+			} else {
+				Err(E::invalid_value($wrong, &$self))
+			}
+		}
+	}
 
 	struct DiscrimVisitor;
 	impl<'d> Visitor<'d> for DiscrimVisitor {
@@ -58,7 +63,7 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 		}
 
 		fn visit_i64<E: Error>(self, v: i64) -> Result<u16, E> {
-            check!(self, v, Unexpected::Signed(v))
+			check!(self, v, Unexpected::Signed(v))
 		}
 
 		fn visit_u64<E: Error>(self, v: u64) -> Result<u16, E> {
@@ -67,8 +72,8 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 
 		fn visit_str<E: Error>(self, v: &str) -> Result<u16, E> {
 			v.parse::<u16>()
-                .map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
-                .and_then(|v| self.visit_u16(v))
+				.map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
+				.and_then(|v| self.visit_u16(v))
 		}
 	}
 
@@ -77,17 +82,165 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 
 /// Deserialize a single-field struct like a newtype struct.
 macro_rules! serial_single_field {
-    ($typ:ident as $field:ident: $inner:path) => {
-        impl ::serde::Serialize for $typ {
-            fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
-                self.$field.serialize(s)
-            }
-        }
+	($typ:ident as $field:ident: $inner:path) => {
+		impl ::serde::Serialize for $typ {
+			fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+				self.$field.serialize(s)
+			}
+		}
 
-        impl<'d> ::serde::Deserialize<'d> for $typ {
-            fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
-                <$inner as ::serde::de::Deserialize>::deserialize(d).map(|v| $typ { $field: v })
-            }
-        }
-    }
+		impl<'d> ::serde::Deserialize<'d> for $typ {
+			fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
+				<$inner as ::serde::de::Deserialize>::deserialize(d).map(|v| $typ { $field: v })
+			}
+		}
+	}
+}
+
+/// Support for named enums.
+pub mod named {
+	use super::*;
+
+	pub trait NamedEnum: Sized {
+		fn name(&self) -> &'static str;
+		fn from_name(name: &str) -> Option<Self>;
+		fn typename() -> &'static str;
+	}
+
+	pub fn serialize<T: NamedEnum, S: Serializer>(v: &T, s: S) -> Result<S::Ok, S::Error> {
+		v.name().serialize(s)
+	}
+
+	pub fn deserialize<'d, T: NamedEnum, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
+		struct NameVisitor<T>(PhantomData<T>);
+		impl<'d, T: NamedEnum> Visitor<'d> for NameVisitor<T> {
+			type Value = T;
+
+			fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+				write!(fmt, "a valid {} name", T::typename())
+			}
+
+			fn visit_str<E: Error>(self, v: &str) -> Result<T, E> {
+				T::from_name(v).ok_or_else(|| E::invalid_value(Unexpected::Str(v), &self))
+			}
+		}
+
+		d.deserialize_string(NameVisitor(PhantomData))
+	}
+}
+macro_rules! serial_names {
+	($typ:ident; $($entry:ident, $value:expr;)*) => {
+		impl $typ {
+			pub fn name(&self) -> &'static str {
+				match *self {
+					$($typ::$entry => $value,)*
+				}
+			}
+
+			pub fn from_name(name: &str) -> Option<Self> {
+				match name {
+					$($value => Some($typ::$entry),)*
+					_ => None,
+				}
+			}
+		}
+
+		impl ::serial::named::NamedEnum for $typ {
+			fn name(&self) -> &'static str {
+				self.name()
+			}
+
+			fn from_name(name: &str) -> Option<Self> {
+				Self::from_name(name)
+			}
+
+			fn typename() -> &'static str {
+				stringify!($typ)
+			}
+		}
+	}
+}
+
+/// Support for numeric enums.
+pub mod numeric {
+	use super::*;
+
+	pub trait NumericEnum: Sized {
+		fn num(&self) -> u64;
+		fn from_num(num: u64) -> Option<Self>;
+		fn typename() -> &'static str;
+	}
+
+	pub fn serialize<T: NumericEnum, S: Serializer>(v: &T, s: S) -> Result<S::Ok, S::Error> {
+		v.num().serialize(s)
+	}
+
+	pub fn deserialize<'d, T: NumericEnum, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
+		struct NumVisitor<T>(PhantomData<T>);
+		impl<'d, T: NumericEnum> Visitor<'d> for NumVisitor<T> {
+			type Value = T;
+
+			fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+				write!(fmt, "a valid {} number", T::typename())
+			}
+
+			fn visit_i64<E: Error>(self, v: i64) -> Result<T, E> {
+				i64_to_u64(self, v)
+			}
+
+			fn visit_u64<E: Error>(self, v: u64) -> Result<T, E> {
+				T::from_num(v).ok_or_else(|| E::invalid_value(Unexpected::Unsigned(v), &self))
+			}
+		}
+
+		d.deserialize_string(NumVisitor(PhantomData))
+	}
+}
+macro_rules! serial_numbers {
+	($typ:ident; $($entry:ident, $value:expr;)*) => {
+		impl $typ {
+			pub fn num(&self) -> u64 {
+				match *self {
+					$($typ::$entry => $value,)*
+				}
+			}
+
+			pub fn from_num(num: u64) -> Option<Self> {
+				match num {
+					$($value => Some($typ::$entry),)*
+					_ => None,
+				}
+			}
+		}
+		impl ::serial::numeric::NumericEnum for $typ {
+			fn num(&self) -> u64 {
+				self.num()
+			}
+
+			fn from_num(num: u64) -> Option<Self> {
+				Self::from_num(num)
+			}
+
+			fn typename() -> &'static str {
+				stringify!($typ)
+			}
+		}
+	}
+}
+
+/// Support for using "named" or "numeric" as the default ser/de impl.
+macro_rules! serial_use_mapping {
+	($typ:ident, $named_or_numeric:ident) => {
+		impl ::serde::Serialize for $typ {
+			fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+				::serial::$named_or_numeric::serialize(self, s)
+			}
+		}
+
+		impl<'d> ::serde::Deserialize<'d> for $typ {
+			fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
+				::serial::$named_or_numeric::deserialize(d)
+			}
+		}
+	}
 }

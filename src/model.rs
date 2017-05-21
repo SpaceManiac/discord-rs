@@ -115,7 +115,7 @@ macro_rules! id {
 			impl $name {
 				#[inline]
 				fn decode(value: Value) -> Result<Self> {
-					decode_id(value).map($name)
+					serde(value)
 				}
 
 				/// Get the creation date of the object referred to by this ID.
@@ -241,13 +241,14 @@ pub enum ChannelType {
 	Voice,
 }
 
-map_names! { ChannelType;
+serial_use_mapping!(ChannelType, numeric);
+serial_names! { ChannelType;
 	Group, "group";
 	Private, "private";
 	Text, "text";
 	Voice, "voice";
 }
-map_numbers! { ChannelType;
+serial_numbers! { ChannelType;
 	Text, 0;
 	Private, 1;
 	Voice, 2;
@@ -313,7 +314,7 @@ impl Server {
 			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
 			region: try!(remove(&mut value, "region").and_then(into_string)),
 			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
-			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
+			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
@@ -474,7 +475,11 @@ pub struct Group {
 	pub owner_id: UserId,
 	#[serde(default)]
 	pub recipients: Vec<User>,
-	// TODO: formally ignore "type" field
+
+	// ignore the "type" field
+	#[serde(rename="type")]
+	#[serde(skip_serializing)]
+	_type: ::serde::de::IgnoredAny,
 }
 
 impl Group {
@@ -545,7 +550,7 @@ impl PrivateChannel {
 		}
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
+			kind: try!(remove(&mut value, "type").and_then(serde)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
@@ -584,7 +589,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: try!(opt(&mut value, "topic", into_string)),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
+			kind: try!(remove(&mut value, "type").and_then(serde)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
@@ -763,7 +768,7 @@ impl Message {
 			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
 			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
 			pinned: req!(try!(remove(&mut value, "pinned")).as_bool()),
-			kind: try!(remove(&mut value, "type").and_then(MessageType::decode)),
+			kind: try!(remove(&mut value, "type").and_then(serde)),
 			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_bool()),
 			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
 			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
@@ -794,7 +799,8 @@ pub enum MessageType {
 	MessagePinned,
 }
 
-map_numbers! { MessageType;
+serial_use_mapping!(MessageType, numeric);
+serial_numbers! { MessageType;
 	Regular, 0;
 	GroupRecipientAddition, 1;
 	GroupRecipientRemoval, 2;
@@ -825,7 +831,7 @@ impl Invite {
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
+		let channel_type = try!(remove(&mut channel, "type").and_then(serde));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
@@ -872,7 +878,7 @@ impl RichInvite {
 		warn_field("RichInvite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
+		let channel_type = try!(remove(&mut channel, "type").and_then(serde));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("RichInvite/channel", channel);
@@ -944,7 +950,8 @@ pub enum OnlineStatus {
 	Idle,
 }
 
-map_names! { OnlineStatus;
+serial_use_mapping!(OnlineStatus, named);
+serial_names! { OnlineStatus;
 	DoNotDisturb, "dnd";
 	Invisible, "invisible";
 	Offline, "offline";
@@ -959,7 +966,8 @@ pub enum GameType {
 	Streaming,
 }
 
-map_numbers! { GameType;
+serial_use_mapping!(GameType, numeric);
+serial_numbers! { GameType;
 	Playing, 0;
 	Streaming, 1;
 }
@@ -1029,7 +1037,7 @@ impl Presence {
 
 		warn_json!(@"Presence", value, Presence {
 			user_id: user_id,
-			status: try!(remove(&mut value, "status").and_then(OnlineStatus::decode_str)),
+			status: try!(remove(&mut value, "status").and_then(serde)),
 			last_modified: try!(opt(&mut value, "last_modified", |v| Ok(req!(v.as_u64())))),
 			game: match value.remove("game") {
 				None | Some(Value::Null) => None,
@@ -1074,7 +1082,8 @@ pub enum VerificationLevel {
 	High,
 }
 
-map_numbers! { VerificationLevel;
+serial_use_mapping!(VerificationLevel, numeric);
+serial_numbers! { VerificationLevel;
 	None, 0;
 	Low, 1;
 	Medium, 2;
@@ -1205,7 +1214,7 @@ impl LiveServer {
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
-			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
+			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
@@ -1515,7 +1524,8 @@ pub enum NotificationLevel {
 	Parent,
 }
 
-map_numbers! { NotificationLevel;
+serial_use_mapping!(NotificationLevel, numeric);
+serial_numbers! { NotificationLevel;
 	All, 0;
 	Mentions, 1;
 	Nothing, 2;
@@ -1523,7 +1533,7 @@ map_numbers! { NotificationLevel;
 }
 
 /// A channel-specific notification settings override
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelOverride {
 	pub channel_id: ChannelId,
 	pub message_notifications: NotificationLevel,
@@ -1532,12 +1542,7 @@ pub struct ChannelOverride {
 
 impl ChannelOverride {
 	pub fn decode(value: Value) -> Result<ChannelOverride> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ChannelOverride {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
-			muted: req!(try!(remove(&mut value, "muted")).as_bool()),
-		})
+		serde(value)
 	}
 }
 
@@ -1557,7 +1562,7 @@ impl UserServerSettings {
 		let mut value = try!(into_map(value));
 		warn_json!(value, UserServerSettings {
 			server_id: try!(opt(&mut value, "guild_id", ServerId::decode)),
-			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
+			message_notifications: try!(remove(&mut value, "message_notifications").and_then(serde)),
 			mobile_push: req!(try!(remove(&mut value, "mobile_push")).as_bool()),
 			muted: req!(try!(remove(&mut value, "muted")).as_bool()),
 			suppress_everyone: req!(try!(remove(&mut value, "suppress_everyone")).as_bool()),
@@ -1944,7 +1949,7 @@ impl Event {
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				kind: try!(opt(&mut value, "type", MessageType::decode)),
+				kind: try!(opt(&mut value, "type", serde)),
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_bool()),

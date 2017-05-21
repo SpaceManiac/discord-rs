@@ -99,7 +99,7 @@ impl<'a> EditServer<'a> {
 
 	/// Edit the verification level of the server.
 	pub fn verification_level(self, verification_level: VerificationLevel) -> Self {
-		set!(self, "verification_level", verification_level.num())
+		set!(self, "verification_level", verification_level)
 	}
 
 	/// Edit the server's splash. Use `None` to remove the splash.

@@ -160,7 +160,7 @@ impl Connection {
 			"d": {
 				"afk": afk,
 				"since": 0,
-				"status": status.name(),
+				"status": status,
 				"game": game,
 			}
 		}};
