@@ -96,6 +96,10 @@ impl Connection {
 						sequence = seq;
 						ready = event;
 					}
+					GatewayEvent::InvalidateSession => {
+						return Err(Error::Protocol("Invalid session during handshake. \
+							Double-check your token or consider waiting 5 seconds between starting shards."))
+					}
 					other => {
 						debug!("Unexpected event: {:?}", other);
 						return Err(Error::Protocol("Expected Ready during handshake"))

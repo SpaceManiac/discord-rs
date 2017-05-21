@@ -5,9 +5,9 @@ use std::fmt;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use super::{Error, Result};
+use super::{Error, Result, Object};
 
 pub use self::permissions::Permissions;
 
@@ -1939,7 +1939,7 @@ pub enum Event {
 	ReactionRemove(Reaction),
 
 	/// An event type not covered by the above
-	Unknown(String, Map<String, Value>),
+	Unknown(String, Object),
 	// Any other event. Should never be used directly.
 	#[doc(hidden)]
 	__Nonexhaustive,
@@ -2193,25 +2193,37 @@ pub enum GatewayEvent {
 impl GatewayEvent {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
-		match req!(value.get("op").and_then(|x| x.as_u64())) {
-			0 => Ok(GatewayEvent::Dispatch(
+		let event = match req!(value.remove("op").and_then(|x| x.as_u64())) {
+			0 => GatewayEvent::Dispatch(
 				req!(try!(remove(&mut value, "s")).as_u64()),
 				try!(Event::decode(
 					try!(remove(&mut value, "t").and_then(into_string)),
 					try!(remove(&mut value, "d"))
 				))
-			)),
-			1 => Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64()))),
-			7 => Ok(GatewayEvent::Reconnect),
-			9 => Ok(GatewayEvent::InvalidateSession),
+			),
+			1 => GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64())),
+			7 => GatewayEvent::Reconnect,
+			9 => GatewayEvent::InvalidateSession,
 			10 => {
 				let mut data = try!(remove(&mut value, "d").and_then(into_map));
 				let interval = req!(try!(remove(&mut data, "heartbeat_interval")).as_u64());
-				Ok(GatewayEvent::Hello(interval))
+				GatewayEvent::Hello(interval)
 			},
-			11 => Ok(GatewayEvent::HeartbeatAck),
-			_ => Err(Error::Decode("Unexpected opcode", Value::Object(value))),
+			11 => GatewayEvent::HeartbeatAck,
+			_ => return Err(Error::Decode("Unexpected opcode", Value::Object(value))),
+		};
+		// Warn if d, s, or t have unhandled contents
+		if value.get("d").map_or(false, |x| x.is_null()) {
+			value.remove("d");
 		}
+		if value.get("s").map_or(false, |x| x.is_null()) {
+			value.remove("s");
+		}
+		if value.get("t").map_or(false, |x| x.is_null()) {
+			value.remove("t");
+		}
+		warn_field("GatewayEvent", value);
+		Ok(event)
 	}
 }
 
@@ -2287,11 +2299,11 @@ impl VoiceEvent {
 //=================
 // Decode helpers
 
-fn remove(map: &mut Map<String, Value>, key: &str) -> Result<Value> {
+fn remove(map: &mut Object, key: &str) -> Result<Value> {
 	map.remove(key).ok_or_else(|| Error::Decode("Unexpected absent key", Value::String(key.into())))
 }
 
-fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut Map<String, Value>, key: &str, f: F) -> Result<Option<T>> {
+fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut Object, key: &str, f: F) -> Result<Option<T>> {
 	match map.remove(key) {
 		None | Some(Value::Null) => Ok(None),
 		Some(val) => f(val).map(Some),
@@ -2339,7 +2351,7 @@ fn into_array(value: Value) -> Result<Vec<Value>> {
 	}
 }
 
-fn into_map(value: Value) -> Result<Map<String, Value>> {
+fn into_map(value: Value) -> Result<Object> {
 	match value {
 		Value::Object(m) => Ok(m),
 		value => Err(Error::Decode("Expected object", value)),
@@ -2351,7 +2363,7 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 	into_array(value).and_then(|x| x.into_iter().map(f).collect())
 }
 
-fn warn_field(name: &str, map: Map<String, Value>) {
+fn warn_field(name: &str, map: Object) {
 	if !map.is_empty() {
 		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}
