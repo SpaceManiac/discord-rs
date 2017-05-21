@@ -14,6 +14,11 @@ fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E>
 	}
 }
 
+/// Ignore deserialization errors and revert to default.
+pub fn ignore_errors<'d, T: Deserialize<'d> + Default, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
+	Ok(T::deserialize(d).ok().unwrap_or_default())
+}
+
 /// Deserialize a maybe-string ID into a u64.
 pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 	struct IdVisitor;
@@ -94,6 +99,32 @@ macro_rules! serial_single_field {
 				<$inner as ::serde::de::Deserialize>::deserialize(d).map(|v| $typ { $field: v })
 			}
 		}
+	}
+}
+
+/// Special support for the oddly complex ReactionEmoji.
+pub mod reaction_emoji {
+	use super::*;
+	use model::{ReactionEmoji, EmojiId};
+
+	#[derive(Serialize, Deserialize)]
+	struct RawEmoji<'s> {
+		name: &'s str,
+		id: Option<EmojiId>,
+	}
+
+	pub fn serialize<S: Serializer>(v: &ReactionEmoji, s: S) -> Result<S::Ok, S::Error> {
+		(match *v {
+			ReactionEmoji::Unicode(ref name) => RawEmoji { name: name, id: None },
+			ReactionEmoji::Custom { ref name, id } => RawEmoji { name: name, id: Some(id) },
+		}).serialize(s)
+	}
+
+	pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
+		Ok(match try!(RawEmoji::deserialize(d)) {
+			RawEmoji { name, id: None } => ReactionEmoji::Unicode(name.to_owned()),
+			RawEmoji { name, id: Some(id) } => ReactionEmoji::Custom { name: name.to_owned(), id: id },
+		})
 	}
 }
 
@@ -230,16 +261,18 @@ macro_rules! serial_numbers {
 
 /// Support for using "named" or "numeric" as the default ser/de impl.
 macro_rules! serial_use_mapping {
-	($typ:ident, $named_or_numeric:ident) => {
+	($typ:ident, $which:ident) => {
 		impl ::serde::Serialize for $typ {
+			#[inline]
 			fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
-				::serial::$named_or_numeric::serialize(self, s)
+				::serial::$which::serialize(self, s)
 			}
 		}
 
 		impl<'d> ::serde::Deserialize<'d> for $typ {
+			#[inline]
 			fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
-				::serial::$named_or_numeric::deserialize(d)
+				::serial::$which::deserialize(d)
 			}
 		}
 	}
