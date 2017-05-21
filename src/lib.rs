@@ -330,7 +330,7 @@ impl Discord {
 	/// Get a single message by ID from a given channel.
 	pub fn get_message(&self, channel: ChannelId, message: MessageId) -> Result<Message> {
 		let response = request!(self, get, "/channels/{}/messages/{}", channel, message);
-		Message::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Get messages in the backlog for a given channel.
@@ -349,13 +349,13 @@ impl Discord {
 			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id); },
 		}
 		let response = try!(self.request(&url, || self.client.get(&url)));
-		decode_array(try!(serde_json::from_reader(response)), Message::decode)
+		from_reader(response)
 	}
 
 	/// Gets the pinned messages for a given channel.
 	pub fn get_pinned_messages(&self, channel: ChannelId) -> Result<Vec<Message>> {
 		let response = request!(self, get, "/channels/{}/pins", channel);
-		decode_array(try!(serde_json::from_reader(response)), Message::decode)
+		from_reader(response)
 	}
 
 	/// Pin the given message to the given channel.
@@ -384,7 +384,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
-		Message::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Edit a previously posted message.
@@ -395,7 +395,7 @@ impl Discord {
 		let map = json! {{ "content": text }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
-		Message::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Delete a previously posted message.
@@ -448,7 +448,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
-		Message::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Edit the embed portion of a previously posted message.
@@ -460,7 +460,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
-		Message::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Send a file attached to a message on a given channel.
@@ -477,7 +477,7 @@ impl Discord {
 		let mut request = try!(multipart::client::Multipart::from_request(request));
 		try!(request.write_text("content", text));
 		try!(request.write_stream("file", &mut file, Some(filename), None));
-		Message::decode(try!(serde_json::from_reader(try!(check_status(request.send())))))
+		from_reader(try!(check_status(request.send())))
 	}
 
 	/// Acknowledge this message as "read" by this client.
@@ -671,13 +671,13 @@ impl Discord {
 		}
 
 		let response = request!(self, get, "{}", endpoint);
-		decode_array(try!(serde_json::from_reader(response)), User::decode)
+		from_reader(response)
 	}
 
 	/// Get the list of servers this user knows about.
 	pub fn get_servers(&self) -> Result<Vec<ServerInfo>> {
 		let response = request!(self, get, "/users/@me/guilds");
-		decode_array(try!(serde_json::from_reader(response)), ServerInfo::decode)
+		from_reader(response)
 	}
 
 	/// Create a new server with the given name.
@@ -689,7 +689,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/guilds");
-		Server::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Edit a server's information. See `EditServer` for the editable fields.
@@ -709,19 +709,19 @@ impl Discord {
 		let map = EditServer::__build(f);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/guilds/{}", server_id);
-		Server::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Leave the given server.
 	pub fn leave_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/users/@me/guilds/{}", server);
-		Server::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Delete the given server. Only available to the server owner.
 	pub fn delete_server(&self, server: ServerId) -> Result<Server> {
 		let response = request!(self, delete, "/guilds/{}", server);
-		Server::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Creates an emoji in a server.
@@ -736,7 +736,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/guilds/{}/emojis", server);
-		Emoji::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Edits a server's emoji.
@@ -749,7 +749,7 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/guilds/{}/emojis/{}", server, emoji);
-		Emoji::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Delete an emoji in a server.
@@ -763,7 +763,7 @@ impl Discord {
 	/// Get the ban list for the given server.
 	pub fn get_bans(&self, server: ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
-		decode_array(try!(serde_json::from_reader(response)), Ban::decode)
+		from_reader(response)
 	}
 
 	/// Ban a user from the server, optionally deleting their recent messages.
@@ -837,7 +837,7 @@ impl Discord {
 	/// Retrieve a member object for a server given the member's user id.
 	pub fn get_member(&self, server: ServerId, user: UserId) -> Result<Member> {
 		let response = request!(self, get, "/guilds/{}/members/{}", server, user);
-		Member::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Edit the list of roles assigned to a member of a server.
@@ -895,7 +895,7 @@ impl Discord {
 	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
-		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		let user: CurrentUser = try!(from_reader(response));
 		let mut map = Object::new();
 		map.insert("username".into(), json!(user.username));
 		map.insert("avatar".into(), json!(user.avatar));
@@ -904,8 +904,7 @@ impl Discord {
 		let map = EditProfile::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/users/@me");
-		let json: Object = try!(serde_json::from_reader(response));
-		CurrentUser::decode(serde_json::Value::Object(json))
+		from_reader(response)
 	}
 
 	/// Edit the logged-in non-bot user's profile. See `EditUserProfile` for editable fields.
@@ -915,7 +914,7 @@ impl Discord {
 	pub fn edit_user_profile<F: FnOnce(EditUserProfile) -> EditUserProfile>(&mut self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
-		let user = try!(CurrentUser::decode(try!(serde_json::from_reader(response))));
+		let user: CurrentUser = try!(from_reader(response));
 		if user.bot {
 			return Err(Error::Other("Cannot call edit_user_profile on a bot account"))
 		}
@@ -943,7 +942,7 @@ impl Discord {
 	/// Get the list of available voice regions for a server.
 	pub fn get_voice_regions(&self) -> Result<Vec<VoiceRegion>> {
 		let response = request!(self, get, "/voice/regions");
-		decode_array(try!(serde_json::from_reader(response)), VoiceRegion::decode)
+		from_reader(response)
 	}
 
 	/// Move a server member to another voice channel.
@@ -960,7 +959,7 @@ impl Discord {
 		let map = json! {{ "days": days }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/guilds/{}/prune", server);
-		ServerPrune::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Get the number of members who have been inactive for the specified
@@ -970,7 +969,7 @@ impl Discord {
 		let map = json! {{ "days": days }};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, get(body), "/guilds/{}/prune", server);
-		ServerPrune::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Sets a note for the user that is readable only to the currently logged
@@ -989,7 +988,7 @@ impl Discord {
 	/// Retrieves information about the application and the owner.
 	pub fn get_application_info(&self) -> Result<ApplicationInfo> {
 		let response = request!(self, get, "/oauth2/applications/@me");
-		ApplicationInfo::decode(try!(serde_json::from_reader(response)))
+		from_reader(response)
 	}
 
 	/// Retrieves the number of guild shards Discord suggests to use based on
@@ -1040,6 +1039,10 @@ impl Discord {
 		};
 		Connection::new(url, &self.token, shard_info)
 	}
+}
+
+fn from_reader<T: serde::de::DeserializeOwned, R: std::io::Read>(r: R) -> Result<T> {
+	serde_json::from_reader(r).map_err(From::from)
 }
 
 /// Read an image from a file into a string suitable for upload.
