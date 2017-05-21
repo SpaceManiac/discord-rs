@@ -53,6 +53,7 @@ macro_rules! cdn_concat {
 	($e:expr) => (concat!("https://cdn.discordapp.com", $e))
 }
 
+#[macro_use] mod serial;
 pub mod model;
 pub mod builders;
 

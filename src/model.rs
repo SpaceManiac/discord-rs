@@ -109,8 +109,8 @@ macro_rules! id {
 			/// raw number value printed using the `{}` specifier.
 			/// Some identifiers have `mention()` methods as well.
 			#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-			#[derive(Serialize)]
-			pub struct $name(pub u64);
+			#[derive(Serialize, Deserialize)]
+			pub struct $name(#[serde(deserialize_with = "::serial::deserialize_id")] pub u64);
 
 			impl $name {
 				#[inline]
@@ -223,6 +223,11 @@ fn mention_test() {
 //=================
 // Rest model
 
+#[inline]
+fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
+	::serde_json::from_value(value).map_err(From::from)
+}
+
 /// The type of a channel
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
@@ -250,7 +255,7 @@ map_numbers! { ChannelType;
 }
 
 /// The basic information about a server only
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
 	pub id: ServerId,
 	pub name: String,
@@ -261,14 +266,7 @@ pub struct ServerInfo {
 
 impl ServerInfo {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ServerInfo {
-			id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			owner: req!(try!(remove(&mut value, "owner")).as_bool()),
-			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
-		})
+		serde(value)
 	}
 
 	/// Returns the formatted URL of the server's icon.
@@ -335,22 +333,19 @@ impl Server {
 
 /// Representation of the number of member that would be pruned by a server
 /// prune operation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerPrune {
 	pub pruned: u64,
 }
 
 impl ServerPrune {
 	pub fn decode(value: Value) -> Result<ServerPrune> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ServerPrune {
-			pruned: req!(try!(remove(&mut value, "pruned")).as_u64()),
-		})
+		serde(value)
 	}
 }
 
 /// Information about a role
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
 	pub id: RoleId,
 	pub name: String,
@@ -359,23 +354,14 @@ pub struct Role {
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
+	#[serde(default)] // default to false
 	pub mentionable: bool,
 	pub permissions: Permissions,
 }
 
 impl Role {
 	pub fn decode(value: Value) -> Result<Role> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Role {
-			id: try!(remove(&mut value, "id").and_then(RoleId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
-			color: req!(try!(remove(&mut value, "color")).as_u64()),
-			hoist: req!(try!(remove(&mut value, "hoist")).as_bool()),
-			managed: req!(try!(remove(&mut value, "managed")).as_bool()),
-			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
+		serde(value)
 	}
 
 	/// Return a `Mention` which will ping members of this role.
@@ -384,7 +370,7 @@ impl Role {
 }
 
 /// A banning of a user
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ban {
 	reason: Option<String>,
 	user: User,
@@ -392,34 +378,26 @@ pub struct Ban {
 
 impl Ban {
 	pub fn decode(value: Value) -> Result<Ban> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Ban {
-			reason: try!(opt(&mut value, "reason", into_string)),
-			user: try!(remove(&mut value, "user").and_then(User::decode)),
-		})
+		serde(value)
 	}
 }
 
 /// Broadly-applicable user information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
 	pub id: UserId,
+	#[serde(rename="username")]
 	pub name: String,
+	#[serde(deserialize_with="::serial::deserialize_discrim")]
 	pub discriminator: u16,
 	pub avatar: Option<String>,
+	#[serde(default)]
 	pub bot: bool,
 }
 
 impl User {
 	pub fn decode(value: Value) -> Result<User> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, User {
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			name: try!(remove(&mut value, "username").and_then(into_string)),
-			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
-			avatar: try!(opt(&mut value, "avatar", into_string)),
-			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
+		serde(value)
 	}
 
 	/// Return a `Mention` which will ping this user.
@@ -436,7 +414,7 @@ impl User {
 }
 
 /// Information about a member of a server
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Member {
 	pub user: User,
 	pub roles: Vec<RoleId>,
@@ -448,15 +426,7 @@ pub struct Member {
 
 impl Member {
 	pub fn decode(value: Value) -> Result<Member> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Member {
-			user: try!(remove(&mut value, "user").and_then(User::decode)),
-			roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
-			nick: try!(opt(&mut value, "nick", into_string)),
-			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
-			mute: req!(try!(remove(&mut value, "mute")).as_bool()),
-			deaf: req!(try!(remove(&mut value, "deaf")).as_bool()),
-		})
+		serde(value)
 	}
 
 	pub fn display_name(&self) -> &str {
@@ -493,30 +463,23 @@ impl Channel {
 }
 
 /// A group channel, potentially including other users, separate from a server.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
+	#[serde(rename="id")]
 	pub channel_id: ChannelId,
 	pub icon: Option<String>,
 	pub last_message_id: Option<MessageId>,
 	pub last_pin_timestamp: Option<String>,
 	pub name: Option<String>,
 	pub owner_id: UserId,
+	#[serde(default)]
 	pub recipients: Vec<User>,
+	// TODO: formally ignore "type" field
 }
 
 impl Group {
 	pub fn decode(value: Value) -> Result<Group> {
-		let mut value = try!(into_map(value));
-		let _ = remove(&mut value, "type"); // ignore "type" field
-		warn_json!(value, Group {
-			channel_id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
-			name: try!(opt(&mut value, "name", into_string)),
-			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
-			recipients: try!(opt(&mut value, "recipients", |r| decode_array(r, User::decode))).unwrap_or(Vec::new()),
-		})
+		serde(value)
 	}
 
 	/// Get this group's name, building a default if needed
@@ -529,8 +492,8 @@ impl Group {
 				}
 				let mut result = self.recipients[0].name.clone();
 				for user in &self.recipients[1..] {
-					use std::fmt::Write;
-					let _ = write!(result, ", {}", user.name);
+					result.push_str(", ");
+					result.push_str(&user.name);
 				}
 				Cow::Owned(result)
 			}
@@ -547,7 +510,7 @@ impl Group {
 }
 
 /// An active group or private call
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Call {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
@@ -559,15 +522,7 @@ pub struct Call {
 
 impl Call {
 	pub fn decode(value: Value) -> Result<Call> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Call {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
-			region: try!(remove(&mut value, "region").and_then(into_string)),
-			ringing: try!(decode_array(try!(remove(&mut value, "ringing")), UserId::decode)),
-			unavailable: req!(try!(remove(&mut value, "unavailable")).as_bool()),
-			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
-		})
+		serde(value)
 	}
 }
 
@@ -730,6 +685,8 @@ pub mod permissions {
 		}
 	}
 
+	serial_single_field!(Permissions as bits: u64);
+
 	impl Permissions {
 		pub fn decode(value: Value) -> Result<Permissions> {
 			Ok(Self::from_bits_truncate(req!(value.as_u64())))
@@ -738,7 +695,7 @@ pub mod permissions {
 }
 
 /// File upload attached to a message
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
 	pub id: String,
 	/// Short filename for the attachment
@@ -749,23 +706,24 @@ pub struct Attachment {
 	pub proxy_url: String,
 	/// Size of the file in bytes
 	pub size: u64,
-	/// Dimensions if the file is an image
-	pub dimensions: Option<(u64, u64)>,
+	/// Width if the file is an image
+	pub width: Option<u64>,
+	/// Height if the file is an image
+	pub height: Option<u64>,
 }
 
 impl Attachment {
 	pub fn decode(value: Value) -> Result<Attachment> {
-		let mut value = try!(into_map(value));
-		let width = remove(&mut value, "width").ok().and_then(|x| x.as_u64());
-		let height = remove(&mut value, "height").ok().and_then(|x| x.as_u64());
-		warn_json!(value, Attachment {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			filename: try!(remove(&mut value, "filename").and_then(into_string)),
-			url: try!(remove(&mut value, "url").and_then(into_string)),
-			proxy_url: try!(remove(&mut value, "proxy_url").and_then(into_string)),
-			size: req!(try!(remove(&mut value, "size")).as_u64()),
-			dimensions: width.and_then(|w| height.map(|h| (w, h))),
-		})
+		serde(value)
+	}
+
+	/// Get the dimensions of the attachment if it is an image.
+	pub fn dimensions(&self) -> Option<(u64, u64)> {
+		if let (&Some(w), &Some(h)) = (&self.width, &self.height) {
+			Some((w, h))
+		} else {
+			None
+		}
 	}
 }
 
@@ -939,7 +897,7 @@ impl RichInvite {
 }
 
 /// Information about an available voice region
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceRegion {
 	pub id: String,
 	pub name: String,
@@ -951,15 +909,7 @@ pub struct VoiceRegion {
 
 impl VoiceRegion {
 	pub fn decode(value: Value) -> Result<VoiceRegion> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, VoiceRegion {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			sample_hostname: try!(remove(&mut value, "sample_hostname").and_then(into_string)),
-			sample_port: req!(try!(remove(&mut value, "sample_port")).as_u64()) as u16,
-			optimal: req!(try!(remove(&mut value, "optimal")).as_bool()),
-			vip: req!(try!(remove(&mut value, "vip")).as_bool()),
-		})
+		serde(value)
 	}
 }
 
@@ -967,24 +917,20 @@ impl VoiceRegion {
 // Event model
 
 /// Summary of messages since last login
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadState {
 	/// Id of the relevant channel
 	pub id: ChannelId,
 	/// Last seen message in this channel
 	pub last_message_id: Option<MessageId>,
 	/// Mentions since that message in this channel
+	#[serde(default)]
 	pub mention_count: u64,
 }
 
 impl ReadState {
 	pub fn decode(value: Value) -> Result<ReadState> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ReadState {
-			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			mention_count: try!(opt(&mut value, "mention_count", |v| Ok(req!(v.as_u64())))).unwrap_or(0),
-		})
+		serde(value)
 	}
 }
 
@@ -1096,7 +1042,7 @@ impl Presence {
 }
 
 /// A member's state within a voice channel
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceState {
 	pub user_id: UserId,
 	pub channel_id: Option<ChannelId>,
@@ -1111,18 +1057,7 @@ pub struct VoiceState {
 
 impl VoiceState {
 	pub fn decode(value: Value) -> Result<VoiceState> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, VoiceState {
-			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-			channel_id: try!(opt(&mut value, "channel_id", ChannelId::decode)),
-			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
-			token: try!(opt(&mut value, "token", into_string)),
-			suppress: req!(try!(remove(&mut value, "suppress")).as_bool()),
-			self_mute: req!(try!(remove(&mut value, "self_mute")).as_bool()),
-			self_deaf: req!(try!(remove(&mut value, "self_deaf")).as_bool()),
-			mute: req!(try!(remove(&mut value, "mute")).as_bool()),
-			deaf: req!(try!(remove(&mut value, "deaf")).as_bool()),
-		})
+		serde(value)
 	}
 }
 
@@ -1147,7 +1082,7 @@ map_numbers! { VerificationLevel;
 }
 
 /// A parter custom emoji
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Emoji {
 	pub id: EmojiId,
 	pub name: String,
@@ -1158,14 +1093,7 @@ pub struct Emoji {
 
 impl Emoji {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Emoji {
-			id: try!(remove(&mut value, "id").and_then(EmojiId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			managed: req!(try!(remove(&mut value, "managed")).as_bool()),
-			require_colons: req!(try!(remove(&mut value, "require_colons")).as_bool()),
-			roles: try!(remove(&mut value, "roles").and_then(|v| decode_array(v, RoleId::decode))),
-		})
+		serde(value)
 	}
 }
 
@@ -1445,7 +1373,7 @@ impl CurrentUser {
 }
 
 /// Information about the current application and the owner.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplicationInfo {
 	pub description: String,
 	pub flags: u64,
@@ -1459,16 +1387,7 @@ pub struct ApplicationInfo {
 
 impl ApplicationInfo {
 	pub fn decode(value: Value) -> Result<ApplicationInfo> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ApplicationInfo {
-			description: try!(remove(&mut value, "description").and_then(into_string)),
-			flags: req!(try!(remove(&mut value, "flags")).as_u64()),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			owner: try!(remove(&mut value, "owner").and_then(User::decode)),
-			rpc_origins: try!(remove(&mut value, "rpc_origins").and_then(|v| decode_array(v, into_string))),
-		})
+		serde(value)
 	}
 }
 
@@ -1519,21 +1438,20 @@ impl Relationship {
 }
 
 /// Flags for who may add this user as a friend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendSourceFlags {
+	#[serde(default)]
 	pub all: bool,
+	#[serde(default)]
 	pub mutual_friends: bool,
+	#[serde(default)]
+	#[serde(rename="mutual_guilds")]
 	pub mutual_servers: bool,
 }
 
 impl FriendSourceFlags {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, FriendSourceFlags {
-			all: try!(opt(&mut value, "all", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-			mutual_friends: try!(opt(&mut value, "mutual_friends", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-			mutual_servers: try!(opt(&mut value, "mutual_guilds", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
+		serde(value)
 	}
 }
 
@@ -1649,7 +1567,7 @@ impl UserServerSettings {
 }
 
 /// Progress through the Discord tutorial
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tutorial {
 	pub indicators_suppressed: bool,
 	pub indicators_confirmed: Vec<String>,
@@ -1657,18 +1575,14 @@ pub struct Tutorial {
 
 impl Tutorial {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Tutorial {
-			indicators_suppressed: req!(try!(remove(&mut value, "indicators_suppressed")).as_bool()),
-			indicators_confirmed: try!(remove(&mut value, "indicators_confirmed").and_then(|v| decode_array(v, into_string))),
-		})
+		serde(value)
 	}
 }
 
 /// Discord status maintenance message.
 ///
 /// This can be either for active maintenances or scheduled maintenances.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Maintenance {
 	pub description: String,
 	pub id: String,
@@ -1679,25 +1593,19 @@ pub struct Maintenance {
 
 impl Maintenance {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Maintenance {
-			description: try!(remove(&mut value, "description").and_then(into_string)),
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			start: try!(remove(&mut value, "start").and_then(into_string)),
-			stop: try!(remove(&mut value, "stop").and_then(into_string)),
-		})
+		serde(value)
 	}
 }
 
 /// An incident retrieved from the Discord status page.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Incident {
 	pub id: String,
 	pub impact: String,
 	pub monitoring_at: Option<String>,
 	pub name: String,
 	pub page_id: String,
+	#[serde(rename="shortlink")]
 	pub short_link: String,
 	pub status: String,
 
@@ -1710,26 +1618,13 @@ pub struct Incident {
 
 impl Incident {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Incident {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			impact: try!(remove(&mut value, "impact").and_then(into_string)),
-			monitoring_at: try!(opt(&mut value, "monitoring_at", into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			page_id: try!(remove(&mut value, "page_id").and_then(into_string)),
-			short_link: try!(remove(&mut value, "shortlink").and_then(into_string)),
-			status: try!(remove(&mut value, "status").and_then(into_string)),
-			incident_updates: try!(decode_array(try!(remove(&mut value, "incident_updates")), IncidentUpdate::decode)),
-			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
-			resolved_at: try!(opt(&mut value, "resolved_at", into_string)),
-			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
-		})
+		serde(value)
 	}
 }
 
 /// An update to an incident from the Discord status page. This will typically
 /// state what new information has been discovered about an incident.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncidentUpdate {
 	pub body: String,
 	pub id: String,
@@ -1745,17 +1640,7 @@ pub struct IncidentUpdate {
 
 impl IncidentUpdate {
 	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, IncidentUpdate {
-			body: try!(remove(&mut value, "body").and_then(into_string)),
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			incident_id: try!(remove(&mut value, "incident_id").and_then(into_string)),
-			status: try!(remove(&mut value, "status").and_then(into_string)),
-			affected_components: try!(decode_array(try!(remove(&mut value, "affected_components")), Ok)),
-			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
-			display_at: try!(remove(&mut value, "display_at").and_then(into_string)),
-			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
-		})
+		serde(value)
 	}
 }
 
