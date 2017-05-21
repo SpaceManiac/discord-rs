@@ -107,23 +107,29 @@ pub mod reaction_emoji {
 	use super::*;
 	use model::{ReactionEmoji, EmojiId};
 
-	#[derive(Serialize, Deserialize)]
-	struct RawEmoji<'s> {
+	#[derive(Serialize)]
+	struct EmojiSer<'s> {
 		name: &'s str,
+		id: Option<EmojiId>
+	}
+
+	#[derive(Deserialize)]
+	struct EmojiDe {
+		name: String,
 		id: Option<EmojiId>,
 	}
 
 	pub fn serialize<S: Serializer>(v: &ReactionEmoji, s: S) -> Result<S::Ok, S::Error> {
 		(match *v {
-			ReactionEmoji::Unicode(ref name) => RawEmoji { name: name, id: None },
-			ReactionEmoji::Custom { ref name, id } => RawEmoji { name: name, id: Some(id) },
+			ReactionEmoji::Unicode(ref name) => EmojiSer { name: name, id: None },
+			ReactionEmoji::Custom { ref name, id } => EmojiSer { name: name, id: Some(id) },
 		}).serialize(s)
 	}
 
 	pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
-		Ok(match try!(RawEmoji::deserialize(d)) {
-			RawEmoji { name, id: None } => ReactionEmoji::Unicode(name.to_owned()),
-			RawEmoji { name, id: Some(id) } => ReactionEmoji::Custom { name: name.to_owned(), id: id },
+		Ok(match try!(EmojiDe::deserialize(d)) {
+			EmojiDe { name, id: None } => ReactionEmoji::Unicode(name),
+			EmojiDe { name, id: Some(id) } => ReactionEmoji::Custom { name: name, id: id },
 		})
 	}
 }
