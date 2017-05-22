@@ -12,9 +12,9 @@ macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
 		$(
 			#[$attr]
-			pub struct $name<'a>(&'a mut $inner);
+			pub struct $name($inner);
 
-			impl<'a> $name<'a> {
+			impl $name {
 				#[doc(hidden)]
 				#[inline(always)]
 				pub fn __build<F: FnOnce($name) -> $name>(f: F) -> $inner where $inner: Default {
@@ -22,9 +22,8 @@ macro_rules! builder {
 				}
 
 				#[doc(hidden)]
-				pub fn __apply<F: FnOnce($name) -> $name>(f: F, mut inp: $inner) -> $inner {
-					f($name(&mut inp));
-					inp
+				pub fn __apply<F: FnOnce($name) -> $name>(f: F, inp: $inner) -> $inner {
+					f($name(inp)).0
 				}
 			}
 		)*
@@ -62,11 +61,11 @@ builder! {
 
 macro_rules! set {
 	($self:ident, $key:expr, $($rest:tt)*) => {{
-		$self.0.insert($key.into(), json!($($rest)*)); $self
+		{let mut s = $self; s.0.insert($key.into(), json!($($rest)*)); s}
 	}}
 }
 
-impl<'a> EditServer<'a> {
+impl EditServer {
 	/// Edit the server's name.
 	pub fn name(self, name: &str) -> Self {
 		set!(self, "name", name)
@@ -108,7 +107,7 @@ impl<'a> EditServer<'a> {
 	}
 }
 
-impl<'a> EditChannel<'a> {
+impl EditChannel {
 	/// Edit the channel's name.
 	pub fn name(self, name: &str) -> Self {
 		set!(self, "name", name)
@@ -135,7 +134,7 @@ impl<'a> EditChannel<'a> {
 	}
 }
 
-impl<'a> EditMember<'a> {
+impl EditMember {
 	/// Edit the member's nickname. Supply the empty string to remove a nickname.
 	pub fn nickname(self, nick: &str) -> Self {
 		set!(self, "nick", nick)
@@ -162,7 +161,7 @@ impl<'a> EditMember<'a> {
 	}
 }
 
-impl<'a> EditProfile<'a> {
+impl EditProfile {
 	/// Edit the user's username. Must be between 2 and 32 characters long.
 	pub fn username(self, username: &str) -> Self {
 		set!(self, "username", username)
@@ -174,7 +173,7 @@ impl<'a> EditProfile<'a> {
 	}
 }
 
-impl<'a> EditUserProfile<'a> {
+impl EditUserProfile {
 	/// Provide the user's current password for authentication. Required if
 	/// the email or password is being changed.
 	pub fn password(self, password: &str) -> Self {
@@ -202,7 +201,7 @@ impl<'a> EditUserProfile<'a> {
 	}
 }
 
-impl<'a> EmbedBuilder<'a> {
+impl EmbedBuilder {
 	/// Add the "title of embed".
 	pub fn title(self, title: &str) -> Self {
 		set!(self, "title", title)
@@ -254,7 +253,7 @@ impl<'a> EmbedBuilder<'a> {
 	}
 }
 
-impl<'a> EmbedFooterBuilder<'a> {
+impl EmbedFooterBuilder {
 	/// Add the "footer text".
 	pub fn text(self, text: &str) -> Self {
 		set!(self, "text", text)
@@ -266,7 +265,7 @@ impl<'a> EmbedFooterBuilder<'a> {
 	}
 }
 
-impl<'a> EmbedAuthorBuilder<'a> {
+impl EmbedAuthorBuilder {
 	/// Add the "name of author".
 	pub fn name(self, name: &str) -> Self {
 		set!(self, "name", name)
@@ -283,11 +282,11 @@ impl<'a> EmbedAuthorBuilder<'a> {
 	}
 }
 
-impl<'a> EmbedFieldsBuilder<'a> {
+impl EmbedFieldsBuilder {
 	/// Add an entire field structure, representing a mapping from `name` to `value`.
 	///
 	/// `inline` determines "whether or not this field should display inline".
-	pub fn field(self, name: &str, value: &str, inline: bool) -> Self {
+	pub fn field(mut self, name: &str, value: &str, inline: bool) -> Self {
 		self.0.push(json! {{
 			"name": name,
 			"value": value,
