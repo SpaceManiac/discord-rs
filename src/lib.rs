@@ -269,6 +269,12 @@ impl Discord {
 		let response = request!(self, post(body), "/guilds/{}/channels", server);
 		Channel::decode(try!(serde_json::from_reader(response)))
 	}
+	
+	/// Get list of channels in a server.
+	pub fn get_server_channels(&self, server: &ServerId) -> Result<Vec<PublicChannel>> {
+		let response = request!(self, get, "/guilds/{}/channels", server);
+		decode_array(try!(serde_json::from_reader(response)), PublicChannel::decode)
+	}
 
 	/// Get the list of channels in a server.
 	pub fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
