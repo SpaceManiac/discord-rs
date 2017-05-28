@@ -1,11 +1,13 @@
 //! Struct and enum definitions of values in the Discord model.
 #![allow(missing_docs)]
 
-use super::{Error, Result};
-use serde_json::Value;
-use std::collections::BTreeMap;
 use std::fmt;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
+use super::{Error, Result, Object};
 
 pub use self::permissions::Permissions;
 
@@ -27,55 +29,13 @@ macro_rules! warn_json {
 	};
 }
 
-macro_rules! map_names {
-	($typ:ident; $($entry:ident, $value:expr;)*) => {
+macro_rules! serial_decode {
+	($typ:ident) => {
 		impl $typ {
-			pub fn name(&self) -> &'static str {
-				match *self {
-					$($typ::$entry => $value,)*
-				}
-			}
-
-			pub fn from_str(name: &str) -> Option<Self> {
-				match name {
-					$($value => Some($typ::$entry),)*
-					_ => None,
-				}
-			}
-
-			#[allow(dead_code)]
-			fn decode_str(value: Value) -> Result<Self> {
-				let name = try!(into_string(value));
-				Self::from_str(&name).ok_or(Error::Decode(
-					concat!("Expected valid ", stringify!($typ)),
-					Value::String(name)
-				))
-			}
-		}
-	}
-}
-macro_rules! map_numbers {
-	($typ:ident; $($entry:ident, $value:expr;)*) => {
-		impl $typ {
-			pub fn num(&self) -> u64 {
-				match *self {
-					$($typ::$entry => $value,)*
-				}
-			}
-
-			pub fn from_num(num: u64) -> Option<Self> {
-				match num {
-					$($value => Some($typ::$entry),)*
-					_ => None,
-				}
-			}
-
-			#[allow(dead_code)]
-			fn decode(value: Value) -> Result<Self> {
-				value.as_u64().and_then(Self::from_num).ok_or(Error::Decode(
-					concat!("Expected valid ", stringify!($typ)),
-					value
-				))
+			#[inline]
+			#[doc(hidden)] // pre-deprecated
+			pub fn decode(value: Value) -> Result<Self> {
+				serde(value)
 			}
 		}
 	}
@@ -86,8 +46,10 @@ macro_rules! map_numbers {
 
 fn decode_id(value: Value) -> Result<u64> {
 	match value {
-		Value::U64(num) => Ok(num),
-		Value::I64(num) if num >= 0 => Ok(num as u64),
+		Value::Number(number) => match number.as_u64() {
+			Some(id) => Ok(id),
+			None => Err(Error::Decode("Expected numeric ID", Value::Number(number)))
+		},
 		Value::String(text) => match text.parse::<u64>() {
 			Ok(num) => Ok(num),
 			Err(_) => Err(Error::Decode("Expected numeric ID", Value::String(text)))
@@ -105,12 +67,14 @@ macro_rules! id {
 			/// raw number value printed using the `{}` specifier.
 			/// Some identifiers have `mention()` methods as well.
 			#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug, Ord, PartialOrd)]
-			pub struct $name(pub u64);
+			#[derive(Serialize, Deserialize)]
+			pub struct $name(#[serde(deserialize_with = "::serial::deserialize_id")] pub u64);
 
 			impl $name {
 				#[inline]
+				#[allow(dead_code)]
 				fn decode(value: Value) -> Result<Self> {
-					decode_id(value).map($name)
+					serde(value)
 				}
 
 				/// Get the creation date of the object referred to by this ID.
@@ -218,6 +182,11 @@ fn mention_test() {
 //=================
 // Rest model
 
+#[inline]
+fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
+	::serde_json::from_value(value).map_err(From::from)
+}
+
 /// The type of a channel
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
@@ -231,13 +200,14 @@ pub enum ChannelType {
 	Voice,
 }
 
-map_names! { ChannelType;
+serial_use_mapping!(ChannelType, numeric);
+serial_names! { ChannelType;
 	Group, "group";
 	Private, "private";
 	Text, "text";
 	Voice, "voice";
 }
-map_numbers! { ChannelType;
+serial_numbers! { ChannelType;
 	Text, 0;
 	Private, 1;
 	Voice, 2;
@@ -245,7 +215,7 @@ map_numbers! { ChannelType;
 }
 
 /// The basic information about a server only
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
 	pub id: ServerId,
 	pub name: String,
@@ -253,19 +223,9 @@ pub struct ServerInfo {
 	pub owner: bool,
 	pub permissions: Permissions,
 }
+serial_decode!(ServerInfo);
 
 impl ServerInfo {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ServerInfo {
-			id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			owner: req!(try!(remove(&mut value, "owner")).as_bool()),
-			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
-		})
-	}
-
 	/// Returns the formatted URL of the server's icon.
 	///
 	/// Returns None if the server does not have an icon.
@@ -276,7 +236,7 @@ impl ServerInfo {
 }
 
 /// Static information about a server
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server {
 	pub id: ServerId,
 	pub name: String,
@@ -295,30 +255,9 @@ pub struct Server {
 	pub default_message_notifications: u64,
 	pub mfa_level: u64,
 }
+serial_decode!(Server);
 
 impl Server {
-	pub fn decode(value: Value) -> Result<Server> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Server {
-			id: try!(remove(&mut value, "id").and_then(ServerId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
-			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
-			embed_enabled: req!(try!(remove(&mut value, "embed_enabled")).as_bool()),
-			embed_channel_id: try!(opt(&mut value, "embed_channel_id", ChannelId::decode)),
-			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
-			region: try!(remove(&mut value, "region").and_then(into_string)),
-			roles: try!(decode_array(try!(remove(&mut value, "roles")), Role::decode)),
-			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
-			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
-			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
-			splash: try!(opt(&mut value, "splash", into_string)),
-			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
-			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
-		})
-	}
-
 	/// Returns the formatted URL of the server's icon.
 	///
 	/// Returns None if the server does not have an icon.
@@ -330,22 +269,14 @@ impl Server {
 
 /// Representation of the number of member that would be pruned by a server
 /// prune operation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerPrune {
 	pub pruned: u64,
 }
-
-impl ServerPrune {
-	pub fn decode(value: Value) -> Result<ServerPrune> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ServerPrune {
-			pruned: req!(try!(remove(&mut value, "pruned")).as_u64()),
-		})
-	}
-}
+serial_decode!(ServerPrune);
 
 /// Information about a role
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
 	pub id: RoleId,
 	pub name: String,
@@ -354,69 +285,41 @@ pub struct Role {
 	pub hoist: bool,
 	pub managed: bool,
 	pub position: i64,
+	#[serde(default)] // default to false
 	pub mentionable: bool,
 	pub permissions: Permissions,
 }
+serial_decode!(Role);
 
 impl Role {
-	pub fn decode(value: Value) -> Result<Role> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Role {
-			id: try!(remove(&mut value, "id").and_then(RoleId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			permissions: try!(remove(&mut value, "permissions").and_then(Permissions::decode)),
-			color: req!(try!(remove(&mut value, "color")).as_u64()),
-			hoist: req!(try!(remove(&mut value, "hoist")).as_bool()),
-			managed: req!(try!(remove(&mut value, "managed")).as_bool()),
-			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			mentionable: try!(opt(&mut value, "mentionable", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
-	}
-
 	/// Return a `Mention` which will ping members of this role.
 	#[inline(always)]
 	pub fn mention(&self) -> Mention { self.id.mention() }
 }
 
 /// A banning of a user
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ban {
 	reason: Option<String>,
 	user: User,
 }
-
-impl Ban {
-	pub fn decode(value: Value) -> Result<Ban> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Ban {
-			reason: try!(opt(&mut value, "reason", into_string)),
-			user: try!(remove(&mut value, "user").and_then(User::decode)),
-		})
-	}
-}
+serial_decode!(Ban);
 
 /// Broadly-applicable user information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
 	pub id: UserId,
+	#[serde(rename="username")]
 	pub name: String,
+	#[serde(deserialize_with="::serial::deserialize_discrim")]
 	pub discriminator: u16,
 	pub avatar: Option<String>,
+	#[serde(default)]
 	pub bot: bool,
 }
+serial_decode!(User);
 
 impl User {
-	pub fn decode(value: Value) -> Result<User> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, User {
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			name: try!(remove(&mut value, "username").and_then(into_string)),
-			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
-			avatar: try!(opt(&mut value, "avatar", into_string)),
-			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
-	}
-
 	/// Return a `Mention` which will ping this user.
 	#[inline(always)]
 	pub fn mention(&self) -> Mention { self.id.mention() }
@@ -431,7 +334,7 @@ impl User {
 }
 
 /// Information about a member of a server
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Member {
 	pub user: User,
 	pub roles: Vec<RoleId>,
@@ -440,20 +343,10 @@ pub struct Member {
 	pub mute: bool,
 	pub deaf: bool,
 }
+serial_decode!(Member);
 
 impl Member {
-	pub fn decode(value: Value) -> Result<Member> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Member {
-			user: try!(remove(&mut value, "user").and_then(User::decode)),
-			roles: try!(decode_array(try!(remove(&mut value, "roles")), RoleId::decode)),
-			nick: try!(opt(&mut value, "nick", into_string)),
-			joined_at: try!(remove(&mut value, "joined_at").and_then(into_string)),
-			mute: req!(try!(remove(&mut value, "mute")).as_bool()),
-			deaf: req!(try!(remove(&mut value, "deaf")).as_bool()),
-		})
-	}
-
+	/// Get this member's nickname if present or their username otherwise.
 	pub fn display_name(&self) -> &str {
 		if let Some(name) = self.nick.as_ref() {
 			name
@@ -482,38 +375,32 @@ impl Channel {
 			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
-			other => Err(Error::Decode("Expected value Channel type", Value::U64(other))),
+			other => Err(Error::Decode("Expected value Channel type", Value::from(other))),
 		}
 	}
 }
 
 /// A group channel, potentially including other users, separate from a server.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
+	#[serde(rename="id")]
 	pub channel_id: ChannelId,
 	pub icon: Option<String>,
 	pub last_message_id: Option<MessageId>,
 	pub last_pin_timestamp: Option<String>,
 	pub name: Option<String>,
 	pub owner_id: UserId,
+	#[serde(default)]
 	pub recipients: Vec<User>,
+
+	// ignore the "type" field
+	#[serde(rename="type")]
+	#[serde(skip_serializing)]
+	_type: ::serde::de::IgnoredAny,
 }
+serial_decode!(Group);
 
 impl Group {
-	pub fn decode(value: Value) -> Result<Group> {
-		let mut value = try!(into_map(value));
-		let _ = remove(&mut value, "type"); // ignore "type" field
-		warn_json!(value, Group {
-			channel_id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
-			name: try!(opt(&mut value, "name", into_string)),
-			owner_id: try!(remove(&mut value, "owner_id").and_then(UserId::decode)),
-			recipients: try!(opt(&mut value, "recipients", |r| decode_array(r, User::decode))).unwrap_or(Vec::new()),
-		})
-	}
-
 	/// Get this group's name, building a default if needed
 	pub fn name(&self) -> Cow<str> {
 		match self.name {
@@ -524,8 +411,8 @@ impl Group {
 				}
 				let mut result = self.recipients[0].name.clone();
 				for user in &self.recipients[1..] {
-					use std::fmt::Write;
-					let _ = write!(result, ", {}", user.name);
+					result.push_str(", ");
+					result.push_str(&user.name);
 				}
 				Cow::Owned(result)
 			}
@@ -542,7 +429,7 @@ impl Group {
 }
 
 /// An active group or private call
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Call {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
@@ -551,20 +438,7 @@ pub struct Call {
 	pub unavailable: bool,
 	pub voice_states: Vec<VoiceState>,
 }
-
-impl Call {
-	pub fn decode(value: Value) -> Result<Call> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Call {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
-			region: try!(remove(&mut value, "region").and_then(into_string)),
-			ringing: try!(decode_array(try!(remove(&mut value, "ringing")), UserId::decode)),
-			unavailable: req!(try!(remove(&mut value, "unavailable")).as_bool()),
-			voice_states: try!(decode_array(try!(remove(&mut value, "voice_states")), VoiceState::decode)),
-		})
-	}
-}
+serial_decode!(Call);
 
 /// Private text channel to another user
 #[derive(Debug, Clone)]
@@ -585,7 +459,7 @@ impl PrivateChannel {
 		}
 		warn_json!(value, PrivateChannel {
 			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
+			kind: try!(remove(&mut value, "type").and_then(serde)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
@@ -624,7 +498,7 @@ impl PublicChannel {
 			server_id: server_id,
 			topic: try!(opt(&mut value, "topic", into_string)),
 			position: req!(try!(remove(&mut value, "position")).as_i64()),
-			kind: try!(remove(&mut value, "type").and_then(ChannelType::decode)),
+			kind: try!(remove(&mut value, "type").and_then(serde)),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
@@ -725,6 +599,8 @@ pub mod permissions {
 		}
 	}
 
+	serial_single_field!(Permissions as bits: u64);
+
 	impl Permissions {
 		pub fn decode(value: Value) -> Result<Permissions> {
 			Ok(Self::from_bits_truncate(req!(value.as_u64())))
@@ -733,7 +609,7 @@ pub mod permissions {
 }
 
 /// File upload attached to a message
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
 	pub id: String,
 	/// Short filename for the attachment
@@ -744,73 +620,51 @@ pub struct Attachment {
 	pub proxy_url: String,
 	/// Size of the file in bytes
 	pub size: u64,
-	/// Dimensions if the file is an image
-	pub dimensions: Option<(u64, u64)>,
+	/// Width if the file is an image
+	pub width: Option<u64>,
+	/// Height if the file is an image
+	pub height: Option<u64>,
 }
+serial_decode!(Attachment);
 
 impl Attachment {
-	pub fn decode(value: Value) -> Result<Attachment> {
-		let mut value = try!(into_map(value));
-		let width = remove(&mut value, "width").ok().and_then(|x| x.as_u64());
-		let height = remove(&mut value, "height").ok().and_then(|x| x.as_u64());
-		warn_json!(value, Attachment {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			filename: try!(remove(&mut value, "filename").and_then(into_string)),
-			url: try!(remove(&mut value, "url").and_then(into_string)),
-			proxy_url: try!(remove(&mut value, "proxy_url").and_then(into_string)),
-			size: req!(try!(remove(&mut value, "size")).as_u64()),
-			dimensions: width.and_then(|w| height.map(|h| (w, h))),
-		})
+	/// Get the dimensions of the attachment if it is an image.
+	pub fn dimensions(&self) -> Option<(u64, u64)> {
+		if let (&Some(w), &Some(h)) = (&self.width, &self.height) {
+			Some((w, h))
+		} else {
+			None
+		}
 	}
 }
 
 /// Message transmitted over a text channel
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
 	pub id: MessageId,
 	pub channel_id: ChannelId,
 	pub content: String,
+	#[serde(deserialize_with="::serial::ignore_errors")]
 	pub nonce: Option<String>,
 	pub tts: bool,
 	pub timestamp: String,
 	pub edited_timestamp: Option<String>,
 	pub pinned: bool,
+	#[serde(rename="type")]
 	pub kind: MessageType,
 
 	pub author: User,
 	pub mention_everyone: bool,
 	pub mentions: Vec<User>,
 	pub mention_roles: Vec<RoleId>,
+	#[serde(default)]
 	pub reactions: Vec<MessageReaction>,
 
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
 	pub embeds: Vec<Value>,
 }
-
-impl Message {
-	pub fn decode(value: Value) -> Result<Message> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Message {
-			id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
-			content: try!(remove(&mut value, "content").and_then(into_string)),
-			tts: req!(try!(remove(&mut value, "tts")).as_bool()),
-			timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
-			edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
-			pinned: req!(try!(remove(&mut value, "pinned")).as_bool()),
-			kind: try!(remove(&mut value, "type").and_then(MessageType::decode)),
-			mention_everyone: req!(try!(remove(&mut value, "mention_everyone")).as_bool()),
-			mentions: try!(decode_array(try!(remove(&mut value, "mentions")), User::decode)),
-			mention_roles: try!(decode_array(try!(remove(&mut value, "mention_roles")), RoleId::decode)),
-			author: try!(remove(&mut value, "author").and_then(User::decode)),
-			attachments: try!(decode_array(try!(remove(&mut value, "attachments")), Attachment::decode)),
-			embeds: try!(decode_array(try!(remove(&mut value, "embeds")), Ok)),
-			reactions: try!(opt(&mut value, "reactions", |x| decode_array(x, MessageReaction::decode))).unwrap_or(Vec::new()),
-		})
-	}
-}
+serial_decode!(Message);
 
 /// The type of a message
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -831,7 +685,8 @@ pub enum MessageType {
 	MessagePinned,
 }
 
-map_numbers! { MessageType;
+serial_use_mapping!(MessageType, numeric);
+serial_numbers! { MessageType;
 	Regular, 0;
 	GroupRecipientAddition, 1;
 	GroupRecipientRemoval, 2;
@@ -862,7 +717,7 @@ impl Invite {
 		warn_field("Invite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
+		let channel_type = try!(remove(&mut channel, "type").and_then(serde));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("Invite/channel", channel);
@@ -909,7 +764,7 @@ impl RichInvite {
 		warn_field("RichInvite/guild", server);
 
 		let mut channel = try!(remove(&mut value, "channel").and_then(into_map));
-		let channel_type = try!(remove(&mut channel, "type").and_then(ChannelType::decode));
+		let channel_type = try!(remove(&mut channel, "type").and_then(serde));
 		let channel_id = try!(remove(&mut channel, "id").and_then(ChannelId::decode));
 		let channel_name = try!(remove(&mut channel, "name").and_then(into_string));
 		warn_field("RichInvite/channel", channel);
@@ -934,7 +789,7 @@ impl RichInvite {
 }
 
 /// Information about an available voice region
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceRegion {
 	pub id: String,
 	pub name: String,
@@ -943,45 +798,23 @@ pub struct VoiceRegion {
 	pub optimal: bool,
 	pub vip: bool,
 }
-
-impl VoiceRegion {
-	pub fn decode(value: Value) -> Result<VoiceRegion> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, VoiceRegion {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			sample_hostname: try!(remove(&mut value, "sample_hostname").and_then(into_string)),
-			sample_port: req!(try!(remove(&mut value, "sample_port")).as_u64()) as u16,
-			optimal: req!(try!(remove(&mut value, "optimal")).as_bool()),
-			vip: req!(try!(remove(&mut value, "vip")).as_bool()),
-		})
-	}
-}
+serial_decode!(VoiceRegion);
 
 //=================
 // Event model
 
 /// Summary of messages since last login
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadState {
 	/// Id of the relevant channel
 	pub id: ChannelId,
 	/// Last seen message in this channel
 	pub last_message_id: Option<MessageId>,
 	/// Mentions since that message in this channel
+	#[serde(default)]
 	pub mention_count: u64,
 }
-
-impl ReadState {
-	pub fn decode(value: Value) -> Result<ReadState> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ReadState {
-			id: try!(remove(&mut value, "id").and_then(ChannelId::decode)),
-			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			mention_count: try!(opt(&mut value, "mention_count", |v| Ok(req!(v.as_u64())))).unwrap_or(0),
-		})
-	}
-}
+serial_decode!(ReadState);
 
 /// A user's online presence status
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -993,7 +826,8 @@ pub enum OnlineStatus {
 	Idle,
 }
 
-map_names! { OnlineStatus;
+serial_use_mapping!(OnlineStatus, named);
+serial_names! { OnlineStatus;
 	DoNotDisturb, "dnd";
 	Invisible, "invisible";
 	Offline, "offline";
@@ -1008,7 +842,8 @@ pub enum GameType {
 	Streaming,
 }
 
-map_numbers! { GameType;
+serial_use_mapping!(GameType, numeric);
+serial_numbers! { GameType;
 	Playing, 0;
 	Streaming, 1;
 }
@@ -1041,17 +876,13 @@ impl Game {
 		}
 
 		let kind = match value.remove("type") {
-			Some(Value::U64(v)) => Value::U64(v),
-			Some(Value::String(v)) => match v.parse::<u64>() {
-				Ok(v) => Value::U64(v),
-				Err(_) => return Err(Error::Decode("Expected valid GameType", Value::String(v))),
-			},
-			Some(other) => return Err(Error::Decode("Expected valid GameType", other)),
-			None => Value::Null,
+			Some(Value::Number(number)) => number.as_u64(),
+			Some(Value::String(v)) => v.parse::<u64>().ok(), // ignore errors
+			_ => None,
 		};
 		warn_json!(@"Game", value, Some(Game {
 			name: name,
-			kind: GameType::decode(kind).unwrap_or(GameType::Playing),
+			kind: kind.and_then(GameType::from_num).unwrap_or(GameType::Playing),
 			url: try!(opt(&mut value, "url", into_string)),
 		}))
 	}
@@ -1082,7 +913,7 @@ impl Presence {
 
 		warn_json!(@"Presence", value, Presence {
 			user_id: user_id,
-			status: try!(remove(&mut value, "status").and_then(OnlineStatus::decode_str)),
+			status: try!(remove(&mut value, "status").and_then(serde)),
 			last_modified: try!(opt(&mut value, "last_modified", |v| Ok(req!(v.as_u64())))),
 			game: match value.remove("game") {
 				None | Some(Value::Null) => None,
@@ -1095,7 +926,7 @@ impl Presence {
 }
 
 /// A member's state within a voice channel
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceState {
 	pub user_id: UserId,
 	pub channel_id: Option<ChannelId>,
@@ -1107,23 +938,7 @@ pub struct VoiceState {
 	pub mute: bool,
 	pub deaf: bool,
 }
-
-impl VoiceState {
-	pub fn decode(value: Value) -> Result<VoiceState> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, VoiceState {
-			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-			channel_id: try!(opt(&mut value, "channel_id", ChannelId::decode)),
-			session_id: try!(remove(&mut value, "session_id").and_then(into_string)),
-			token: try!(opt(&mut value, "token", into_string)),
-			suppress: req!(try!(remove(&mut value, "suppress")).as_bool()),
-			self_mute: req!(try!(remove(&mut value, "self_mute")).as_bool()),
-			self_deaf: req!(try!(remove(&mut value, "self_deaf")).as_bool()),
-			mute: req!(try!(remove(&mut value, "mute")).as_bool()),
-			deaf: req!(try!(remove(&mut value, "deaf")).as_bool()),
-		})
-	}
-}
+serial_decode!(VoiceState);
 
 /// A condition that new users must satisfy before posting in text channels
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -1138,7 +953,8 @@ pub enum VerificationLevel {
 	High,
 }
 
-map_numbers! { VerificationLevel;
+serial_use_mapping!(VerificationLevel, numeric);
+serial_numbers! { VerificationLevel;
 	None, 0;
 	Low, 1;
 	Medium, 2;
@@ -1146,7 +962,7 @@ map_numbers! { VerificationLevel;
 }
 
 /// A parter custom emoji
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Emoji {
 	pub id: EmojiId,
 	pub name: String,
@@ -1154,59 +970,26 @@ pub struct Emoji {
 	pub require_colons: bool,
 	pub roles: Vec<RoleId>,
 }
-
-impl Emoji {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Emoji {
-			id: try!(remove(&mut value, "id").and_then(EmojiId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			managed: req!(try!(remove(&mut value, "managed")).as_bool()),
-			require_colons: req!(try!(remove(&mut value, "require_colons")).as_bool()),
-			roles: try!(remove(&mut value, "roles").and_then(|v| decode_array(v, RoleId::decode))),
-		})
-	}
-}
+serial_decode!(Emoji);
 
 /// A full single reaction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reaction {
 	pub channel_id: ChannelId,
 	pub message_id: MessageId,
 	pub user_id: UserId,
 	pub emoji: ReactionEmoji,
 }
-
-impl Reaction {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Reaction {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
-			user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-			message_id: try!(remove(&mut value, "message_id").and_then(MessageId::decode)),
-		})
-	}
-}
+serial_decode!(Reaction);
 
 /// Information on a reaction as available at a glance on a message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageReaction {
 	pub count: u64,
 	pub me: bool,
 	pub emoji: ReactionEmoji,
 }
-
-impl MessageReaction {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, MessageReaction {
-			emoji: try!(remove(&mut value, "emoji").and_then(ReactionEmoji::decode)),
-			count: req!(try!(remove(&mut value, "count")).as_u64()),
-			me: req!(try!(remove(&mut value, "me")).as_bool()),
-		})
-	}
-}
+serial_decode!(MessageReaction);
 
 /// Emoji information sent only from reaction events
 #[derive(Debug, Clone)]
@@ -1214,17 +997,8 @@ pub enum ReactionEmoji {
 	Unicode(String),
 	Custom { name: String, id: EmojiId },
 }
-
-impl ReactionEmoji {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		let name = try!(remove(&mut value, "name").and_then(into_string));
-		match try!(opt(&mut value, "id", EmojiId::decode)) {
-			Some(id) => Ok(ReactionEmoji::Custom { name: name, id: id }),
-			None => Ok(ReactionEmoji::Unicode(name)),
-		}
-	}
-}
+serial_use_mapping!(ReactionEmoji, reaction_emoji);
+serial_decode!(ReactionEmoji);
 
 /// Live server information
 #[derive(Debug, Clone)]
@@ -1251,6 +1025,7 @@ pub struct LiveServer {
 	pub splash: Option<String>,
 	pub default_message_notifications: u64,
 	pub mfa_level: u64,
+	pub explicit_content_filter: u64,
 }
 
 impl LiveServer {
@@ -1275,12 +1050,13 @@ impl LiveServer {
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
-			verification_level: try!(remove(&mut value, "verification_level").and_then(VerificationLevel::decode)),
+			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),
 			splash: try!(opt(&mut value, "splash", into_string)),
 			default_message_notifications: req!(try!(remove(&mut value, "default_message_notifications")).as_u64()),
 			mfa_level: req!(try!(remove(&mut value, "mfa_level")).as_u64()),
+			explicit_content_filter: req!(try!(remove(&mut value, "explicit_content_filter")).as_u64()),
 		})
 	}
 
@@ -1413,36 +1189,23 @@ impl PossibleServer<Server> {
 }
 
 /// Information about the logged-in user
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
+	#[serde(deserialize_with="::serial::deserialize_discrim")]
 	pub discriminator: u16,
 	pub avatar: Option<String>,
 	pub email: Option<String>,
 	pub verified: bool,
+	#[serde(default)]
 	pub bot: bool,
 	pub mfa_enabled: bool,
 }
-
-impl CurrentUser {
-	pub fn decode(value: Value) -> Result<CurrentUser> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, CurrentUser {
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			username: try!(remove(&mut value, "username").and_then(into_string)),
-			discriminator: try!(remove(&mut value, "discriminator").and_then(decode_discriminator)),
-			email: try!(opt(&mut value, "email", into_string)),
-			avatar: try!(opt(&mut value, "avatar", into_string)),
-			verified: req!(try!(remove(&mut value, "verified")).as_bool()),
-			bot: try!(opt(&mut value, "bot", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-			mfa_enabled: req!(try!(remove(&mut value, "mfa_enabled")).as_bool()),
-		})
-	}
-}
+serial_decode!(CurrentUser);
 
 /// Information about the current application and the owner.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplicationInfo {
 	pub description: String,
 	pub flags: u64,
@@ -1453,21 +1216,7 @@ pub struct ApplicationInfo {
 
 	pub owner: User,
 }
-
-impl ApplicationInfo {
-	pub fn decode(value: Value) -> Result<ApplicationInfo> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ApplicationInfo {
-			description: try!(remove(&mut value, "description").and_then(into_string)),
-			flags: req!(try!(remove(&mut value, "flags")).as_u64()),
-			icon: try!(opt(&mut value, "icon", into_string)),
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			owner: try!(remove(&mut value, "owner").and_then(User::decode)),
-			rpc_origins: try!(remove(&mut value, "rpc_origins").and_then(|v| decode_array(v, into_string))),
-		})
-	}
-}
+serial_decode!(ApplicationInfo);
 
 /// A type of relationship this user has with another.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -1479,60 +1228,38 @@ pub enum RelationshipType {
 	OutgoingRequest,
 }
 
-impl RelationshipType {
-	pub fn from_num(kind: u64) -> Option<Self> {
-		match kind {
-			0 => Some(RelationshipType::Ignored),
-			1 => Some(RelationshipType::Friends),
-			2 => Some(RelationshipType::Blocked),
-			3 => Some(RelationshipType::IncomingRequest),
-			4 => Some(RelationshipType::OutgoingRequest),
-			_ => None,
-		}
-	}
-
-	fn decode(value: Value) -> Result<Self> {
-		value.as_u64().and_then(RelationshipType::from_num).ok_or(Error::Decode("Expected valid RelationshipType", value))
-	}
+serial_decode!(RelationshipType);
+serial_use_mapping!(RelationshipType, numeric);
+serial_numbers! { RelationshipType;
+	Ignored, 0;
+	Friends, 1;
+	Blocked, 2;
+	IncomingRequest, 3;
+	OutgoingRequest, 4;
 }
 
 /// Information on a friendship relationship this user has with another.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relationship {
 	pub id: UserId,
+	#[serde(rename="type")]
 	pub kind: RelationshipType,
 	pub user: User,
 }
-
-impl Relationship {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Relationship {
-			id: try!(remove(&mut value, "id").and_then(UserId::decode)),
-			kind: try!(remove(&mut value, "type").and_then(RelationshipType::decode)),
-			user: try!(remove(&mut value, "user").and_then(User::decode)),
-		})
-	}
-}
+serial_decode!(Relationship);
 
 /// Flags for who may add this user as a friend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendSourceFlags {
+	#[serde(default)]
 	pub all: bool,
+	#[serde(default)]
 	pub mutual_friends: bool,
+	#[serde(default)]
+	#[serde(rename="mutual_guilds")]
 	pub mutual_servers: bool,
 }
-
-impl FriendSourceFlags {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, FriendSourceFlags {
-			all: try!(opt(&mut value, "all", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-			mutual_friends: try!(opt(&mut value, "mutual_friends", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-			mutual_servers: try!(opt(&mut value, "mutual_guilds", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
-		})
-	}
-}
+serial_decode!(FriendSourceFlags);
 
 /// User settings usually used to influence client behavior
 #[derive(Debug, Clone)]
@@ -1594,7 +1321,8 @@ pub enum NotificationLevel {
 	Parent,
 }
 
-map_numbers! { NotificationLevel;
+serial_use_mapping!(NotificationLevel, numeric);
+serial_numbers! { NotificationLevel;
 	All, 0;
 	Mentions, 1;
 	Nothing, 2;
@@ -1602,27 +1330,18 @@ map_numbers! { NotificationLevel;
 }
 
 /// A channel-specific notification settings override
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelOverride {
 	pub channel_id: ChannelId,
 	pub message_notifications: NotificationLevel,
 	pub muted: bool,
 }
-
-impl ChannelOverride {
-	pub fn decode(value: Value) -> Result<ChannelOverride> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, ChannelOverride {
-			channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
-			muted: req!(try!(remove(&mut value, "muted")).as_bool()),
-		})
-	}
-}
+serial_decode!(ChannelOverride);
 
 /// User settings which influence per-server notification behavior
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserServerSettings {
+	#[serde(rename="guild_id")]
 	pub server_id: Option<ServerId>,
 	pub message_notifications: NotificationLevel,
 	pub mobile_push: bool,
@@ -1630,42 +1349,20 @@ pub struct UserServerSettings {
 	pub suppress_everyone: bool,
 	pub channel_overrides: Vec<ChannelOverride>,
 }
-
-impl UserServerSettings {
-	pub fn decode(value: Value) -> Result<UserServerSettings> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, UserServerSettings {
-			server_id: try!(opt(&mut value, "guild_id", ServerId::decode)),
-			message_notifications: try!(remove(&mut value, "message_notifications").and_then(NotificationLevel::decode)),
-			mobile_push: req!(try!(remove(&mut value, "mobile_push")).as_bool()),
-			muted: req!(try!(remove(&mut value, "muted")).as_bool()),
-			suppress_everyone: req!(try!(remove(&mut value, "suppress_everyone")).as_bool()),
-			channel_overrides: try!(remove(&mut value, "channel_overrides").and_then(|v| decode_array(v, ChannelOverride::decode))),
-		})
-	}
-}
+serial_decode!(UserServerSettings);
 
 /// Progress through the Discord tutorial
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tutorial {
 	pub indicators_suppressed: bool,
 	pub indicators_confirmed: Vec<String>,
 }
-
-impl Tutorial {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Tutorial {
-			indicators_suppressed: req!(try!(remove(&mut value, "indicators_suppressed")).as_bool()),
-			indicators_confirmed: try!(remove(&mut value, "indicators_confirmed").and_then(|v| decode_array(v, into_string))),
-		})
-	}
-}
+serial_decode!(Tutorial);
 
 /// Discord status maintenance message.
 ///
 /// This can be either for active maintenances or scheduled maintenances.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Maintenance {
 	pub description: String,
 	pub id: String,
@@ -1673,28 +1370,17 @@ pub struct Maintenance {
 	pub start: String,
 	pub stop: String,
 }
-
-impl Maintenance {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Maintenance {
-			description: try!(remove(&mut value, "description").and_then(into_string)),
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			start: try!(remove(&mut value, "start").and_then(into_string)),
-			stop: try!(remove(&mut value, "stop").and_then(into_string)),
-		})
-	}
-}
+serial_decode!(Maintenance);
 
 /// An incident retrieved from the Discord status page.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Incident {
 	pub id: String,
 	pub impact: String,
 	pub monitoring_at: Option<String>,
 	pub name: String,
 	pub page_id: String,
+	#[serde(rename="shortlink")]
 	pub short_link: String,
 	pub status: String,
 
@@ -1704,29 +1390,11 @@ pub struct Incident {
 	pub resolved_at: Option<String>,
 	pub updated_at: String,
 }
-
-impl Incident {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, Incident {
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			impact: try!(remove(&mut value, "impact").and_then(into_string)),
-			monitoring_at: try!(opt(&mut value, "monitoring_at", into_string)),
-			name: try!(remove(&mut value, "name").and_then(into_string)),
-			page_id: try!(remove(&mut value, "page_id").and_then(into_string)),
-			short_link: try!(remove(&mut value, "shortlink").and_then(into_string)),
-			status: try!(remove(&mut value, "status").and_then(into_string)),
-			incident_updates: try!(decode_array(try!(remove(&mut value, "incident_updates")), IncidentUpdate::decode)),
-			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
-			resolved_at: try!(opt(&mut value, "resolved_at", into_string)),
-			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
-		})
-	}
-}
+serial_decode!(Incident);
 
 /// An update to an incident from the Discord status page. This will typically
 /// state what new information has been discovered about an incident.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncidentUpdate {
 	pub body: String,
 	pub id: String,
@@ -1739,22 +1407,7 @@ pub struct IncidentUpdate {
 	pub display_at: String,
 	pub updated_at: String,
 }
-
-impl IncidentUpdate {
-	pub fn decode(value: Value) -> Result<Self> {
-		let mut value = try!(into_map(value));
-		warn_json!(value, IncidentUpdate {
-			body: try!(remove(&mut value, "body").and_then(into_string)),
-			id: try!(remove(&mut value, "id").and_then(into_string)),
-			incident_id: try!(remove(&mut value, "incident_id").and_then(into_string)),
-			status: try!(remove(&mut value, "status").and_then(into_string)),
-			affected_components: try!(decode_array(try!(remove(&mut value, "affected_components")), Ok)),
-			created_at: try!(remove(&mut value, "created_at").and_then(into_string)),
-			display_at: try!(remove(&mut value, "display_at").and_then(into_string)),
-			updated_at: try!(remove(&mut value, "updated_at").and_then(into_string)),
-		})
-	}
-}
+serial_decode!(IncidentUpdate);
 
 /// The "Ready" event, containing initial state
 #[derive(Debug, Clone)]
@@ -1936,7 +1589,7 @@ pub enum Event {
 	ReactionRemove(Reaction),
 
 	/// An event type not covered by the above
-	Unknown(String, BTreeMap<String, Value>),
+	Unknown(String, Object),
 	// Any other event. Should never be used directly.
 	#[doc(hidden)]
 	__Nonexhaustive,
@@ -2056,7 +1709,7 @@ impl Event {
 			warn_json!(value, Event::MessageUpdate {
 				id: try!(remove(&mut value, "id").and_then(MessageId::decode)),
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				kind: try!(opt(&mut value, "type", MessageType::decode)),
+				kind: try!(opt(&mut value, "type", serde)),
 				content: try!(opt(&mut value, "content", into_string)),
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_bool()),
@@ -2190,25 +1843,37 @@ pub enum GatewayEvent {
 impl GatewayEvent {
 	pub fn decode(value: Value) -> Result<Self> {
 		let mut value = try!(into_map(value));
-		match req!(value.get("op").and_then(|x| x.as_u64())) {
-			0 => Ok(GatewayEvent::Dispatch(
+		let event = match req!(value.remove("op").and_then(|x| x.as_u64())) {
+			0 => GatewayEvent::Dispatch(
 				req!(try!(remove(&mut value, "s")).as_u64()),
 				try!(Event::decode(
 					try!(remove(&mut value, "t").and_then(into_string)),
 					try!(remove(&mut value, "d"))
 				))
-			)),
-			1 => Ok(GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64()))),
-			7 => Ok(GatewayEvent::Reconnect),
-			9 => Ok(GatewayEvent::InvalidateSession),
+			),
+			1 => GatewayEvent::Heartbeat(req!(try!(remove(&mut value, "s")).as_u64())),
+			7 => GatewayEvent::Reconnect,
+			9 => GatewayEvent::InvalidateSession,
 			10 => {
 				let mut data = try!(remove(&mut value, "d").and_then(into_map));
 				let interval = req!(try!(remove(&mut data, "heartbeat_interval")).as_u64());
-				Ok(GatewayEvent::Hello(interval))
+				GatewayEvent::Hello(interval)
 			},
-			11 => Ok(GatewayEvent::HeartbeatAck),
-			_ => Err(Error::Decode("Unexpected opcode", Value::Object(value))),
+			11 => GatewayEvent::HeartbeatAck,
+			_ => return Err(Error::Decode("Unexpected opcode", Value::Object(value))),
+		};
+		// Warn if d, s, or t have unhandled contents
+		if value.get("d").map_or(false, |x| x.is_null()) {
+			value.remove("d");
 		}
+		if value.get("s").map_or(false, |x| x.is_null()) {
+			value.remove("s");
+		}
+		if value.get("t").map_or(false, |x| x.is_null()) {
+			value.remove("t");
+		}
+		warn_field("GatewayEvent", value);
+		Ok(event)
 	}
 }
 
@@ -2284,23 +1949,14 @@ impl VoiceEvent {
 //=================
 // Decode helpers
 
-fn remove(map: &mut BTreeMap<String, Value>, key: &str) -> Result<Value> {
+fn remove(map: &mut Object, key: &str) -> Result<Value> {
 	map.remove(key).ok_or_else(|| Error::Decode("Unexpected absent key", Value::String(key.into())))
 }
 
-fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut BTreeMap<String, Value>, key: &str, f: F) -> Result<Option<T>> {
+fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut Object, key: &str, f: F) -> Result<Option<T>> {
 	match map.remove(key) {
 		None | Some(Value::Null) => Ok(None),
 		Some(val) => f(val).map(Some),
-	}
-}
-
-fn decode_discriminator(value: Value) -> Result<u16> {
-	match value {
-		Value::I64(v) => Ok(v as u16),
-		Value::U64(v) => Ok(v as u16),
-		Value::String(s) => s.parse::<u16>().or(Err(Error::Other("Error parsing discriminator as u16"))),
-		value => Err(Error::Decode("Expected string or u64", value)),
 	}
 }
 
@@ -2334,7 +1990,7 @@ fn into_array(value: Value) -> Result<Vec<Value>> {
 	}
 }
 
-fn into_map(value: Value) -> Result<BTreeMap<String, Value>> {
+fn into_map(value: Value) -> Result<Object> {
 	match value {
 		Value::Object(m) => Ok(m),
 		value => Err(Error::Decode("Expected object", value)),
@@ -2346,7 +2002,7 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 	into_array(value).and_then(|x| x.into_iter().map(f).collect())
 }
 
-fn warn_field(name: &str, map: BTreeMap<String, Value>) {
+fn warn_field(name: &str, map: Object) {
 	if !map.is_empty() {
 		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}
