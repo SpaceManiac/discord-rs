@@ -644,7 +644,9 @@ pub struct Message {
 	pub id: MessageId,
 	pub channel_id: ChannelId,
 	pub content: String,
+	// carry on if nonce is absent or for some reason not a string
 	#[serde(deserialize_with="::serial::ignore_errors")]
+	#[serde(default)]
 	pub nonce: Option<String>,
 	pub tts: bool,
 	pub timestamp: String,
