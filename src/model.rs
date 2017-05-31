@@ -9,6 +9,11 @@ use serde_json::Value;
 
 use super::{Error, Result, Object};
 
+use chrono::datetime::DateTime;
+use chrono::offset::fixed::FixedOffset;
+use chrono::offset::utc::UTC;
+use chrono::offset::TimeZone;
+
 pub use self::permissions::Permissions;
 
 macro_rules! req {
@@ -387,7 +392,7 @@ pub struct Group {
 	pub channel_id: ChannelId,
 	pub icon: Option<String>,
 	pub last_message_id: Option<MessageId>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 	pub name: Option<String>,
 	pub owner_id: UserId,
 	#[serde(default)]
@@ -447,7 +452,7 @@ pub struct PrivateChannel {
 	pub kind: ChannelType,
 	pub recipient: User,
 	pub last_message_id: Option<MessageId>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 }
 
 impl PrivateChannel {
@@ -462,7 +467,7 @@ impl PrivateChannel {
 			kind: try!(remove(&mut value, "type").and_then(serde)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 		})
 	}
 }
@@ -480,7 +485,7 @@ pub struct PublicChannel {
 	pub last_message_id: Option<MessageId>,
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 }
 
 impl PublicChannel {
@@ -503,7 +508,7 @@ impl PublicChannel {
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 		})
 	}
 
@@ -649,8 +654,8 @@ pub struct Message {
 	#[serde(default)]
 	pub nonce: Option<String>,
 	pub tts: bool,
-	pub timestamp: String,
-	pub edited_timestamp: Option<String>,
+	pub timestamp: DateTime<FixedOffset>,
+	pub edited_timestamp: Option<DateTime<FixedOffset>>,
 	pub pinned: bool,
 	#[serde(rename="type")]
 	pub kind: MessageType,
@@ -1497,7 +1502,7 @@ pub enum Event {
 	TypingStart {
 		channel_id: ChannelId,
 		user_id: UserId,
-		timestamp: u64,
+		timestamp: DateTime<UTC>,
 	},
 	/// A member's presence state (or username or avatar) has changed
 	PresenceUpdate {
@@ -1520,8 +1525,8 @@ pub enum Event {
 		nonce: Option<String>,
 		tts: Option<bool>,
 		pinned: Option<bool>,
-		timestamp: Option<String>,
-		edited_timestamp: Option<String>,
+		timestamp: Option<DateTime<FixedOffset>>,
+		edited_timestamp: Option<DateTime<FixedOffset>>,
 		author: Option<User>,
 		mention_everyone: Option<bool>,
 		mentions: Option<Vec<User>>,
@@ -1580,11 +1585,11 @@ pub enum Event {
 	ChannelDelete(Channel),
 	ChannelPinsAck {
 		channel_id: ChannelId,
-		timestamp: String,
+		timestamp: DateTime<FixedOffset>,
 	},
 	ChannelPinsUpdate {
 		channel_id: ChannelId,
-		last_pin_timestamp: Option<String>,
+		last_pin_timestamp: Option<DateTime<FixedOffset>>,
 	},
 
 	ReactionAdd(Reaction),
@@ -1683,7 +1688,7 @@ impl Event {
 			warn_json!(value, Event::TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
+				timestamp: UTC.timestamp(req!(try!(remove(&mut value, "timestamp")).as_i64()), 0),
 			})
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
@@ -1716,8 +1721,8 @@ impl Event {
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_bool()),
 				pinned: remove(&mut value, "pinned").ok().and_then(|v| v.as_bool()),
-				timestamp: try!(opt(&mut value, "timestamp", into_string)),
-				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
+				timestamp: try!(opt(&mut value, "timestamp", into_timestamp)),
+				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_timestamp)),
 				author: try!(opt(&mut value, "author", User::decode)),
 				mention_everyone: remove(&mut value, "mention_everyone").ok().and_then(|v| v.as_bool()),
 				mentions: try!(opt(&mut value, "mentions", |v| decode_array(v, User::decode))),
@@ -1818,12 +1823,12 @@ impl Event {
 		} else if kind == "CHANNEL_PINS_ACK" {
 			warn_json!(value, Event::ChannelPinsAck {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
+				timestamp: try!(remove(&mut value, "timestamp").and_then(into_timestamp)),
 			})
 		} else if kind == "CHANNEL_PINS_UPDATE" {
 			warn_json!(value, Event::ChannelPinsUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 			})
 		} else {
 			Ok(Event::Unknown(kind, value))
@@ -1983,6 +1988,18 @@ fn into_string(value: Value) -> Result<String> {
 		Value::String(s) => Ok(s),
 		value => Err(Error::Decode("Expected string", value)),
 	}
+}
+
+fn into_timestamp(value: Value) -> Result<DateTime<FixedOffset>> {
+    match value {
+        Value::String(s) => {
+            match DateTime::parse_from_rfc3339(s.as_str()) {
+                Ok(dt) => Ok(dt),
+                Err(err) => Err(Error::from(err)),
+            }
+        }
+        value => Err(Error::Decode("Expected string timestamp", value)),
+    }
 }
 
 fn into_array(value: Value) -> Result<Vec<Value>> {

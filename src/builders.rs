@@ -5,6 +5,9 @@
 
 use serde_json::Value;
 
+use chrono::offset::fixed::FixedOffset;
+use chrono::datetime::DateTime;
+
 use model::*;
 use Object;
 
@@ -234,8 +237,8 @@ impl EmbedBuilder {
 	}
 
 	/// Add the "timestamp of embed content".
-	pub fn timestamp(self, timestamp: &str) -> Self {
-		set!(self, "timestamp", timestamp)
+	pub fn timestamp(self, timestamp: DateTime<FixedOffset>) -> Self {
+		set!(self, "timestamp", timestamp.to_rfc3339())
 	}
 
 	/// Add the "color code of the embed".

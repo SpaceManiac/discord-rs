@@ -29,6 +29,10 @@ base64-rs = "0.1.1"
 flate2 = "0.2.14"
 opus = { version = "0.2", optional = true }
 
+[dependencies.chrono]
+version = "0.3"
+features = ["serde"]
+
 [dependencies.sodiumoxide]
 version = "0.0.12"
 default-features = false
