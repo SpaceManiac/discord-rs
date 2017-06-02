@@ -52,7 +52,7 @@ impl Error {
 		if status == ::hyper::status::StatusCode::TooManyRequests {
 			if let Some(Value::Object(ref map)) = value {
 				if let Some(delay) = map.get("retry_after").and_then(|v| v.as_u64()) {
-					return Error::RateLimited(delay);
+					return Error::RateLimited(delay)
 				}
 			}
 		}
