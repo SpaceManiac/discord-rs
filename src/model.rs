@@ -113,6 +113,8 @@ id! {
 	RoleId;
 	/// An identifier for an Emoji
 	EmojiId;
+	/// An identifier for an Integration
+	IntegrationId;
 }
 
 impl ServerId {
@@ -279,6 +281,57 @@ pub struct ServerPrune {
 	pub pruned: u64,
 }
 serial_decode!(ServerPrune);
+
+/// Information about a server's integration.
+pub struct Integration {
+	pub id: IntegrationId,
+	pub enabled: bool,
+	pub expire_behavior: u64,
+	pub expire_grace_period: u64,
+	pub kind: String,
+	pub name: String,
+	pub role_id: RoleId,
+	pub synced_at: u64,
+	pub syncing: bool,
+
+	pub account: IntegrationAccount,
+	pub user: User,
+}
+
+impl Integration {
+	pub fn decode(value: Value) -> Result<Integration> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, Integration {
+			id: try!(remove(&mut value, "id").and_then(IntegrationId::decode)),
+			enabled: req!(try!(remove(&mut value, "enabled")).as_bool()),
+			expire_behavior: req!(try!(remove(&mut value, "expire_behavior")).as_u64()),
+			expire_grace_period: req!(try!(remove(&mut value, "expire_grace_period")).as_u64()),
+			kind: try!(remove(&mut value, "kind").and_then(into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+			role_id: try!(remove(&mut value, "role_id").and_then(RoleId::decode)),
+			synced_at: req!(try!(remove(&mut value, "synced_at")).as_u64()),
+			syncing: req!(try!(remove(&mut value, "syncing")).as_bool()),
+			account: try!(remove(&mut value, "account").and_then(IntegrationAccount::decode)),
+			user: try!(remove(&mut value, "user").and_then(User::decode)),
+		})
+	}
+}
+
+/// Information about the integration's account.
+pub struct IntegrationAccount {
+	pub id: String,
+	pub name: String,
+}
+
+impl IntegrationAccount {
+	pub fn decode(value: Value) -> Result<IntegrationAccount> {
+		let mut value = try!(into_map(value));
+		warn_json!(value, IntegrationAccount {
+			id: try!(remove(&mut value, "id").and_then(into_string)),
+			name: try!(remove(&mut value, "name").and_then(into_string)),
+		})
+	}
+}
 
 /// Information about a role
 #[derive(Debug, Clone, Serialize, Deserialize)]

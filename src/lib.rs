@@ -761,6 +761,54 @@ impl Discord {
 		check_empty(request!(self, delete, "/guilds/{}/emojis/{}", server, emoji))
 	}
 
+	/// Retrieves the server's integrations.
+	///
+	/// Requires the "MANAGE_SERVER" permission.
+	pub fn get_server_integrations(&self, server: ServerId) -> Result<Vec<Integration>> {
+		let response = request!(self, get, "/guilds/{}/integrations", server);
+		decode_array(try!(serde_json::from_reader(response)), Integration::decode)
+	}
+
+	/// Creates an integration for a server by linking the current user's
+	/// integration.
+	///
+	/// Requires the "MANAGE_SERVER" permission.
+	pub fn create_server_integration(&self, server: ServerId, integration_id: IntegrationId, kind: &str) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("id", integration_id.0)
+			.insert("type", kind)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		check_empty(request!(self, post(body), "/guilds/{}/integrations", server))
+	}
+
+	/// Edits the behavior and settings of an integration.
+	///
+	/// Requires the "MANAGE_SERVER" permission.
+	pub fn edit_server_integration(&self, server: ServerId, integration: IntegrationId, expire_behavior: u64, expire_grace_period: u64, enable_emoticons: bool) -> Result<()> {
+		let map = ObjectBuilder::new()
+			.insert("expire_behavior", expire_behavior)
+			.insert("expire_grace_period", expire_grace_period)
+			.insert("enable_emoticons", enable_emoticons)
+			.build();
+		let body = try!(serde_json::to_string(&map));
+		check_empty(request!(self, patch(body), "/guilds/{}/integrations/{}", server, integration))
+	}
+
+	/// Removes an integration from a server.
+	///
+	/// Requires the "MANAGE_SERVER" permission.
+	pub fn delete_server_integration(&self, server: ServerId, integration: IntegrationId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/integrations/{}", server, integration))
+	}
+
+	/// Sync a server's integration.
+	///
+	/// Requires the "MANAGE_SERVER" permission.
+	pub fn sync_server_integration(&self, server: ServerId, integration: IntegrationId) -> Result<()> {
+		check_empty(request!(self, post, "/guilds/{}/integrations/{}", server, integration))
+	}
+
 	/// Get the ban list for the given server.
 	pub fn get_bans(&self, server: ServerId) -> Result<Vec<Ban>> {
 		let response = request!(self, get, "/guilds/{}/bans", server);
