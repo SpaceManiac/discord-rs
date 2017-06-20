@@ -889,6 +889,12 @@ impl Discord {
 		Ok(vec)
 	}
 
+	/// Get information about a user.
+	pub fn get_user(&self, user: UserId) -> Result<User> {
+		let response = request!(self, get, "/users/{}", user);
+		from_reader(response)
+	}
+
 	/// Get the logged-in user's profile.
 	pub fn get_current_user(&self) -> Result<CurrentUser> {
 		let response = request!(self, get, "/users/@me");
