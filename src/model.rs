@@ -958,6 +958,8 @@ pub enum VerificationLevel {
 	Medium,
 	/// Must also be a member of this server for longer than 10 minutes
 	High,
+	/// Must have a verified phone on their Discord account
+	Phone,
 }
 
 serial_use_mapping!(VerificationLevel, numeric);
@@ -966,6 +968,7 @@ serial_numbers! { VerificationLevel;
 	Low, 1;
 	Medium, 2;
 	High, 3;
+	Phone, 4;
 }
 
 /// A parter custom emoji
