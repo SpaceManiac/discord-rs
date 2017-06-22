@@ -337,6 +337,13 @@ impl Connection {
 
 	/// Cleanly shut down the websocket connection. Optional.
 	pub fn shutdown(mut self) -> Result<()> {
+		try!(self.inner_shutdown());
+		::std::mem::forget(self); // don't call a second time
+		Ok(())
+	}
+
+	// called from shutdown() and drop()
+	fn inner_shutdown(&mut self) -> Result<()> {
 		use websocket::{Sender as S};
 		use std::io::Write;
 
@@ -349,11 +356,15 @@ impl Connection {
 		Ok(())
 	}
 
+	// called when we want to drop the connection with no fanfare
 	fn raw_shutdown(mut self) {
 		use std::io::Write;
-		let stream = self.receiver.get_mut().get_mut();
-		let _ = stream.flush();
-		let _ = stream.shutdown(::std::net::Shutdown::Both);
+		{
+			let stream = self.receiver.get_mut().get_mut();
+			let _ = stream.flush();
+			let _ = stream.shutdown(::std::net::Shutdown::Both);
+		}
+		::std::mem::forget(self); // don't call inner_shutdown()
 	}
 
 	/// Requests a download of online member lists.
@@ -400,6 +411,13 @@ impl Connection {
 			}
 		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+	}
+}
+
+impl Drop for Connection {
+	fn drop(&mut self) {
+		// Swallow errors
+		let _ = self.inner_shutdown();
 	}
 }
 
