@@ -9,9 +9,9 @@ use serde_json::Value;
 
 use super::{Error, Result, Object};
 
-use chrono::datetime::DateTime;
-use chrono::offset::fixed::FixedOffset;
-use chrono::offset::utc::UTC;
+use chrono::DateTime;
+use chrono::FixedOffset;
+use chrono::offset::Utc;
 use chrono::offset::TimeZone;
 
 pub use self::permissions::Permissions;
@@ -1502,7 +1502,7 @@ pub enum Event {
 	TypingStart {
 		channel_id: ChannelId,
 		user_id: UserId,
-		timestamp: DateTime<UTC>,
+		timestamp: DateTime<Utc>,
 	},
 	/// A member's presence state (or username or avatar) has changed
 	PresenceUpdate {
@@ -1688,7 +1688,7 @@ impl Event {
 			warn_json!(value, Event::TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-				timestamp: UTC.timestamp(req!(try!(remove(&mut value, "timestamp")).as_i64()), 0),
+				timestamp: Utc.timestamp(req!(try!(remove(&mut value, "timestamp")).as_i64()), 0),
 			})
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));

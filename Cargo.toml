@@ -30,7 +30,7 @@ flate2 = "0.2.14"
 opus = { version = "0.2", optional = true }
 
 [dependencies.chrono]
-version = "0.3"
+version = "0.4"
 features = ["serde"]
 
 [dependencies.sodiumoxide]

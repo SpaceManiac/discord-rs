@@ -5,8 +5,8 @@
 
 use serde_json::Value;
 
-use chrono::offset::fixed::FixedOffset;
-use chrono::datetime::DateTime;
+use chrono::offset::FixedOffset;
+use chrono::DateTime;
 
 use model::*;
 use Object;
