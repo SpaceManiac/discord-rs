@@ -208,7 +208,10 @@ impl Discord {
 		Ok(discord)
 	}
 
-	fn from_token_raw(token: String) -> Discord {
+	/// Login with raw token.
+	///
+	/// Consider using from_user_token or from_bot_token instead.
+	pub fn from_token_raw(token: String) -> Discord {
 		Discord {
 			rate_limits: RateLimits::default(),
 			client: hyper::Client::new(),
