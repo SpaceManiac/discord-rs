@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use std::fmt;
+use std::str::FromStr;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -42,6 +43,17 @@ macro_rules! serial_decode {
 			pub fn decode(value: Value) -> Result<Self> {
 				serde(value)
 			}
+		}
+	}
+}
+
+macro_rules! string_decode_with_serial_name {
+	($typ:ident) => {
+		impl FromStr for $typ {
+			type Err = Error;
+					fn from_str(s: &str) -> Result<Self> {
+				Self::from_name(s).ok_or(Error::Decode("Unexpected String", Value::String(s.into())))
+					}
 		}
 	}
 }
@@ -212,6 +224,7 @@ serial_names! { ChannelType;
 	Text, "text";
 	Voice, "voice";
 }
+string_decode_with_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
 	Text, 0;
 	Private, 1;
@@ -841,6 +854,7 @@ serial_names! { OnlineStatus;
 	Online, "online";
 	Idle, "idle";
 }
+string_decode_with_serial_name!(OnlineStatus);
 
 /// A type of game being played.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
