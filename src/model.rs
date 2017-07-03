@@ -47,13 +47,13 @@ macro_rules! serial_decode {
 	}
 }
 
-macro_rules! string_decode_with_serial_name {
+macro_rules! string_decode_using_serial_name {
 	($typ:ident) => {
 		impl FromStr for $typ {
 			type Err = Error;
-					fn from_str(s: &str) -> Result<Self> {
+			fn from_str(s: &str) -> Result<Self> {
 				Self::from_name(s).ok_or(Error::Decode("Unexpected String", Value::String(s.into())))
-					}
+			}
 		}
 	}
 }
