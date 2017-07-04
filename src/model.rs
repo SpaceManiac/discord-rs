@@ -224,7 +224,7 @@ serial_names! { ChannelType;
 	Text, "text";
 	Voice, "voice";
 }
-string_decode_with_serial_name!(ChannelType);
+string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
 	Text, 0;
 	Private, 1;
@@ -854,7 +854,7 @@ serial_names! { OnlineStatus;
 	Online, "online";
 	Idle, "idle";
 }
-string_decode_with_serial_name!(OnlineStatus);
+string_decode_using_serial_name!(OnlineStatus);
 
 /// A type of game being played.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
