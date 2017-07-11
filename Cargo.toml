@@ -1,6 +1,6 @@
 [package]
 name = "discord"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
 
 description = "Client library for the Discord API"
@@ -9,7 +9,7 @@ license = "MIT"
 keywords = ["discord", "chat", "bot", "api", "voice"]
 
 repository = "https://github.com/SpaceManiac/discord-rs"
-documentation = "http://wombat.platymuus.com/rustdoc/discord_0.7.0/"
+documentation = "https://docs.rs/discord/0.8.0"
 
 [features]
 default = ["voice"]
@@ -17,7 +17,9 @@ voice = ["opus", "sodiumoxide"]
 
 [dependencies]
 hyper = "0.9"
-serde_json = "0.8"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
 websocket = "0.17"
 bitflags = "0.7"
 byteorder = "0.5"
@@ -26,6 +28,10 @@ log = "0.3"
 base64-rs = "0.1.1"
 flate2 = "0.2.14"
 opus = { version = "0.2", optional = true }
+
+[dependencies.chrono]
+version = "0.4"
+features = ["serde"]
 
 [dependencies.sodiumoxide]
 version = "0.0.12"

@@ -434,6 +434,16 @@ impl State {
 	#[inline]
 	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
 
+	/// Look up a server by its ID.
+	pub fn find_server(&self, id: ServerId) -> Option<&LiveServer> {
+		for server in &self.servers {
+			if server.id == id {
+				return Some(server);
+			}
+		}
+		None
+	}
+
 	/// Look up a private or public channel by its ID.
 	pub fn find_channel(&self, id: ChannelId) -> Option<ChannelRef> {
 		for server in &self.servers {
