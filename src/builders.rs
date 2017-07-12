@@ -66,7 +66,7 @@ builder! {
 	EditUserProfile(Object);
 
 	/// Patch content for the `edit_role` call.
-	EditRole(ObjectBuilder);
+	EditRole(Object);
 
 	/// Patch content for the `send_embed` call.
 	EmbedBuilder(Object);
@@ -226,27 +226,27 @@ impl EditUserProfile {
 impl EditRole {
 	/// Edit the role's name. Supply the empty string to remove a name.
 	pub fn name(self, name: &str) -> Self {
-		EditRole(self.0.insert("name", name))
+		set!(self, "name", name)
 	}
 
 	/// Edit the role's permissions.
 	pub fn permissions(self, permissions: Permissions) -> Self {
-		EditRole(self.0.insert("permissions", permissions.bits()))
+		set!(self, "permissions", permissions)
 	}
 
-	/// Edit the role's color.
+	/// Edit the role's color. Set to zero for default.
 	pub fn color(self, color: u64) -> Self {
-		EditRole(self.0.insert("color", color))
+		set!(self, "color", color)
 	}
 
 	/// Edit the role's hoist status (whether the role should be displayed separately in the sidebar).
 	pub fn hoist(self, hoist: bool) -> Self {
-		EditRole(self.0.insert("hoist", hoist))
+		set!(self, "hoist", hoist)
 	}
-	
-	/// Edit the role's mentionable status.
+
+	/// Edit the role's mentionability, if the role can be mentioned.
 	pub fn mentionable(self, mentionable: bool) -> Self {
-		EditRole(self.0.insert("mentionable", mentionable))
+		set!(self, "mentionable", mentionable)
 	}
 }
 
