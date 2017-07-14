@@ -52,7 +52,7 @@ macro_rules! string_decode_using_serial_name {
 		impl FromStr for $typ {
 			type Err = Error;
 			fn from_str(s: &str) -> Result<Self> {
-				Self::from_name(s).ok_or(Error::Decode("Unexpected String", Value::String(s.into())))
+				Self::from_name(s).ok_or(Error::Other(concat!("Unable to parse string into " , stringify!($typ))))
 			}
 		}
 	}
