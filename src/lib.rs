@@ -882,6 +882,14 @@ impl Discord {
 		Role::decode(try!(serde_json::from_reader(response)))
 	}
 
+	/// Create a new role on a server.
+	pub fn create_role_from_builder<F: FnOnce(EditRole) -> EditRole>(&self, server: ServerId, f: F) -> Result<Role> {
+		let map = EditRole::__build(f);
+		let body = try!(serde_json::to_string(&map));
+		let response = request!(self, post(body), "/guilds/{}/roles", server);
+		Role::decode(try!(serde_json::from_reader(response)))
+	}
+
 	/// Modify a role on a server.
 	pub fn edit_role<F: FnOnce(EditRole) -> EditRole>(&self, server: ServerId, role: RoleId, f: F) -> Result<Role> {
 		let map = EditRole::__build(f);
