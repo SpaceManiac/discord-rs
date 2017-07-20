@@ -39,9 +39,7 @@ extern crate chrono;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
-
-use chrono::prelude::*;
-use chrono::Duration;
+use std::time;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -1178,36 +1176,36 @@ fn resolve_invite(invite: &str) -> &str {
 }
 
 fn sleep_ms(millis: u64) {
-	std::thread::sleep(std::time::Duration::from_millis(millis))
+	std::thread::sleep(time::Duration::from_millis(millis))
 }
 
 // Timer that remembers when it is supposed to go off
 struct Timer {
-	next_tick_at: DateTime<Utc>,
-	tick_len: Duration,
+	next_tick_at: time::Instant,
+	tick_len: time::Duration,
 }
 
 #[cfg_attr(not(feature = "voice"), allow(dead_code))]
 impl Timer {
 	fn new(tick_len_ms: u64) -> Timer {
-		let tick_len = Duration::milliseconds(tick_len_ms as i64);
+		let tick_len = time::Duration::from_millis(tick_len_ms);
 		Timer {
-			next_tick_at: Utc::now() + tick_len,
+			next_tick_at: time::Instant::now() + tick_len,
 			tick_len: tick_len,
 		}
 	}
 
 	#[allow(dead_code)]
 	fn immediately(&mut self) {
-		self.next_tick_at = Utc::now();
+		self.next_tick_at = time::Instant::now();
 	}
 
 	fn defer(&mut self) {
-		self.next_tick_at = Utc::now() + self.tick_len;
+		self.next_tick_at = time::Instant::now() + self.tick_len;
 	}
 
 	fn check_tick(&mut self) -> bool {
-		if Utc::now() >= self.next_tick_at {
+		if time::Instant::now() >= self.next_tick_at {
 			self.next_tick_at = self.next_tick_at + self.tick_len;
 			true
 		} else {
@@ -1216,9 +1214,9 @@ impl Timer {
 	}
 
 	fn sleep_until_tick(&mut self) {
-		let difference = self.next_tick_at.signed_duration_since(Utc::now());
-		if difference > Duration::zero() {
-			sleep_ms(difference.num_milliseconds() as u64)
+		let diff = self.next_tick_at - time::Instant::now();
+		if diff > time::Duration::new(0, 0) {
+			sleep_ms((diff.as_secs() * 1000 + (diff.subsec_nanos() / 1000000) as u64) as u64)
 		}
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
