@@ -1,0 +1,13 @@
+language: rust
+
+install:
+# Libsodium (disabled voice features for now)
+  - wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.12.tar.gz
+  - tar -xvf libsodium-1.0.12.tar.gz
+  - cd libsodium-1.0.12
+  - ./configure
+  - make
+  - make check
+  - sudo make install
+  - sudo ldconfig
+  - cd -
