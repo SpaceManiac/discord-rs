@@ -10,10 +10,7 @@ use serde_json::Value;
 
 use super::{Error, Result, Object};
 
-use chrono::DateTime;
-use chrono::FixedOffset;
-use chrono::offset::Utc;
-use chrono::offset::TimeZone;
+use chrono::prelude::*;
 
 pub use self::permissions::Permissions;
 
@@ -98,8 +95,8 @@ macro_rules! id {
 				///
 				/// Discord generates identifiers using a scheme based on [Twitter Snowflake]
 				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
-				pub fn creation_date(&self) -> ::time::Timespec {
-					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				pub fn creation_date(&self) -> DateTime<Utc> {
+					Utc.timestamp((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
 				}
 			}
 
