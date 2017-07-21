@@ -1216,7 +1216,7 @@ impl Timer {
 	fn sleep_until_tick(&mut self) {
 		let diff = self.next_tick_at - time::Instant::now();
 		if diff > time::Duration::new(0, 0) {
-			sleep_ms((diff.as_secs() * 1000 + (diff.subsec_nanos() / 1000000) as u64) as u64)
+			std::thread::sleep(diff);
 		}
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
