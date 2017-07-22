@@ -1054,6 +1054,14 @@ impl Discord {
 	}
 }
 
+/// Get the @me user ID.
+///
+/// This is just a convenience function for UserId(0), which discord-rs
+/// specifically treats as @me.
+pub fn get_current_user_id() -> UserId {
+	UserId(0)
+}
+
 fn from_reader<T: serde::de::DeserializeOwned, R: std::io::Read>(r: R) -> Result<T> {
 	serde_json::from_reader(r).map_err(From::from)
 }
