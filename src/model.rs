@@ -102,7 +102,12 @@ macro_rules! id {
 					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
 				}
 			}
-
+		)*
+	}
+}
+macro_rules! id_display {
+	($($name:ident),*) => {
+		$(
 			impl fmt::Display for $name {
 				fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 					write!(f, "{}", self.0)
@@ -125,6 +130,17 @@ id! {
 	RoleId;
 	/// An identifier for an Emoji
 	EmojiId;
+}
+id_display!(ServerId, ChannelId, MessageId, RoleId, EmojiId);
+
+impl fmt::Display for UserId {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		if self.0 == 0 {
+			write!(f, "@me")
+		} else {
+			write!(f, "{}", self.0)
+		}
+	}
 }
 
 impl ServerId {
