@@ -2,11 +2,10 @@ use std::sync::mpsc;
 #[cfg(feature="voice")]
 use std::collections::HashMap;
 
-use websocket::client::sync::Client;
-use websocket::ws::Sender as SenderTrait;
-use websocket::sender::Sender;
-use websocket::receiver::Receiver;
-use websocket::stream::Stream;
+use websocket::ClientBuilder;
+use websocket::receiver::Reader;
+use websocket::sender::Writer;
+use websocket::stream::sync::TcpStream;
 
 use serde_json;
 
@@ -35,7 +34,7 @@ macro_rules! finish_connection {
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
-	receiver: Receiver,
+	receiver: Reader<TcpStream>,
 	#[cfg(feature="voice")]
 	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
 	#[cfg(feature="voice")]
@@ -60,9 +59,8 @@ impl Connection {
 		debug!("Gateway: {}", base_url);
 		// establish the websocket connection
 		let url = try!(build_gateway_url(base_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
-		let (mut sender, mut receiver) = response.begin().split();
+		let response = ClientBuilder::from_url(&url).connect_insecure()?;
+		let (mut receiver, mut sender) = response.split().unwrap();
 
 		// send the handshake
 		let identify = identify(token, shard_info);
@@ -276,7 +274,7 @@ impl Connection {
 			::sleep_ms(1000);
 		}
 		// If those fail, hit REST for a new endpoint
-		let (conn, ready) = try!(::Discord::from_token_raw(self.token.to_owned()).connect());
+		let (conn, ready) = ::Discord::from_token_raw(self.token.to_owned())?.connect()?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
@@ -287,11 +285,10 @@ impl Connection {
 		::sleep_ms(1000);
 		debug!("Resuming...");
 		// close connection and re-establish
-		try!(self.receiver.get_mut().get_mut().shutdown(::std::net::Shutdown::Both));
+		self.receiver.shutdown()?;
 		let url = try!(build_gateway_url(&self.ws_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
-		let (mut sender, mut receiver) = response.begin().split();
+		let response = ClientBuilder::from_url(&url).connect_insecure()?;
+		let (mut receiver, mut sender) = response.split().unwrap();
 
 		// send the resume request
 		let resume = json! {{
@@ -340,34 +337,22 @@ impl Connection {
 	}
 
 	/// Cleanly shut down the websocket connection. Optional.
-	pub fn shutdown(mut self) -> Result<()> {
+	pub fn shutdown(self) -> Result<()> {
 		try!(self.inner_shutdown());
-		::std::mem::forget(self); // don't call a second time
+		::std::mem::forget(self); // don't call drop()
 		Ok(())
 	}
 
 	// called from shutdown() and drop()
-	fn inner_shutdown(&mut self) -> Result<()> {
-		use std::io::Write;
-
-		// Hacky horror: get the Stream from the Receiver and formally close it
-		let stream = self.receiver.get_mut().get_mut();
-		try!(Sender::new(stream.by_ref(), true)
-			.send_message(&::websocket::message::Message::close_because(1000, "")));
-		try!(stream.flush());
-		try!(stream.shutdown(::std::net::Shutdown::Both));
+	fn inner_shutdown(&self) -> Result<()> {
+		self.receiver.shutdown_all()?;
 		Ok(())
 	}
 
 	// called when we want to drop the connection with no fanfare
-	fn raw_shutdown(mut self) {
-		use std::io::Write;
-		{
-			let stream = self.receiver.get_mut().get_mut();
-			let _ = stream.flush();
-			let _ = stream.shutdown(::std::net::Shutdown::Both);
-		}
-		::std::mem::forget(self); // don't call inner_shutdown()
+	fn raw_shutdown(self) {
+		self.receiver.shutdown_all().unwrap();
+		::std::mem::forget(self); // don't call drop()
 	}
 
 	/// Requests a download of online member lists.
@@ -453,7 +438,7 @@ fn build_gateway_url(base: &str) -> Result<::websocket::client::Url> {
 		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
-fn keepalive(interval: u64, mut sender: Sender, channel: mpsc::Receiver<Status>) {
+fn keepalive(interval: u64, mut sender: Writer<TcpStream>, channel: mpsc::Receiver<Status>) {
 	let mut timer = ::Timer::new(interval);
 	let mut last_sequence = 0;
 
@@ -493,5 +478,5 @@ fn keepalive(interval: u64, mut sender: Sender, channel: mpsc::Receiver<Status>)
 			}
 		}
 	}
-	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
+	let _ = sender.shutdown_all();
 }

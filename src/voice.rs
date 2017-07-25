@@ -12,9 +12,9 @@ use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 use opus;
 use serde_json;
 use sodiumoxide::crypto::secretbox as crypto;
-use websocket::client::sync::Client;
-use websocket::sender::Sender;
-use websocket::stream::Stream;
+use websocket::ClientBuilder;
+use websocket::sender::Writer;
+use websocket::stream::sync::TcpStream;
 
 use model::*;
 use {Result, Error, SenderExt, ReceiverExt};
@@ -434,7 +434,7 @@ struct ConnStartInfo {
 }
 
 struct InternalConnection {
-	sender: Sender,
+	sender: Writer<TcpStream>,
 	receive_chan: mpsc::Receiver<RecvStatus>,
 	encryption_key: crypto::Key,
 	udp: UdpSocket,
@@ -468,9 +468,8 @@ impl InternalConnection {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid endpoint URL"))
 		};
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
-		let (mut sender, mut receiver) = response.begin().split();
+		let response = ClientBuilder::from_url(&url).connect_insecure()?;
+		let (mut receiver, mut sender) = response.split().unwrap();
 
 		// send the handshake
 		let map = json! {{
@@ -759,7 +758,7 @@ impl InternalConnection {
 impl Drop for InternalConnection {
 	fn drop(&mut self) {
 		// shutting down the sender like this should also terminate the read threads
-		let _ = self.sender.get_mut().shutdown(::std::net::Shutdown::Both);
+		let _ = self.sender.shutdown_all();
 		info!("Voice disconnected");
 	}
 }

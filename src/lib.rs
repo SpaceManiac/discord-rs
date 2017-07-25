@@ -77,7 +77,12 @@ macro_rules! request {
 	// The following .unwrap()s are OK because it will only fail if the URL is incorrect
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || *$self_.client.$method(&path).unwrap().body(&*$body)))
+		try!($self_.request(&path, || {
+			let mut request = $self_.client.$method(&path).unwrap();
+			request.body($body.clone());
+
+			request
+		}))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
@@ -85,7 +90,12 @@ macro_rules! request {
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || *$self_.client.$method(path).unwrap().body(&*$body)))
+		try!($self_.request(path, || {
+			let mut request = $self_.client.$method(path).unwrap();
+			request.body($body.clone());
+
+			request
+		}))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
@@ -242,9 +252,13 @@ impl Discord {
 
 	fn request<'a, F: Fn() -> reqwest::RequestBuilder>(&self, url: &str, f: F) -> Result<reqwest::Response> {
 		self.rate_limits.pre_check(url);
-		let f2 = || *f()
-			.header(reqwest::header::ContentType::json())
-			.header(reqwest::header::Authorization(self.token.clone()));
+		let f2 = || {
+			let mut request = f();
+			request.header(reqwest::header::ContentType::json());
+			request.header(reqwest::header::Authorization(self.token.clone()));
+
+			request
+		};
 		let result = retry(&f2);
 		if let Ok(response) = result.as_ref() {
 			if self.rate_limits.post_update(url, response) {
@@ -468,12 +482,14 @@ impl Discord {
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
+	#[allow(unused_variables)]
+	#[allow(unused_mut)]
 	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+		/*
 		let url = match reqwest::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		/*
 		let mut request = reqwest::Request::new(reqwest::Method::Post, url);
 		request.headers_mut().set(reqwest::header::Authorization(self.token.clone()));
 		request.headers_mut().set(reqwest::header::UserAgent::new(USER_AGENT.to_owned()));
@@ -1226,11 +1242,11 @@ trait SenderExt {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
 }
 
-impl ReceiverExt for websocket::receiver::Receiver {
+impl ReceiverExt for websocket::receiver::Reader<websocket::stream::sync::TcpStream> {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
 		use websocket::message::{Message, Type};
 		use websocket::ws::receiver::Receiver;
-		let message: Message = Message::from(try!(self.recv_message()));
+		let message: Message = Message::from(try!(self.receiver.recv_message(&mut self.stream)));
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
@@ -1253,10 +1269,9 @@ impl ReceiverExt for websocket::receiver::Receiver {
 	}
 }
 
-impl SenderExt for websocket::sender::Sender {
+impl SenderExt for websocket::sender::Writer<websocket::stream::sync::TcpStream> {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use websocket::message::Message;
-		use websocket::ws::sender::Sender;
 		serde_json::to_string(value)
 			.map(Message::text)
 			.map_err(Error::from)
@@ -1269,6 +1284,6 @@ mod internal {
 		SendMessage(::serde_json::Value),
 		Sequence(u64),
 		ChangeInterval(u64),
-		ChangeSender(::websocket::sender::Sender),
+		ChangeSender(::websocket::sender::Writer<::websocket::stream::sync::TcpStream>),
 	}
 }
