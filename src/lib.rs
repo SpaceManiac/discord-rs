@@ -74,21 +74,22 @@ macro_rules! status_concat {
 }
 
 macro_rules! request {
+	// The following .unwrap()s are OK because it will only fail if the URL is incorrect
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path).body(&$body)))
+		try!($self_.request(&path, || *$self_.client.$method(&path).unwrap().body(&*$body)))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path)))
+		try!($self_.request(&path, || $self_.client.$method(&path).unwrap()))
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path).body(&$body)))
+		try!($self_.request(path, || *$self_.client.$method(path).unwrap().body(&*$body)))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path)))
+		try!($self_.request(path, || $self_.client.$method(path).unwrap()))
 	}};
 }
 
@@ -100,7 +101,7 @@ macro_rules! request {
 /// the Discord REST API.
 pub struct Discord {
 	rate_limits: RateLimits,
-	client: hyper::Client,
+	client: reqwest::Client,
 	token: String,
 }
 
@@ -112,11 +113,11 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = hyper::Client::new();
-		let response = try!(check_status(client.post(api_concat!("/auth/login"))
-			.header(hyper::header::ContentType::json())
-			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-			.body(&try!(serde_json::to_string(&map)))
+		let client = reqwest::Client::new()?;
+		let response = try!(check_status(client.post(api_concat!("/auth/login")).unwrap()
+			.header(reqwest::header::ContentType::json())
+			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+			.body(try!(serde_json::to_string(&map)))
 			.send()));
 		let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 		let token = match json.remove("token") {
@@ -163,12 +164,12 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = hyper::Client::new();
-			let response = try!(check_status(client.post(api_concat!("/auth/login"))
-				.header(hyper::header::ContentType::json())
-				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-				.header(hyper::header::Authorization(initial_token.clone()))
-				.body(&try!(serde_json::to_string(&map)))
+			let client = reqwest::Client::new()?;
+			let response = try!(check_status(client.post(api_concat!("/auth/login")).unwrap()
+				.header(reqwest::header::ContentType::json())
+				.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+				.header(reqwest::header::Authorization(initial_token.clone()))
+				.body(try!(serde_json::to_string(&map)))
 				.send()));
 			let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
 			let token = match json.remove("token") {
@@ -208,24 +209,24 @@ impl Discord {
 		Ok(discord)
 	}
 
-	fn from_token_raw(token: String) -> Discord {
-		Discord {
+	fn from_token_raw(token: String) -> Result<Discord> {
+		Ok(Discord {
 			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
+			client: reqwest::Client::new()?,
 			token: token,
-		}
+		})
 	}
 
 	/// Log in as a bot account using the given authentication token.
 	///
 	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
-		Ok(Discord::from_token_raw(format!("Bot {}", token.trim())))
+		Discord::from_token_raw(format!("Bot {}", token.trim()))
 	}
 
 	/// Log in as a user account using the given authentication token.
 	pub fn from_user_token(token: &str) -> Result<Discord> {
-		Ok(Discord::from_token_raw(token.trim().to_owned()))
+		Discord::from_token_raw(token.trim().to_owned())
 	}
 
 	/// Log out from the Discord API, invalidating this clients's token.
@@ -239,11 +240,11 @@ impl Discord {
 		check_empty(request!(self, post(body), "/auth/logout"))
 	}
 
-	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, url: &str, f: F) -> Result<hyper::client::Response> {
+	fn request<'a, F: Fn() -> reqwest::RequestBuilder>(&self, url: &str, f: F) -> Result<reqwest::Response> {
 		self.rate_limits.pre_check(url);
-		let f2 = || f()
-			.header(hyper::header::ContentType::json())
-			.header(hyper::header::Authorization(self.token.clone()));
+		let f2 = || *f()
+			.header(reqwest::header::ContentType::json())
+			.header(reqwest::header::Authorization(self.token.clone()));
 		let result = retry(&f2);
 		if let Ok(response) = result.as_ref() {
 			if self.rate_limits.post_update(url, response) {
@@ -349,7 +350,7 @@ impl Discord {
 			GetMessages::After(id) => { let _ = write!(url, "&after={}", id); },
 			GetMessages::Around(id) => { let _ = write!(url, "&around={}", id); },
 		}
-		let response = try!(self.request(&url, || self.client.get(&url)));
+		let response = try!(self.request(&url, || self.client.get(&url).unwrap()));
 		from_reader(response)
 	}
 
@@ -468,17 +469,21 @@ impl Discord {
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
-		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
+		let url = match reqwest::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
-		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
-		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
+		/*
+		let mut request = reqwest::Request::new(reqwest::Method::Post, url);
+		request.headers_mut().set(reqwest::header::Authorization(self.token.clone()));
+		request.headers_mut().set(reqwest::header::UserAgent::new(USER_AGENT.to_owned()));
 		let mut request = try!(multipart::client::Multipart::from_request(request));
 		try!(request.write_text("content", text));
 		try!(request.write_stream("file", &mut file, Some(filename), None));
 		from_reader(try!(check_status(request.send())))
+		*/
+		// Unimplemented since updating to reqwest. TODO!!!
+		unimplemented!();
 	}
 
 	/// Acknowledge this message as "read" by this client.
@@ -883,7 +888,7 @@ impl Discord {
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
 		let mut response = try!(retry(||
-			self.client.get(&self.get_user_avatar_url(user, avatar))));
+			self.client.get(&self.get_user_avatar_url(user, avatar)).unwrap()));
 		let mut vec = Vec::new();
 		try!(response.read_to_end(&mut vec));
 		Ok(vec)
@@ -1075,9 +1080,9 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new()?;
 	let response = try!(retry(|| client.get(
-		status_concat!("/incidents/unresolved.json"))));
+		status_concat!("/incidents/unresolved.json")).unwrap()));
 	let mut json: Object = try!(serde_json::from_reader(response));
 
 	match json.remove("incidents") {
@@ -1088,9 +1093,9 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new()?;
 	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/scheduled-maintenances/active.json")))));
+		status_concat!("/scheduled-maintenances/active.json")).unwrap())));
 	let mut json: Object = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -1101,9 +1106,9 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new()?;
 	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/scheduled-maintenances/upcoming.json")))));
+		status_concat!("/scheduled-maintenances/upcoming.json")).unwrap())));
 	let mut json: Object = try!(serde_json::from_reader(response));
 
 	match json.remove("scheduled_maintenances") {
@@ -1126,22 +1131,16 @@ pub enum GetMessages {
 
 /// Send a request with the correct `UserAgent`, retrying it a second time if the
 /// connection is aborted the first time.
-fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> hyper::Result<hyper::client::Response> {
-	let f2 = || f()
-		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-		.send();
-	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
-	match f2() {
-		Err(hyper::error::Error::Io(ref io))
-			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
-		other => other
-	}
+///
+/// Update: Since we started using `reqwest` it doesn't actually retry on abort. TODO.
+fn retry<F: Fn() -> reqwest::RequestBuilder>(f: F) -> reqwest::Result<reqwest::Response> {
+	f().header(reqwest::header::UserAgent::new(USER_AGENT.to_owned())).send()
 }
 
-/// Convert non-success hyper statuses to discord crate errors, tossing info.
-fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
-	let response: hyper::client::Response = try!(response);
-	if !response.status.is_success() {
+/// Convert non-success reqwest statuses to discord crate errors, tossing info.
+fn check_status(response: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> {
+	let response: reqwest::Response = try!(response);
+	if !response.status().is_success() {
 		return Err(Error::from_response(response))
 	}
 	Ok(response)
@@ -1149,11 +1148,11 @@ fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hype
 
 /// Validate a request that is expected to return 204 No Content and print
 /// debug information if it does not.
-fn check_empty(mut response: hyper::client::Response) -> Result<()> {
-	if response.status != hyper::status::StatusCode::NoContent {
+fn check_empty(mut response: reqwest::Response) -> Result<()> {
+	if response.status() != reqwest::StatusCode::NoContent {
 		use std::io::Read;
-		debug!("Expected 204 No Content, got {}", response.status);
-		for header in response.headers.iter() {
+		debug!("Expected 204 No Content, got {}", response.status());
+		for header in response.headers().iter() {
 			debug!("Header: {}", header);
 		}
 		let mut content = String::new();
@@ -1227,11 +1226,11 @@ trait SenderExt {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
 }
 
-impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStream> {
+impl ReceiverExt for websocket::receiver::Receiver {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
 		use websocket::message::{Message, Type};
 		use websocket::ws::receiver::Receiver;
-		let message: Message = try!(self.recv_message());
+		let message: Message = Message::from(try!(self.recv_message()));
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
@@ -1254,7 +1253,7 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 	}
 }
 
-impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream> {
+impl SenderExt for websocket::sender::Sender {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use websocket::message::Message;
 		use websocket::ws::sender::Sender;
@@ -1270,6 +1269,6 @@ mod internal {
 		SendMessage(::serde_json::Value),
 		Sequence(u64),
 		ChangeInterval(u64),
-		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+		ChangeSender(::websocket::sender::Sender),
 	}
 }

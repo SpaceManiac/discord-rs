@@ -12,8 +12,9 @@ use byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
 use opus;
 use serde_json;
 use sodiumoxide::crypto::secretbox as crypto;
-use websocket::client::{Client, Sender};
-use websocket::stream::WebSocketStream;
+use websocket::client::sync::Client;
+use websocket::sender::Sender;
+use websocket::stream::Stream;
 
 use model::*;
 use {Result, Error, SenderExt, ReceiverExt};
@@ -433,7 +434,7 @@ struct ConnStartInfo {
 }
 
 struct InternalConnection {
-	sender: Sender<WebSocketStream>,
+	sender: Sender,
 	receive_chan: mpsc::Receiver<RecvStatus>,
 	encryption_key: crypto::Key,
 	udp: UdpSocket,
@@ -463,7 +464,7 @@ impl InternalConnection {
 			endpoint.truncate(len - 3);
 		}
 		// establish the websocket connection
-		let url = match ::websocket::client::request::Url::parse(&format!("wss://{}", endpoint)) {
+		let url = match ::websocket::client::Url::parse(&format!("wss://{}", endpoint)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid endpoint URL"))
 		};

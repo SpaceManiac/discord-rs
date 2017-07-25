@@ -2,8 +2,11 @@ use std::sync::mpsc;
 #[cfg(feature="voice")]
 use std::collections::HashMap;
 
-use websocket::client::{Client, Sender, Receiver};
-use websocket::stream::WebSocketStream;
+use websocket::client::sync::Client;
+use websocket::ws::Sender as SenderTrait;
+use websocket::sender::Sender;
+use websocket::receiver::Receiver;
+use websocket::stream::Stream;
 
 use serde_json;
 
@@ -32,7 +35,7 @@ macro_rules! finish_connection {
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
-	receiver: Receiver<WebSocketStream>,
+	receiver: Receiver,
 	#[cfg(feature="voice")]
 	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
 	#[cfg(feature="voice")]
@@ -345,10 +348,9 @@ impl Connection {
 
 	// called from shutdown() and drop()
 	fn inner_shutdown(&mut self) -> Result<()> {
-		use websocket::{Sender as S};
 		use std::io::Write;
 
-		// Hacky horror: get the WebSocketStream from the Receiver and formally close it
+		// Hacky horror: get the Stream from the Receiver and formally close it
 		let stream = self.receiver.get_mut().get_mut();
 		try!(Sender::new(stream.by_ref(), true)
 			.send_message(&::websocket::message::Message::close_because(1000, "")));
@@ -446,12 +448,12 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 }
 
 #[inline]
-fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
-	::websocket::client::request::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
+fn build_gateway_url(base: &str) -> Result<::websocket::client::Url> {
+	::websocket::client::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
 		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
-fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
+fn keepalive(interval: u64, mut sender: Sender, channel: mpsc::Receiver<Status>) {
 	let mut timer = ::Timer::new(interval);
 	let mut last_sequence = 0;
 
