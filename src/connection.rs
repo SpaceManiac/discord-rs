@@ -1,47 +1,40 @@
-use std::sync::mpsc;
+/*use std::sync::mpsc;
 #[cfg(feature="voice")]
 use std::collections::HashMap;
-
-use websocket::client::{Client, Sender, Receiver};
-use websocket::stream::WebSocketStream;
 
 use serde_json;
 
 use model::*;
-use internal::Status;
-#[cfg(feature="voice")]
-use voice::VoiceConnection;
+//#[cfg(feature="voice")]
+//use voice::VoiceConnection;
 use {Result, Error, SenderExt, ReceiverExt};
+use tokio_core::reactor::Core;
+use async::single_conn::{self, SingleConnection};
 
 const GATEWAY_VERSION: u64 = 6;
 
 #[cfg(feature="voice")]
 macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
+	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr),*) => { Connection {
 		$($name1: $val1,)*
 		$($name2: $val2,)*
 	}}
 }
 #[cfg(not(feature="voice"))]
 macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
+	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr),*) => { Connection {
 		$($name1: $val1,)*
 	}}
 }
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
-	keepalive_channel: mpsc::Sender<Status>,
-	receiver: Receiver<WebSocketStream>,
+	core: Core,
+	connection: SingleConnection,
 	#[cfg(feature="voice")]
-	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
+	voice_handles: HashMap<Option<ServerId>, () /*VoiceConnection*/ >,
 	#[cfg(feature="voice")]
 	user_id: UserId,
-	ws_url: String,
-	token: String,
-	session_id: Option<String>,
-	last_sequence: u64,
-	shard_info: Option<[u8; 2]>,
 }
 
 impl Connection {
@@ -54,81 +47,23 @@ impl Connection {
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		debug!("Gateway: {}", base_url);
-		// establish the websocket connection
-		let url = try!(build_gateway_url(base_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
-		let (mut sender, mut receiver) = response.begin().split();
+		let discord = ::Discord::from_token_raw(token);
+		let mut core = Core::new()?;
+		let future = single_conn::test(&core.handle(), discord)
+			.and_then(|conn| conn.into_future());
 
-		// send the handshake
-		let identify = identify(token, shard_info);
-		try!(sender.send_json(&identify));
-
-		// read the Hello and spawn the keepalive thread
-		let heartbeat_interval;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
-			GatewayEvent::Hello(interval) => heartbeat_interval = interval,
-			other => {
-				debug!("Unexpected event: {:?}", other);
-				return Err(Error::Protocol("Expected Hello during handshake"))
-			}
+		let (readyev, conn) = core.run(future)?;
+		if let Event::Ready(ready) = readyev {
+			Ok((finish_connection!(
+				core: core,
+				connection: conn;
+				voice_handles: HashMap::new(),
+				user_id: ready.user.id
+			), ready))
+		} else {
+			panic!("Got unexpected first event on connect: {:?}", readyev);
 		}
 
-		let (tx, rx) = mpsc::channel();
-		try!(::std::thread::Builder::new()
-			.name("Discord Keepalive".into())
-			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
-
-		// read the Ready event
-		let sequence;
-		let ready;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
-			GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-				sequence = seq;
-				ready = event;
-			},
-			GatewayEvent::InvalidateSession => {
-				debug!("Session invalidated, reidentifying");
-				let _ = tx.send(Status::SendMessage(identify));
-				match try!(receiver.recv_json(GatewayEvent::decode)) {
-					GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-						sequence = seq;
-						ready = event;
-					}
-					GatewayEvent::InvalidateSession => {
-						return Err(Error::Protocol("Invalid session during handshake. \
-							Double-check your token or consider waiting 5 seconds between starting shards."))
-					}
-					other => {
-						debug!("Unexpected event: {:?}", other);
-						return Err(Error::Protocol("Expected Ready during handshake"))
-					}
-				}
-			}
-			other => {
-				debug!("Unexpected event: {:?}", other);
-				return Err(Error::Protocol("Expected Ready or InvalidateSession during handshake"))
-			}
-		}
-		if ready.version != GATEWAY_VERSION {
-			warn!("Got protocol version {} instead of {}", ready.version, GATEWAY_VERSION);
-		}
-		let session_id = ready.session_id.clone();
-
-		// return the connection
-		Ok((finish_connection!(
-			keepalive_channel: tx,
-			receiver: receiver,
-			ws_url: base_url.to_owned(),
-			token: token.to_owned(),
-			session_id: Some(session_id),
-			last_sequence: sequence,
-			shard_info: shard_info;
-			// voice only
-			user_id: ready.user.id,
-			voice_handles: HashMap::new(),
-		), ready))
 	}
 
 	/// Change the game information that this client reports as playing.
@@ -493,3 +428,5 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 	}
 	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
 }
+*/
+pub struct Connection{}

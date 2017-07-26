@@ -1,11 +1,14 @@
 use std::io::Error as IoError;
 use std::error::Error as StdError;
 use std::fmt::Display;
+use hyper;
 use hyper::Error as HyperError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
+use tokio_timer;
 use websocket::result::WebSocketError;
 use chrono::ParseError as ChronoError;
+use native_tls;
 #[cfg(feature="voice")]
 use opus::Error as OpusError;
 
@@ -17,8 +20,12 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
 	/// A `hyper` crate error
 	Hyper(HyperError),
+	/// A `native-tls` crate error
+	Tls(native_tls::Error),
 	/// A `chrono` crate error
 	Chrono(ChronoError),
+	/// A `tokio_timer` crate error
+	Timer(tokio_timer::TimerError),
 	/// A `serde_json` crate error
 	Json(JsonError),
 	/// A `websocket` crate error
@@ -72,6 +79,24 @@ impl From<HyperError> for Error {
 	}
 }
 
+impl From<hyper::error::ParseError> for Error {
+	fn from(err: hyper::error::ParseError) -> Error {
+		Error::Hyper(HyperError::from(err))
+	}
+}
+
+impl From<native_tls::Error> for Error {
+	fn from(err: native_tls::Error) -> Error {
+		Error::Tls(err)
+	}
+}
+
+impl From<tokio_timer::TimerError> for Error {
+	fn from(err: tokio_timer::TimerError) -> Error {
+		Error::Timer(err)
+	}
+}
+
 impl From<ChronoError> for Error {
 	fn from(err: ChronoError) -> Error {
 		Error::Chrono(err)
@@ -101,7 +126,9 @@ impl Display for Error {
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		match *self {
 			Error::Hyper(ref inner) => inner.fmt(f),
+			Error::Tls(ref inner) => inner.fmt(f),
 			Error::Chrono(ref inner) => inner.fmt(f),
+			Error::Timer(ref inner) => inner.fmt(f),
 			Error::Json(ref inner) => inner.fmt(f),
 			Error::WebSocket(ref inner) => inner.fmt(f),
 			Error::Io(ref inner) => inner.fmt(f),
@@ -117,7 +144,9 @@ impl StdError for Error {
 	fn description(&self) -> &str {
 		match *self {
 			Error::Hyper(ref inner) => inner.description(),
+			Error::Tls(ref inner) => inner.description(),
 			Error::Chrono(ref inner) => inner.description(),
+			Error::Timer(ref inner) => inner.description(),
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
@@ -136,7 +165,9 @@ impl StdError for Error {
 	fn cause(&self) -> Option<&StdError> {
 		match *self {
 			Error::Hyper(ref inner) => Some(inner),
+			Error::Tls(ref inner) => Some(inner),
 			Error::Chrono(ref inner) => Some(inner),
+			Error::Timer(ref inner) => Some(inner),
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
 			Error::Io(ref inner) => Some(inner),

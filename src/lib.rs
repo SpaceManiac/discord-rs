@@ -23,7 +23,14 @@
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
 
+#[macro_use] extern crate futures;
+extern crate tokio_core;
+extern crate tokio_io;
+extern crate tokio_timer;
+extern crate futures_cpupool;
 extern crate hyper;
+extern crate hyper_native_tls;
+extern crate native_tls;
 extern crate websocket;
 extern crate byteorder;
 extern crate time;
@@ -43,12 +50,14 @@ use std::collections::BTreeMap;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
+//mod async_connection;
 mod ratelimit;
 mod error;
 mod connection;
 mod state;
 #[cfg(feature="voice")]
 pub mod voice;
+pub mod async;
 
 macro_rules! cdn_concat {
 	($e:expr) => (concat!("https://cdn.discordapp.com", $e))
@@ -76,18 +85,22 @@ macro_rules! status_concat {
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
+		println!("path: {}", path);
 		try!($self_.request(&path, || $self_.client.$method(&path).body(&$body)))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
+		println!("path: {}", path);
 		try!($self_.request(&path, || $self_.client.$method(&path)))
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
+		println!("path: {}", path);
 		try!($self_.request(path, || $self_.client.$method(path).body(&$body)))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
+		println!("path: {}", path);
 		try!($self_.request(path, || $self_.client.$method(path)))
 	}};
 }
@@ -104,6 +117,13 @@ pub struct Discord {
 	token: String,
 }
 
+fn new_hyper() -> Result<hyper::Client> {
+	let ssl = hyper_native_tls::NativeTlsClient::new()?;
+	let connector = hyper::net::HttpsConnector::new(ssl);
+
+	Ok(hyper::Client::with_connector(connector))
+}
+
 impl Discord {
 	/// Log in to the Discord Rest API and acquire a token.
 	#[deprecated(note="Login automation is not recommended. Use `from_user_token` instead.")]
@@ -112,7 +132,7 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = hyper::Client::new();
+		let client = new_hyper()?;
 		let response = try!(check_status(client.post(api_concat!("/auth/login"))
 			.header(hyper::header::ContentType::json())
 			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -141,6 +161,8 @@ impl Discord {
 		use std::io::{Write, BufRead, BufReader};
 		use std::fs::File;
 
+		let client = new_hyper()?;
+
 		// Read the cache, looking for our token
 		let path = path.as_ref();
 		let mut initial_token: Option<String> = None;
@@ -163,7 +185,6 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = hyper::Client::new();
 			let response = try!(check_status(client.post(api_concat!("/auth/login"))
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
@@ -209,9 +230,11 @@ impl Discord {
 	}
 
 	fn from_token_raw(token: String) -> Discord {
+		let client = new_hyper().unwrap();
+
 		Discord {
 			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
+			client: client,
 			token: token,
 		}
 	}
@@ -472,6 +495,7 @@ impl Discord {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
+
 		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
 		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
 		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
@@ -1044,13 +1068,24 @@ impl Discord {
 	}
 
 	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
+		let url = self.__get_gateway(shard_info)?;
+		//Connection::new(&url, &self.token, shard_info)
+		panic!("TODO");
+	}
+}
+
+impl PrivateDiscord for Discord {
+	fn __get_gateway(&self, shard_info: Option<[u8; 2]>) -> Result<String> {
 		let response = request!(self, get, "/gateway");
 		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
-		let url = match value.get("url") {
-			Some(url) => url,
-			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
-		};
-		Connection::new(url, &self.token, shard_info)
+		match value.get("url") {
+			Some(url) => Ok(url.clone()),
+			None => Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
+		}
+	}
+
+	fn __get_token(&self) -> &str {
+		&self.token
 	}
 }
 
@@ -1218,7 +1253,7 @@ impl Timer {
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
 }
-
+/*
 trait ReceiverExt {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T>;
 }
@@ -1264,12 +1299,22 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 			.and_then(|m| self.send_message(&m).map_err(Error::from))
 	}
 }
+*/
 
+use internal::PrivateDiscord;
 mod internal {
+	// These functions are private, but we need to expose them to another module in the same crate,
+	// so we'll make them "public" but in a non-exposed module.
+	pub trait PrivateDiscord {
+		fn __get_gateway(&self, shard_info: Option<[u8; 2]>) -> ::Result<String>;
+		fn __get_token(&self) -> &str;
+	}
+	/*
 	pub enum Status {
 		SendMessage(::serde_json::Value),
 		Sequence(u64),
 		ChangeInterval(u64),
-		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+		//ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
 	}
+	*/
 }
