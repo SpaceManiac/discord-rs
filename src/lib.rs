@@ -1214,9 +1214,9 @@ impl Timer {
 	}
 
 	fn sleep_until_tick(&mut self) {
-		let diff = self.next_tick_at - time::Instant::now();
-		if diff > time::Duration::new(0, 0) {
-			std::thread::sleep(diff);
+		let now = time::Instant::now();
+		if self.next_tick_at > now {
+			std::thread::sleep(self.next_tick_at - now);
 		}
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
