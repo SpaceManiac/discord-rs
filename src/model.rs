@@ -571,7 +571,7 @@ pub mod permissions {
 	bitflags! {
 		/// Set of permissions assignable to a Role or PermissionOverwrite
 		pub flags Permissions: u64 {
-			const CREATE_INVITE = 1 << 0,
+			const CREATE_INVITE = 1,
 			const KICK_MEMBERS = 1 << 1,
 			const BAN_MEMBERS = 1 << 2,
 			/// Grant all permissions, bypassing channel-specific permissions

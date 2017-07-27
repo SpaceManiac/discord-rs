@@ -1248,7 +1248,7 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 				&message.payload[..]
 			};
 			serde_json::from_reader(payload).map_err(From::from).and_then(decode).map_err(|e| {
-				warn!("Error decoding: {}", String::from_utf8_lossy(&payload));
+				warn!("Error decoding: {}", String::from_utf8_lossy(payload));
 				e
 			})
 		} else {
