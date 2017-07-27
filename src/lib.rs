@@ -23,8 +23,11 @@
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
 
-extern crate hyper;
+extern crate reqwest;
 extern crate websocket;
+extern crate futures;
+extern crate tokio-core;
+
 extern crate byteorder;
 extern crate time;
 extern crate multipart;

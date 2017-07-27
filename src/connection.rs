@@ -30,7 +30,14 @@ macro_rules! finish_connection {
 }
 
 /// Websocket connection to the Discord servers.
+
 pub struct Connection {
+	
+}
+
+/*
+pub struct Connection {
+	
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
 	#[cfg(feature="voice")]
@@ -42,6 +49,7 @@ pub struct Connection {
 	session_id: Option<String>,
 	last_sequence: u64,
 	shard_info: Option<[u8; 2]>,
+	
 }
 
 impl Connection {
@@ -413,6 +421,7 @@ impl Connection {
 		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
+	
 }
 
 impl Drop for Connection {
@@ -493,3 +502,4 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 	}
 	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
 }
+*/
