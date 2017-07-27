@@ -1,6 +1,6 @@
 //! Client library for the [Discord](https://discordapp.com) API.
 //!
-//! The Discord API can be divided into three main components: the `RESTful` API
+//! The Discord API can be divided into three main components: the RESTful API
 //! to which calls can be made to take actions, a websocket-based permanent
 //! connection over which state updates are received, and the voice calling
 //! system.
