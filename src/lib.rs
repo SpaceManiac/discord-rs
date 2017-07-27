@@ -928,7 +928,7 @@ impl Discord {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
 		let user: CurrentUser = try!(from_reader(response));
-		if user.bot {
+		if user.bot == true {
 			return Err(Error::Other("Cannot call edit_user_profile on a bot account"))
 		}
 		let mut map = Object::new();

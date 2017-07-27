@@ -58,6 +58,19 @@ macro_rules! string_decode_using_serial_name {
 	}
 }
 
+fn update_field<T: Clone>(item: &mut T, patch: &Option<T>) {
+	if patch.is_some() {
+		::std::mem::replace(item, patch.clone().unwrap());
+	}
+}
+
+fn update_field_opt<T: Clone>(item: &mut Option<T>, patch: &Option<T>) {
+	if patch.is_some() {
+		::std::mem::replace(item, patch.clone());
+	}
+}
+
+
 //=================
 // Discord identifier types
 
@@ -1213,7 +1226,7 @@ impl PossibleServer<Server> {
 }
 
 /// Information about the logged-in user
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct CurrentUser {
 	pub id: UserId,
 	pub username: String,
@@ -1227,6 +1240,131 @@ pub struct CurrentUser {
 	pub mfa_enabled: bool,
 }
 serial_decode!(CurrentUser);
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct CurrentUserPatch {
+	pub id: Option<UserId>,
+	pub username: Option<String>,
+	#[serde(deserialize_with="::serial::deserialize_discrim_opt")]
+	pub discriminator: Option<u16>,
+	pub avatar: Option<String>,
+	pub email: Option<String>,
+	pub verified: Option<bool>,
+	#[serde(default)]
+	pub bot: Option<bool>,
+	pub mfa_enabled: Option<bool>,
+}
+serial_decode!(CurrentUserPatch);
+
+impl CurrentUser {
+	pub fn update_from(&mut self, patch: &CurrentUserPatch) {
+		update_field(&mut self.id, &patch.id);
+		update_field(&mut self.username, &patch.username);
+		update_field(&mut self.discriminator, &patch.discriminator);
+		update_field_opt(&mut self.avatar, &patch.avatar);
+		update_field_opt(&mut self.email, &patch.email);
+		update_field(&mut self.verified, &patch.verified);
+		update_field(&mut self.bot, &patch.bot);
+		update_field(&mut self.mfa_enabled, &patch.mfa_enabled);
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	macro_rules! assert_field {
+	($val:expr, $expect:expr, $($field:ident),+) => {
+		{
+			$(assert_eq!($val.$field.clone(), $expect.$field.clone(),
+			 "Field {} mismatch: expected {:?} got {:?}",
+			 stringify!($field), $expect.$field, $val.$field
+			);)*
+		}
+	}
+}
+
+	macro_rules! assert_field_unwrap {
+	($val:expr, $expect:expr, $($field:ident),+) => {
+		{
+			$(assert_eq!($val.$field.clone(), $expect.$field.clone().unwrap(),
+			"Field {} mismatch: expected {:?} got {:?}",
+			 stringify!($field), $expect.$field, $val.$field
+			);)*
+		}
+	}
+}
+
+	#[test]
+	fn test_update_user() {
+		let u1 = CurrentUser {
+			id: UserId(123),
+			username: "foo".into(),
+			discriminator: 222,
+			avatar: Some("url".into()),
+			email: Some("foo@example.com".into()),
+			verified: true,
+			bot: false,
+			mfa_enabled: true
+		};
+
+		let p1 = CurrentUserPatch {
+			id: Some(UserId(333)),
+			username: Some("bar".into()),
+			discriminator: Some(444),
+			avatar: Some("aaa".into()),
+			email: None,
+			verified: None,
+			bot: None,
+			mfa_enabled: None
+		};
+
+		let mut user = u1.clone();
+		user.update_from(&p1);
+
+		assert_field_unwrap!(user, p1, id, username, discriminator);
+		assert_field!(user, p1, avatar);
+		assert_field!(user, u1, email, verified, bot, mfa_enabled);
+
+		let p2 = CurrentUserPatch {
+			id: None,
+			username: None,
+			discriminator: None,
+			avatar: None,
+			email: Some("bar@example.com".into()),
+			verified: Some(false),
+			bot: Some(true),
+			mfa_enabled: Some(false)
+		};
+
+		let mut user = u1.clone();
+		user.update_from(&p2);
+
+		assert_field_unwrap!(user, p2, bot, mfa_enabled, verified);
+		assert_field!(user, p2, email);
+		assert_field!(user, u1, id, username, discriminator, avatar);
+
+		let p3 = CurrentUserPatch {
+			id: Some(UserId(333)),
+			username: Some("bar".into()),
+			discriminator: Some(444),
+			avatar: Some("aaa".into()),
+			email: Some("bar@example.com".into()),
+			verified: Some(false),
+			bot: Some(true),
+			mfa_enabled: Some(false)
+		};
+
+		let mut user = u1.clone();
+		user.update_from(&p3);
+
+		assert_field_unwrap!(user, p3,
+			id, username, discriminator, verified,
+			bot, mfa_enabled
+		);
+		assert_field!(user, p3, email, avatar);
+	}
+}
 
 /// Information about the current application and the owner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1468,7 +1606,7 @@ pub enum Event {
 	},
 
 	/// Update to the logged-in user's information
-	UserUpdate(CurrentUser),
+	UserUpdate(CurrentUserPatch),
 	/// Update to a note that the logged-in user has set for another user.
 	UserNoteUpdate(UserId, String),
 	/// Update to the logged-in user's preferences or client settings
@@ -1647,7 +1785,7 @@ impl Event {
 				trace: try!(remove(&mut value, "_trace").and_then(|v| decode_array(v, |v| Ok(into_string(v).ok())))),
 			})
 		} else if kind == "USER_UPDATE" {
-			CurrentUser::decode(Value::Object(value)).map(Event::UserUpdate)
+			CurrentUserPatch::decode(Value::Object(value)).map(Event::UserUpdate)
 		} else if kind == "USER_NOTE_UPDATE" {
 			warn_json!(value, Event::UserNoteUpdate(
 				try!(remove(&mut value, "id").and_then(UserId::decode)),

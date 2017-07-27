@@ -48,11 +48,11 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 /// Deserialize a maybe-string discriminator into a u16.
 /// Also enforces 0 <= N <= 9999.
 #[allow(unused_comparisons)]
-pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Error> {
+pub fn deserialize_discrim_opt<'d, D: Deserializer<'d>>(d: D) -> Result<Option<u16>, D::Error> {
 	macro_rules! check {
 		($self:ident, $v:ident, $wrong:expr) => {
 			if $v >= 0 && $v <= 9999 {
-				Ok($v as u16)
+				Ok(Some($v as u16))
 			} else {
 				Err(E::invalid_value($wrong, &$self))
 			}
@@ -61,21 +61,21 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 
 	struct DiscrimVisitor;
 	impl<'d> Visitor<'d> for DiscrimVisitor {
-		type Value = u16;
+		type Value = Option<u16>;
 
 		fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
 			write!(fmt, "a u16 in [0, 9999] or parseable string")
 		}
 
-		fn visit_i64<E: Error>(self, v: i64) -> Result<u16, E> {
+		fn visit_i64<E: Error>(self, v: i64) -> Result<Self::Value, E> {
 			check!(self, v, Unexpected::Signed(v))
 		}
 
-		fn visit_u64<E: Error>(self, v: u64) -> Result<u16, E> {
+		fn visit_u64<E: Error>(self, v: u64) -> Result<Self::Value, E> {
 			check!(self, v, Unexpected::Unsigned(v))
 		}
 
-		fn visit_str<E: Error>(self, v: &str) -> Result<u16, E> {
+		fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
 			v.parse::<u16>()
 				.map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
 				.and_then(|v| self.visit_u16(v))
@@ -84,6 +84,15 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 
 	d.deserialize_u16(DiscrimVisitor)
 }
+
+pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Error> {
+	match deserialize_discrim_opt(d) {
+		Ok(Some(result)) => Ok(result),
+		Err(e) => Err(e),
+		Ok(None) => Err(D::Error::missing_field("discriminator"))
+	}
+}
+
 
 /// Deserialize a single-field struct like a newtype struct.
 macro_rules! serial_single_field {
