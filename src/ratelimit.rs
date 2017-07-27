@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::collections::BTreeMap;
 use std;
 
-use hyper;
+use reqwest;
 use time::get_time;
 
 use {Result, Error};
@@ -24,8 +24,8 @@ impl RateLimits {
 
 	/// Update based on rate limit headers in the response for given URL.
 	/// Returns `true` if the request was rate limited and should be retried.
-	pub fn post_update(&self, url: &str, response: &hyper::client::Response) -> bool {
-		if response.headers.get_raw("X-RateLimit-Global").is_some() {
+	pub fn post_update(&self, url: &str, response: &reqwest::Response) -> bool {
+		if response.headers().get_raw("X-RateLimit-Global").is_some() {
 			self.global.lock().expect("Rate limits poisoned").post_update(response)
 		} else {
 			self.endpoints.lock().expect("Rate limits poisoned")
