@@ -16,8 +16,8 @@ default = ["voice"]
 voice = ["opus", "sodiumoxide"]
 
 [dependencies]
-reqwest = { git = https://github.com/tinaun/reqwest }
-websocket = "0.17"
+reqwest = { git = "https://github.com/tinaun/reqwest" }
+websocket = "0.20"
 futures = "0.1"
 tokio-core = "0.1"
 serde = "1.0"

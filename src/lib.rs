@@ -26,11 +26,10 @@
 extern crate reqwest;
 extern crate websocket;
 extern crate futures;
-extern crate tokio-core;
+extern crate tokio_core;
 
 extern crate byteorder;
 extern crate time;
-extern crate multipart;
 extern crate base64;
 extern crate flate2;
 extern crate serde;
@@ -103,7 +102,7 @@ macro_rules! request {
 /// the Discord REST API.
 pub struct Discord {
 	rate_limits: RateLimits,
-	client: hyper::Client,
+	client: reqwest::Client,
 	token: String,
 }
 
@@ -115,13 +114,13 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = hyper::Client::new();
-		let response = try!(check_status(client.post(api_concat!("/auth/login"))
-			.header(hyper::header::ContentType::json())
-			.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-			.body(&try!(serde_json::to_string(&map)))
-			.send()));
-		let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+		let client = reqwest::Client::new();
+		let response = check_status(client.post(api_concat!("/auth/login"))?
+			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+			.json(&map)?
+			.send())?;
+
+		let mut json: BTreeMap<String, String> = response.json()?;
 		let token = match json.remove("token") {
 			Some(token) => token,
 			None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
@@ -166,14 +165,13 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = hyper::Client::new();
-			let response = try!(check_status(client.post(api_concat!("/auth/login"))
-				.header(hyper::header::ContentType::json())
-				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-				.header(hyper::header::Authorization(initial_token.clone()))
-				.body(&try!(serde_json::to_string(&map)))
-				.send()));
-			let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+			let client = reqwest::Client::new();
+			let response = check_status(client.post(api_concat!("/auth/login"))
+				.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+				.header(reqwest::header::Authorization(initial_token.clone()))
+				.json(&map)?
+				.send())?;
+			let mut json: BTreeMap<String, String> = response.json()?;
 			let token = match json.remove("token") {
 				Some(token) => token,
 				None => return Err(Error::Protocol("Response missing \"token\" in Discord::new()"))
@@ -214,7 +212,7 @@ impl Discord {
 	fn from_token_raw(token: String) -> Discord {
 		Discord {
 			rate_limits: RateLimits::default(),
-			client: hyper::Client::new(),
+			client: reqwest::Client::new(),
 			token: token,
 		}
 	}
@@ -242,11 +240,11 @@ impl Discord {
 		check_empty(request!(self, post(body), "/auth/logout"))
 	}
 
-	fn request<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(&self, url: &str, f: F) -> Result<hyper::client::Response> {
+	fn request<F: Fn() -> reqwest::RequestBuilder>(&self, url: &str, f: F) -> Result<reqwest::Response> {
 		self.rate_limits.pre_check(url);
 		let f2 = || f()
-			.header(hyper::header::ContentType::json())
-			.header(hyper::header::Authorization(self.token.clone()));
+			.header(reqwest::header::ContentType::json())
+			.header(reqwest::header::Authorization(self.token.clone()));
 		let result = retry(&f2);
 		if let Ok(response) = result.as_ref() {
 			if self.rate_limits.post_update(url, response) {
@@ -271,19 +269,19 @@ impl Discord {
 		}};
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, post(body), "/guilds/{}/channels", server);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(response.json()?)
 	}
 
 	/// Get the list of channels in a server.
 	pub fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
 		let response = request!(self, get, "/guilds/{}/channels", server);
-		decode_array(try!(serde_json::from_reader(response)), PublicChannel::decode)
+		decode_array(response.json()?, PublicChannel::decode)
 	}
 
 	/// Get information about a channel.
 	pub fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, get, "/channels/{}", channel);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(response.json()?)
 	}
 
 	/// Edit a channel's details. See `EditChannel` for the editable fields.
@@ -317,13 +315,13 @@ impl Discord {
 		let map = EditChannel::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
 		let response = request!(self, patch(body), "/channels/{}", channel);
-		PublicChannel::decode(try!(serde_json::from_reader(response)))
+		PublicChannel::decode(response.json()?)
 	}
 
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, delete, "/channels/{}", channel);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(response.json()?)
 	}
 
 	/// Indicate typing on a channel for the next 5 seconds.
@@ -471,16 +469,21 @@ impl Discord {
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
 	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
-		let url = match hyper::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
+		let url = match reqwest::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		let mut request = try!(hyper::client::Request::new(hyper::method::Method::Post, url));
-		request.headers_mut().set(hyper::header::Authorization(self.token.clone()));
-		request.headers_mut().set(hyper::header::UserAgent(USER_AGENT.to_owned()));
-		let mut request = try!(multipart::client::Multipart::from_request(request));
-		try!(request.write_text("content", text));
-		try!(request.write_stream("file", &mut file, Some(filename), None));
+		let mut request = self.client.post(url)
+			.header(reqwest::header::Authorization(self.token.clone()))
+			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+			.multipart(
+				reqwest::MultipartRequest::new()
+					.field(reqwest::MultipartField::param("content", text))
+					.field(reqwest::MultipartField::reader("file", file)
+							.mime(reqwest::mime::APPLICATION_OCTET_STREAM)
+							.file_name(filename))
+			);
+		
 		from_reader(try!(check_status(request.send())))
 	}
 
@@ -1078,7 +1081,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new();
 	let response = try!(retry(|| client.get(
 		status_concat!("/incidents/unresolved.json"))));
 	let mut json: Object = try!(serde_json::from_reader(response));
@@ -1091,7 +1094,7 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/active.json")))));
 	let mut json: Object = try!(serde_json::from_reader(response));
@@ -1104,7 +1107,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let client = hyper::Client::new();
+	let client = reqwest::Client::new();
 	let response = try!(check_status(retry(|| client.get(
 		status_concat!("/scheduled-maintenances/upcoming.json")))));
 	let mut json: Object = try!(serde_json::from_reader(response));
@@ -1129,21 +1132,29 @@ pub enum GetMessages {
 
 /// Send a request with the correct `UserAgent`, retrying it a second time if the
 /// connection is aborted the first time.
-fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(f: F) -> hyper::Result<hyper::client::Response> {
+/// this probably will never happen using reqwest, but it doesn't hurt to check
+fn retry<F: Fn() -> reqwest::RequestBuilder>(f: F) -> reqwest::Result<reqwest::Response> {
 	let f2 = || f()
-		.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
+		.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 		.send();
 	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
 	match f2() {
-		Err(hyper::error::Error::Io(ref io))
-			if io.kind() == std::io::ErrorKind::ConnectionAborted => f2(),
+		Err(e) => {
+			match e.get_ref().and_then(|e| e.downcast_ref::<std::io::Error>()) {
+				Some( io ) if io.kind() == std::io::ErrorKind::ConnectionAborted => {
+					f2()
+				}
+				_ => Err(e)
+			}
+		}
+			
 		other => other
 	}
 }
 
 /// Convert non-success hyper statuses to discord crate errors, tossing info.
-fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hyper::client::Response> {
-	let response: hyper::client::Response = try!(response);
+fn check_status(response: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> {
+	let response: reqwest::Response = try!(response);
 	if !response.status.is_success() {
 		return Err(Error::from_response(response))
 	}
@@ -1152,8 +1163,8 @@ fn check_status(response: hyper::Result<hyper::client::Response>) -> Result<hype
 
 /// Validate a request that is expected to return 204 No Content and print
 /// debug information if it does not.
-fn check_empty(mut response: hyper::client::Response) -> Result<()> {
-	if response.status != hyper::status::StatusCode::NoContent {
+fn check_empty(mut response: reqwest::Response) -> Result<()> {
+	if response.status != reqwest::StatusCode::NoContent {
 		use std::io::Read;
 		debug!("Expected 204 No Content, got {}", response.status);
 		for header in response.headers.iter() {
