@@ -78,19 +78,21 @@ macro_rules! status_concat {
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path).body(&$body)))
+		try!($self_.request(&path, || { let r = $self_.client.$method(path.as_ref())?;
+											r.json($body); Ok(r) }))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path)))
+		try!($self_.request(&path, || $self_.client.$method(path.as_ref())))
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path).body(&$body)))
+		try!($self_.request(path, || { let r = $self_.client.$method(path.as_ref())?;
+										   r.json($body); Ok(r) }))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path)))
+		try!($self_.request(path, || $self_.client.$method(path.as_ref())))
 	}};
 }
 
@@ -114,7 +116,7 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = reqwest::Client::new();
+		let client = reqwest::Client::new()?;
 		let response = check_status(client.post(api_concat!("/auth/login"))?
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 			.json(&map)?
@@ -165,8 +167,8 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = reqwest::Client::new();
-			let response = check_status(client.post(api_concat!("/auth/login"))
+			let client = reqwest::Client::new()?;
+			let response = check_status(client.post(api_concat!("/auth/login"))?
 				.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 				.header(reqwest::header::Authorization(initial_token.clone()))
 				.json(&map)?
@@ -209,24 +211,24 @@ impl Discord {
 		Ok(discord)
 	}
 
-	fn from_token_raw(token: String) -> Discord {
-		Discord {
+	fn from_token_raw(token: String) -> Result<Discord> {
+		Ok(Discord {
 			rate_limits: RateLimits::default(),
-			client: reqwest::Client::new(),
+			client: reqwest::Client::new()?,
 			token: token,
-		}
+		}).map_err(|e| error::Error::Reqwest(e))
 	}
 
 	/// Log in as a bot account using the given authentication token.
 	///
 	/// The token will automatically be prefixed with "Bot ".
 	pub fn from_bot_token(token: &str) -> Result<Discord> {
-		Ok(Discord::from_token_raw(format!("Bot {}", token.trim())))
+		Discord::from_token_raw(format!("Bot {}", token.trim()))
 	}
 
 	/// Log in as a user account using the given authentication token.
 	pub fn from_user_token(token: &str) -> Result<Discord> {
-		Ok(Discord::from_token_raw(token.trim().to_owned()))
+		Discord::from_token_raw(token.trim().to_owned())
 	}
 
 	/// Log out from the Discord API, invalidating this clients's token.
@@ -236,15 +238,20 @@ impl Discord {
 			"provider": null,
 			"token": null,
 		}};
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, post(body), "/auth/logout"))
+		check_empty(request!(self, post(&map), "/auth/logout"))
 	}
 
-	fn request<F: Fn() -> reqwest::RequestBuilder>(&self, url: &str, f: F) -> Result<reqwest::Response> {
+	fn request<F>(&self, url: &str, r: F) -> Result<reqwest::Response> 
+		where F: Fn() -> reqwest::Result<reqwest::RequestBuilder>
+	{
 		self.rate_limits.pre_check(url);
-		let f2 = || f()
-			.header(reqwest::header::ContentType::json())
-			.header(reqwest::header::Authorization(self.token.clone()));
+		
+		let f2 = || {
+			let mut f = r()?;
+			f.header(reqwest::header::Authorization(self.token.clone()));
+			Ok(f)	
+		};
+
 		let result = retry(&f2);
 		if let Ok(response) = result.as_ref() {
 			if self.rate_limits.post_update(url, response) {
@@ -263,12 +270,12 @@ impl Discord {
 
 	/// Create a channel.
 	pub fn create_channel(&self, server: ServerId, name: &str, kind: ChannelType) -> Result<Channel> {
-		let map = json! {{
+		let body = json! {{
 			"name": name,
 			"type": kind.name(),
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/guilds/{}/channels", server);
+		
+		let response = request!(self, post(&body), "/guilds/{}/channels", server);
 		Channel::decode(response.json()?)
 	}
 
@@ -313,8 +320,7 @@ impl Discord {
 			Channel::Group(group) => { map.insert("name".into(), json!(group.name)); },
 		};
 		let map = EditChannel::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/channels/{}", channel);
+		let response = request!(self, patch(&map), "/channels/{}", channel);
 		PublicChannel::decode(response.json()?)
 	}
 
@@ -384,8 +390,7 @@ impl Discord {
 			"nonce": nonce,
 			"tts": tts,
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/channels/{}/messages", channel);
+		let response = request!(self, post(&map), "/channels/{}/messages", channel);
 		from_reader(response)
 	}
 
@@ -395,8 +400,7 @@ impl Discord {
 	/// has permission to manage other members' messages.
 	pub fn edit_message(&self, channel: ChannelId, message: MessageId, text: &str) -> Result<Message> {
 		let map = json! {{ "content": text }};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
+		let response = request!(self, patch(&map), "/channels/{}/messages/{}", channel, message);
 		from_reader(response)
 	}
 
@@ -435,8 +439,7 @@ impl Discord {
 		}
 
 		let map = json! {{ "messages": ids }};
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, post(body), "/channels/{}/messages/bulk_delete", channel))
+		check_empty(request!(self, post(&map), "/channels/{}/messages/bulk_delete", channel))
 	}
 
 	/// Send some embedded rich content attached to a message on a given channel.
@@ -448,8 +451,7 @@ impl Discord {
 			"content": text,
 			"embed": EmbedBuilder::__build(f),
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/channels/{}/messages", channel);
+		let response = request!(self, post(&map), "/channels/{}/messages", channel);
 		from_reader(response)
 	}
 
@@ -460,28 +462,27 @@ impl Discord {
 		let map = json! {{
 			"embed": EmbedBuilder::__build(f)
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/channels/{}/messages/{}", channel, message);
+		let response = request!(self, patch(&map), "/channels/{}/messages/{}", channel, message);
 		from_reader(response)
 	}
 
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
-	pub fn send_file<R: ::std::io::Read>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+	pub fn send_file<R: ::std::io::Read + Send + 'static>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
 		let url = match reqwest::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		let mut request = self.client.post(url)
+		let mut request = self.client.post(url)?
 			.header(reqwest::header::Authorization(self.token.clone()))
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 			.multipart(
 				reqwest::MultipartRequest::new()
-					.field(reqwest::MultipartField::param("content", text))
+					.field(reqwest::MultipartField::param("content", text.into()))
 					.field(reqwest::MultipartField::reader("file", file)
 							.mime(reqwest::mime::APPLICATION_OCTET_STREAM)
-							.file_name(filename))
+							.file_name(filename.into()))
 			);
 		
 		from_reader(try!(check_status(request.send())))
@@ -536,8 +537,7 @@ impl Discord {
 			"allow": target.allow.bits(),
 			"deny": target.deny.bits(),
 		}};
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, put(body), "/channels/{}/permissions/{}", channel, id))
+		check_empty(request!(self, put(&map), "/channels/{}/permissions/{}", channel, id))
 	}
 
 	/// Delete a `Member` or `Role`'s permissions for a `Channel`.
@@ -694,8 +694,7 @@ impl Discord {
 			"region": region,
 			"icon": icon,
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/guilds");
+		let response = request!(self, post(&map), "/guilds");
 		from_reader(response)
 	}
 
@@ -714,8 +713,8 @@ impl Discord {
 	/// ```
 	pub fn edit_server<F: FnOnce(EditServer) -> EditServer>(&self, server_id: ServerId, f: F) -> Result<Server> {
 		let map = EditServer::__build(f);
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/guilds/{}", server_id);
+		
+		let response = request!(self, patch(&map), "/guilds/{}", server_id);
 		from_reader(response)
 	}
 
@@ -741,8 +740,8 @@ impl Discord {
 			"name": name,
 			"image": image,
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/guilds/{}/emojis", server);
+		
+		let response = request!(self, post(&map), "/guilds/{}/emojis", server);
 		from_reader(response)
 	}
 
@@ -754,8 +753,8 @@ impl Discord {
 		let map = json! {{
 			"name": name
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/guilds/{}/emojis/{}", server, emoji);
+		
+		let response = request!(self, patch(&map), "/guilds/{}/emojis/{}", server, emoji);
 		from_reader(response)
 	}
 
@@ -829,8 +828,8 @@ impl Discord {
 			"max_uses": max_uses,
 			"temporary": temporary,
 		}};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/channels/{}/invites", channel);
+		
+		let response = request!(self, post(&map), "/channels/{}/invites", channel);
 		RichInvite::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -857,8 +856,8 @@ impl Discord {
 	/// See the `EditMember` struct for the editable fields.
 	pub fn edit_member<F: FnOnce(EditMember) -> EditMember>(&self, server: ServerId, user: UserId, f: F) -> Result<()> {
 		let map = EditMember::__build(f);
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
+		
+		check_empty(request!(self, patch(&map), "/guilds/{}/members/{}", server, user))
 	}
 
 	/// Kick a member from a server.
@@ -875,8 +874,8 @@ impl Discord {
 	/// one if it exists.
 	pub fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
 		let map = json! {{ "recipient_id": recipient }};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/users/@me/channels");
+		
+		let response = request!(self, post(&map), "/users/@me/channels");
 		PrivateChannel::decode(try!(serde_json::from_reader(response)))
 	}
 
@@ -888,10 +887,10 @@ impl Discord {
 	/// Download a user's avatar.
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
-		let mut response = try!(retry(||
-			self.client.get(&self.get_user_avatar_url(user, avatar))));
+		let req = self.client.get(&self.get_user_avatar_url(user, avatar));
+		let mut response = retry(|| req);
 		let mut vec = Vec::new();
-		try!(response.read_to_end(&mut vec));
+		try!(response?.read_to_end(&mut vec));
 		Ok(vec)
 	}
 
@@ -921,8 +920,8 @@ impl Discord {
 
 		// Then, send the profile patch.
 		let map = EditProfile::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/users/@me");
+		
+		let response = request!(self, patch(&map), "/users/@me");
 		from_reader(response)
 	}
 
@@ -946,8 +945,8 @@ impl Discord {
 
 		// Then, send the profile patch.
 		let map = EditUserProfile::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, patch(body), "/users/@me");
+		
+		let response = request!(self, patch(&map), "/users/@me");
 		let mut json: Object = try!(serde_json::from_reader(response));
 
 		// If a token was included in the response, switch to it. Important because if the
@@ -967,8 +966,8 @@ impl Discord {
 	/// Move a server member to another voice channel.
 	pub fn move_member_voice(&self, server: ServerId, user: UserId, channel: ChannelId) -> Result<()> {
 		let map = json! {{ "channel_id": channel }};
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
+		
+		check_empty(request!(self, patch(&map), "/guilds/{}/members/{}", server, user))
 	}
 
 	/// Start a prune operation, kicking members who have been inactive for the
@@ -976,8 +975,8 @@ impl Discord {
 	/// pruned.
 	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = json! {{ "days": days }};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, post(body), "/guilds/{}/prune", server);
+		
+		let response = request!(self, post(&map), "/guilds/{}/prune", server);
 		from_reader(response)
 	}
 
@@ -986,8 +985,8 @@ impl Discord {
 	/// role assigned will never be pruned.
 	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = json! {{ "days": days }};
-		let body = try!(serde_json::to_string(&map));
-		let response = request!(self, get(body), "/guilds/{}/prune", server);
+		
+		let response = request!(self, get(&map), "/guilds/{}/prune", server);
 		from_reader(response)
 	}
 
@@ -1000,8 +999,8 @@ impl Discord {
 		let map = json! {{
 			"note": note
 		}};
-		let body = try!(serde_json::to_string(&map));
-		check_empty(request!(self, put(body), "/users/@me/notes/{}", user))
+		
+		check_empty(request!(self, put(&map), "/users/@me/notes/{}", user))
 	}
 
 	/// Retrieves information about the application and the owner.
@@ -1081,10 +1080,8 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let client = reqwest::Client::new();
-	let response = try!(retry(|| client.get(
-		status_concat!("/incidents/unresolved.json"))));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut json: Object = response.json()?;
 
 	match json.remove("incidents") {
 		Some(incidents) => decode_array(incidents, Incident::decode),
@@ -1094,10 +1091,8 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let client = reqwest::Client::new();
-	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/scheduled-maintenances/active.json")))));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut json: Object = response.json()?;
 
 	match json.remove("scheduled_maintenances") {
 		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
@@ -1107,10 +1102,8 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let client = reqwest::Client::new();
-	let response = try!(check_status(retry(|| client.get(
-		status_concat!("/scheduled-maintenances/upcoming.json")))));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut json: Object = response.json()?;
 
 	match json.remove("scheduled_maintenances") {
 		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
@@ -1130,32 +1123,36 @@ pub enum GetMessages {
 	Around(MessageId),
 }
 
-/// Send a request with the correct `UserAgent`, retrying it a second time if the
-/// connection is aborted the first time.
-/// this probably will never happen using reqwest, but it doesn't hurt to check
-fn retry<F: Fn() -> reqwest::RequestBuilder>(f: F) -> reqwest::Result<reqwest::Response> {
-	let f2 = || f()
-		.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
-		.send();
-	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
-	match f2() {
-		Err(e) => {
-			match e.get_ref().and_then(|e| e.downcast_ref::<std::io::Error>()) {
-				Some( io ) if io.kind() == std::io::ErrorKind::ConnectionAborted => {
-					f2()
+	/// Send a request with the correct `UserAgent`, retrying it a second time if the
+	/// connection is aborted the first time.
+	/// this probably will never happen using reqwest, but it doesn't hurt to check
+	fn retry<F>(f: F) -> reqwest::Result<reqwest::Response> 
+		where F: Fn() -> reqwest::Result<reqwest::RequestBuilder>
+	{
+		let f2 = || {
+			f()?
+			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
+			.send()
+		};
+		// retry on a ConnectionAborted, which occurs if it's been a while since the last request
+		match f2() {
+			Err(e) => {
+				match e.get_ref().and_then(|e| e.downcast_ref::<std::io::Error>()) {
+					Some( io ) if io.kind() == std::io::ErrorKind::ConnectionAborted => {
+						f2()
+					}
+					_ => Err(e)
 				}
-				_ => Err(e)
 			}
-		}
 			
-		other => other
+			other => other
+		}
 	}
-}
 
 /// Convert non-success hyper statuses to discord crate errors, tossing info.
 fn check_status(response: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> {
 	let response: reqwest::Response = try!(response);
-	if !response.status.is_success() {
+	if !response.status().is_success() {
 		return Err(Error::from_response(response))
 	}
 	Ok(response)
@@ -1164,10 +1161,10 @@ fn check_status(response: reqwest::Result<reqwest::Response>) -> Result<reqwest:
 /// Validate a request that is expected to return 204 No Content and print
 /// debug information if it does not.
 fn check_empty(mut response: reqwest::Response) -> Result<()> {
-	if response.status != reqwest::StatusCode::NoContent {
+	if response.status() != reqwest::StatusCode::NoContent {
 		use std::io::Read;
-		debug!("Expected 204 No Content, got {}", response.status);
-		for header in response.headers.iter() {
+		debug!("Expected 204 No Content, got {}", response.status());
+		for header in response.headers().iter() {
 			debug!("Header: {}", header);
 		}
 		let mut content = String::new();
@@ -1240,7 +1237,7 @@ trait ReceiverExt {
 trait SenderExt {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
 }
-
+/*
 impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStream> {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
 		use websocket::message::{Message, Type};
@@ -1277,7 +1274,7 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 			.map_err(Error::from)
 			.and_then(|m| self.send_message(&m).map_err(Error::from))
 	}
-}
+} */
 
 mod internal {
 	pub enum Status {

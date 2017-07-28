@@ -73,7 +73,7 @@ impl RateLimit {
 		self.remaining -= 1;
 	}
 
-	fn post_update(&mut self, response: &hyper::client::Response) -> bool {
+	fn post_update(&mut self, response: &reqwest::Response) -> bool {
 		match self.try_post_update(response) {
 			Err(e) => {
 				error!("rate limit checking error: {}", e);
@@ -83,18 +83,18 @@ impl RateLimit {
 		}
 	}
 
-	fn try_post_update(&mut self, response: &hyper::client::Response) -> Result<bool> {
-		if let Some(reset) = try!(read_header(&response.headers, "X-RateLimit-Reset")) {
+	fn try_post_update(&mut self, response: &reqwest::Response) -> Result<bool> {
+		if let Some(reset) = try!(read_header(response.headers(), "X-RateLimit-Reset")) {
 			self.reset = reset;
 		}
-		if let Some(limit) = try!(read_header(&response.headers, "X-RateLimit-Limit")) {
+		if let Some(limit) = try!(read_header(response.headers(), "X-RateLimit-Limit")) {
 			self.limit = limit;
 		}
-		if let Some(remaining) = try!(read_header(&response.headers, "X-RateLimit-Remaining")) {
+		if let Some(remaining) = try!(read_header(response.headers(), "X-RateLimit-Remaining")) {
 			self.remaining = remaining;
 		}
-		if response.status == hyper::status::StatusCode::TooManyRequests {
-			if let Some(delay) = try!(read_header(&response.headers, "Retry-After")) {
+		if response.status() == reqwest::StatusCode::TooManyRequests {
+			if let Some(delay) = try!(read_header(response.headers(), "Retry-After")) {
 				let delay = delay as u64 + 100; // 100ms of leeway
 				warn!("429: sleeping for {}ms", delay);
 				::sleep_ms(delay);
@@ -105,7 +105,7 @@ impl RateLimit {
 	}
 }
 
-fn read_header(headers: &hyper::header::Headers, name: &str) -> Result<Option<i64>> {
+fn read_header(headers: &reqwest::header::Headers, name: &str) -> Result<Option<i64>> {
 	match headers.get_raw(name) {
 		Some(hdr) => if hdr.len() == 1 {
 			match std::str::from_utf8(&hdr[0]) {

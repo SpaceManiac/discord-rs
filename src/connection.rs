@@ -1,3 +1,4 @@
+/*
 use std::sync::mpsc;
 #[cfg(feature="voice")]
 use std::collections::HashMap;
@@ -12,7 +13,7 @@ use internal::Status;
 #[cfg(feature="voice")]
 use voice::VoiceConnection;
 use {Result, Error, SenderExt, ReceiverExt};
-
+*/
 const GATEWAY_VERSION: u64 = 6;
 
 #[cfg(feature="voice")]
@@ -32,7 +33,7 @@ macro_rules! finish_connection {
 /// Websocket connection to the Discord servers.
 
 pub struct Connection {
-	
+
 }
 
 /*
