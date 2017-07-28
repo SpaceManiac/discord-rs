@@ -1,11 +1,14 @@
-/*
-use std::sync::mpsc;
 #[cfg(feature="voice")]
 use std::collections::HashMap;
 
-use websocket::client::{Client, Sender, Receiver};
-use websocket::stream::WebSocketStream;
+use std::time;
 
+use websocket::ClientBuilder;
+use websocket::futures::{Future, Stream, Sink, Poll, Async};
+use websocket::result::WebSocketError;
+use websocket::futures::sync::mpsc;
+
+use tokio_core::reactor;
 use serde_json;
 
 use model::*;
@@ -33,24 +36,7 @@ macro_rules! finish_connection {
 /// Websocket connection to the Discord servers.
 
 pub struct Connection {
-
-}
-
-/*
-pub struct Connection {
-	
-	keepalive_channel: mpsc::Sender<Status>,
-	receiver: Receiver<WebSocketStream>,
-	#[cfg(feature="voice")]
-	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
-	#[cfg(feature="voice")]
-	user_id: UserId,
-	ws_url: String,
-	token: String,
-	session_id: Option<String>,
-	last_sequence: u64,
-	shard_info: Option<[u8; 2]>,
-	
+	core: reactor::Core;
 }
 
 impl Connection {
@@ -64,11 +50,20 @@ impl Connection {
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
 		debug!("Gateway: {}", base_url);
+
+		// establish the async event loop
+		let mut core = reactor::Core::new().unwrap();
+
 		// establish the websocket connection
-		let url = try!(build_gateway_url(base_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
-		let (mut sender, mut receiver) = response.begin().split();
+		let client = ClientBuilder::new(&format!("{}?v={}", base_url, GATEWAY_VERSION))
+									.map_err(|e| WebSocketError::UrlError(e))?
+									.async_connect_secure(None, &core.handle())
+									.and_then(|(duplex, _)| {
+										let (sink, stream) = duplex.split();
+
+										
+									};
+
 
 		// send the handshake
 		let identify = identify(token, shard_info);
@@ -139,6 +134,26 @@ impl Connection {
 			voice_handles: HashMap::new(),
 		), ready))
 	}
+
+}
+/*
+pub struct Connection {
+	
+	keepalive_channel: mpsc::Sender<Status>,
+	receiver: Receiver<WebSocketStream>,
+	#[cfg(feature="voice")]
+	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
+	#[cfg(feature="voice")]
+	user_id: UserId,
+	ws_url: String,
+	token: String,
+	session_id: Option<String>,
+	last_sequence: u64,
+	shard_info: Option<[u8; 2]>,
+	
+} 
+
+
 
 	/// Change the game information that this client reports as playing.
 	pub fn set_game(&self, game: Option<Game>) {
@@ -453,54 +468,60 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 		result["shard"] = json![[info[0], info[1]]];
 	}
 	result
+} */
+
+/// sends a number every heartbeat_interval ms
+/// stops if it ever sends the same number twice in a row, implies it stopped seeing heartbeat ACK
+struct Heartbeat {
+	repeat: bool,
+	sequence: u64,
+	heartbeat_interval: time::Duration,
+	last_beat: time::Instant,
+	rx: mpsc::UnboundedReceiver<Status>,
 }
 
-#[inline]
-fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
-	::websocket::client::request::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
-		.map_err(|_| Error::Other("Invalid gateway URL"))
-}
-
-fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
-	let mut timer = ::Timer::new(interval);
-	let mut last_sequence = 0;
-
-	'outer: loop {
-		::sleep_ms(100);
-
-		loop {
-			match channel.try_recv() {
-				Ok(Status::SendMessage(val)) => {
-					match sender.send_json(&val) {
-						Ok(()) => {},
-						Err(e) => warn!("Error sending gateway message: {:?}", e)
-					}
-				},
-				Ok(Status::Sequence(seq)) => {
-					last_sequence = seq;
-				},
-				Ok(Status::ChangeInterval(interval)) => {
-					timer = ::Timer::new(interval);
-				},
-				Ok(Status::ChangeSender(new_sender)) => {
-					sender = new_sender;
-				}
-				Err(mpsc::TryRecvError::Empty) => break,
-				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
-			}
-		}
-
-		if timer.check_tick() {
-			let map = json! {{
-				"op": 1,
-				"d": last_sequence
-			}};
-			match sender.send_json(&map) {
-				Ok(()) => {},
-				Err(e) => warn!("Error sending gateway keeaplive: {:?}", e)
-			}
+impl Heartbeat {
+	fn new(rx: mpsc::UnboundedReceiver<Status>, interval: u64) {
+		Heartbeat {
+			repeat: false,
+			sequence: 0,
+			heartbeat_interval: time::Duration::from_millis(interval),
+			last_beat: time::Instant::now(),
+			rx
 		}
 	}
-	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
 }
-*/
+
+impl Stream for Heartbeat {
+	type Item = u64;
+	type Error = Error;
+
+	fn poll(&mut self) -> Result<Async<Option<u64>>, Error> {
+
+		match rx.poll() {
+			Ok(Status::Sequence(seq)) => {
+				self.sequence = seq;
+				self.repeat = false;
+			},
+			Ok(Status::ChangeInterval(interval)) => {
+				self.heartbeat_interval = time::Duration::from_millis(interval);
+			},
+			Ok(_) => {}
+			Err(_) => return Err(Error::Other("receiver lost"));
+		}
+
+		let now = time::Instant::now();
+		let duration = now - self.last_beat;
+
+		if duration >= self.heartbeat_interval {
+			if self.repeat {
+				Err(Error::Protocol("no ACK found between two heartbeats"))
+			} else {
+				self.repeat = true;
+				Ok(Async::Ready(Some(self.sequence)))
+			}
+		} else {
+			Ok(Async::NotReady)
+		}
+	}
+}
