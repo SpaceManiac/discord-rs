@@ -42,6 +42,7 @@ extern crate chrono;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
+use websocket::message::Message;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -1230,19 +1231,7 @@ impl Timer {
 	}
 }
 
-trait ReceiverExt {
-	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T>;
-}
-
-trait SenderExt {
-	fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
-}
-/*
-impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStream> {
-	fn recv_json<F, T>(&mut self, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
-		use websocket::message::{Message, Type};
-		use websocket::ws::receiver::Receiver;
-		let message: Message = try!(self.recv_message());
+	fn recv_json<F, T>(&mut self, message: Message, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
@@ -1263,18 +1252,12 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 			Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()))
 		}
 	}
-}
 
-impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream> {
-	fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
-		use websocket::message::Message;
-		use websocket::ws::sender::Sender;
+	fn send_json(&mut self, message:: Message, value: &serde_json::Value) -> Result<()> {
 		serde_json::to_string(value)
 			.map(Message::text)
 			.map_err(Error::from)
-			.and_then(|m| self.send_message(&m).map_err(Error::from))
 	}
-} */
 
 mod internal {
 	pub enum Status {

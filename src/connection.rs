@@ -36,7 +36,10 @@ macro_rules! finish_connection {
 /// Websocket connection to the Discord servers.
 
 pub struct Connection {
-	core: reactor::Core;
+	input_queue: mpsc::UnboundedSender,
+	output_queue: mpsc::UnboundedReceiver,
+	ws_url: String,
+	token: String,
 }
 
 impl Connection {
@@ -59,14 +62,15 @@ impl Connection {
 									.map_err(|e| WebSocketError::UrlError(e))?
 									.async_connect_secure(None, &core.handle())
 									.and_then(|(duplex, _)| {
+										// a sink is an async sender, a stream is an async reciever
 										let (sink, stream) = duplex.split();
-
+										identify(token, shard_info);
 										
 									};
 
 
 		// send the handshake
-		let identify = identify(token, shard_info);
+		let identify = ;
 		try!(sender.send_json(&identify));
 
 		// read the Hello and spawn the keepalive thread
@@ -145,8 +149,7 @@ pub struct Connection {
 	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
 	#[cfg(feature="voice")]
 	user_id: UserId,
-	ws_url: String,
-	token: String,
+
 	session_id: Option<String>,
 	last_sequence: u64,
 	shard_info: Option<[u8; 2]>,
@@ -438,14 +441,14 @@ pub struct Connection {
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
 	}
 	
-}
+} 
 
 impl Drop for Connection {
 	fn drop(&mut self) {
 		// Swallow errors
 		let _ = self.inner_shutdown();
 	}
-}
+} */
 
 fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 	let mut result = json! {{
@@ -468,7 +471,7 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 		result["shard"] = json![[info[0], info[1]]];
 	}
 	result
-} */
+}
 
 /// sends a number every heartbeat_interval ms
 /// stops if it ever sends the same number twice in a row, implies it stopped seeing heartbeat ACK
