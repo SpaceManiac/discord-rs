@@ -846,6 +846,16 @@ impl Discord {
 		self.edit_member(server, user, |m| m.roles(roles))
 	}
 
+    /// Add a role to a member of a server.
+    pub fn add_member_role(&self, server: ServerId, user: UserId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, put, "/guilds/{}/members/{}/roles/{}", server, user, role))
+    }
+
+    /// Remove a role for a member of a server.
+    pub fn remove_member_role(&self, server: ServerId, user: UserId, role: RoleId) -> Result<()> {
+		check_empty(request!(self, delete, "/guilds/{}/members/{}/roles/{}", server, user, role))
+    }
+
 	/// Edit member information, including roles, nickname, and voice state.
 	///
 	/// See the `EditMember` struct for the editable fields.
