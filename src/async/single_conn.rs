@@ -52,11 +52,12 @@ pub struct SingleConnection {
 
 impl SingleConnection {
     fn schedule_keepalive(&mut self) -> Result<(), Error> {
-        let guard = self.session_info.lock().unwrap();
-        let timer = &guard.timer;
+        let (timer, keepalive_interval) = self.session_info.with(|info| {
+            (info.timer.clone(), info.keepalive_interval)
+        });
 
         self.next_keepalive =
-            timer.sleep(Duration::from_millis(guard.keepalive_interval))
+            timer.sleep(Duration::from_millis(keepalive_interval))
                  .map_err(Error::from)
                  .boxed();
 
@@ -65,11 +66,9 @@ impl SingleConnection {
 
     fn send_keepalive(&mut self) -> Result<(), Error> {
         let map = {
-            let guard = self.session_info.lock().unwrap();
-
             json! {{
 				"op": 1,
-				"d": guard.last_seq
+				"d": self.session_info.with(|info| info.last_seq)
 			}}
         };
 
@@ -144,7 +143,7 @@ impl Stream for SingleConnection {
                     debug!("Mysterious late-game hello: {}", interval);
                 },
                 GatewayEvent::Dispatch(sequence, event) => {
-                    self.session_info.lock().unwrap().last_seq = sequence;
+                    self.session_info.with(|info| info.last_seq = sequence);
                     //let _ = self.keepalive_channel.send(Status::Sequence(sequence));
                     #[cfg(feature = "voice")] {
                         if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
@@ -158,7 +157,7 @@ impl Stream for SingleConnection {
                 },
                 GatewayEvent::Heartbeat(sequence) => {
                     debug!("Heartbeat received with seq {}", sequence);
-                    self.session_info.lock().unwrap().last_seq = sequence;
+                    self.session_info.with(|info| info.last_seq = sequence);
 
                     // Arrange to a keepalive ASAP.
                     self.next_keepalive = future::ok(()).boxed();
@@ -175,7 +174,7 @@ impl Stream for SingleConnection {
                 GatewayEvent::InvalidateSession => {
                     println!("invalidate");
                     // Also treat this as a disconnect, but clear the session ID first
-                    self.session_info.lock().unwrap().session_id = None;
+                    self.session_info.with(|info| info.session_id = None);
 
                     return Ok(Async::Ready(None));
                 }
@@ -193,30 +192,35 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
     -> BoxFuture<SingleConnection, Error>
 {
     println!("!!! start_connect");
-    let session_guard = session_info.lock().unwrap();
+    let (gateway_failures, timer) = session_info.with(|info| {
+        (info.gateway_failures, info.timer.clone())
+    });
 
     // First things first - do we need to back off?
-    // FIXME
-    let backoff = if session_guard.gateway_failures > 0 { 1000 } else { 0 };
+    // FIXME - exponential backoff
+    let backoff = if gateway_failures > 0 { 1000 } else { 0 };
     let backoff = Duration::from_millis(backoff);
 
-    let timer = session_guard.timer.clone();
     let sleep = timer.sleep(backoff).map_err(Error::from);
 
     let info_ref = session_info.clone();
     let handle_ref = handle.clone();
     // Now to start the actual chain of futures that will connect us.
     let future = sleep.and_then(move |_| {
-        let info_guard = info_ref.lock().unwrap();
-        if info_guard.gateway_failures > 0
-            || info_guard.gateway_url.is_none() {
+        let (gw_failures, discord_ref, shard_info, gateway_url) = info_ref.with(|info| {
+            (info.gateway_failures,
+             info.discord.clone(),
+             info.shard_info.clone(),
+             info.gateway_url.clone())
+        });
+
+        if gw_failures > 0
+            || gateway_url.is_none() {
             // Spawn a thread to go take care of getting the gateway URL for us.
             use ::std::thread;
 
             let (tx, rx) = oneshot::channel();
 
-            let discord_ref = info_guard.discord.clone();
-            let shard_info = info_guard.shard_info.clone();
             match thread::Builder::new()
                 .name("Discord gateway lookup".into())
                 .spawn(move|| {
@@ -234,14 +238,13 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
               .and_then(move |gateway_url| {
                   let gateway_url = format!("{}?v={}", gateway_url, GATEWAY_VERSION);
 
-                  info_ref_clone.lock().unwrap().gateway_url = Some(gateway_url.clone());
+                  info_ref_clone.with(|info| info.gateway_url = Some(gateway_url.clone()));
 
                   Ok(gateway_url)
               })
               .box_via_err(&handle_ref, Error::Other("Unexpected error"))
         } else {
-            let gateway_url = info_ref.lock().unwrap().gateway_url.clone().unwrap();
-            future::ok(gateway_url).boxed()
+            future::ok(gateway_url.unwrap()).boxed()
         }
     }).box_via_err(&handle, Error::Other("Unexpected error"));
 
@@ -253,6 +256,7 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
         match ClientBuilder::new(&gateway_url) {
             Err(e) => future::err(Error::from(e)).boxed(),
             Ok(builder) => {
+                println!("!!! connecting to WS interface");
                 builder.async_connect(None, &handle_ref).map_err(Error::from)
                     .box_via_err(&handle_ref, Error::Other("Connect task died"))
             },
@@ -264,9 +268,11 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
           use super::serializer::Serializer;
           use super::pingfilter::PingFilter;
 
-          Serializer::new(PingFilter::new(client))
+          Serializer::new(PingFilter::new(fault_injecting(client)))
       })
       .and_then(|client| {
+          println!("!!! await hello");
+
           // now receive the hello. Note that into_future will return the original client
           // on failure, but we don't need this behavior (because we'll be dropping the connection
           // anyway) so we map_err it away.
@@ -276,7 +282,7 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
           match item {
               None => return Err(Error::Closed(None, "connection closed before hello".into())),
               Some(GatewayEvent::Hello(interval)) => {
-                  info_ref.lock().unwrap().keepalive_interval = interval;
+                  info_ref.with(|info| info.keepalive_interval = interval);
                   return Ok(client);
               }
               Some(event) => {
@@ -299,7 +305,7 @@ pub fn start_connect(handle: &Handle, session_info: SessionInfoRef)
     let info_ref = session_info.clone();
     let future = future.map_err(move |e| {
         // FIXME - distinguish between gateway failures and other
-        info_ref.lock().unwrap().gateway_failures += 1;
+        info_ref.with(|info| info.gateway_failures += 1);
         return e;
     });
 
@@ -311,28 +317,32 @@ fn session_handshake<C>(conn: C, session_info: SessionInfoRef)
     -> BoxFuture<SingleConnection, Error>
     where C: Serializedish + Sized + Send + 'static
 {
-    let guard = session_info.lock().unwrap();
+    println!("!!! handshaking");
 
-    let hello = match &guard.session_id {
-        &Some(ref session_id) => {
+    let (last_seq, token, session_id, shard_info) = session_info.with(|info|
+        (info.last_seq, String::from(info.token()), info.session_id.clone(), info.shard_info.clone())
+    );
+
+    let hello = match session_id {
+        Some(session_id) => {
             println!("resume");
             let resume = json! {{
                 "op": 6,
                 "d": {
-                    "seq": guard.last_seq,
+                    "seq": last_seq,
                     "session_id": session_id,
-                    "token": String::from(session_info.lock().unwrap().token())
+                    "token": token
                 }
             }};
 
             resume
         }
-        &None => {
+        None => {
             println!("identify");
             let mut identify = json! {{
                 "op": 2,
                 "d": {
-                    "token": String::from(guard.token()),
+                    "token": token,
                     "properties": {
                         "$os": ::std::env::consts::OS,
                         "$browser": "Discord library for Rust",
@@ -346,7 +356,7 @@ fn session_handshake<C>(conn: C, session_info: SessionInfoRef)
                 }
             }};
 
-            if let Some(info) = guard.shard_info {
+            if let Some(info) = shard_info {
                 identify["shard"] = json![[info[0], info[1]]];
             }
 
@@ -356,6 +366,7 @@ fn session_handshake<C>(conn: C, session_info: SessionInfoRef)
 
     let session_info_ref = session_info.clone();
     conn.send(hello).and_then(move |conn| {
+        println!("!!! handshake sent");
         await_handshake_result(conn, session_info_ref)
     }).boxed()
 }
@@ -367,32 +378,53 @@ fn await_handshake_result<C>(conn: C, session_info: SessionInfoRef)
     conn.into_future()
         .map_err(|(e, _)| e)
         .and_then(|(message, conn)| {
+            println!("!!! handshake response: {:?}", message);
+
+            let is_resume = session_info.with(|info| info.session_id.is_some());
+
             match message {
                 None => return future::err(Error::Closed(None, "Unexpected close".into())).boxed(),
                 Some(GatewayEvent::InvalidateSession) => {
                     {
                         println!("reject resume");
-                        let mut guard = session_info.lock().unwrap();
-                        if guard.session_id.is_none() {
+                        let sid = session_info.with(|info| info.session_id.clone());
+                        if sid.is_none() {
                             return future::err(Error::Protocol("Invalid session during handshake. \
                             Double-check your token or consider waiting 5 seconds between starting shards."))
                                 .boxed();
                         }
                         // TODO - delay 1-5s
-                        guard.session_id = None;
+                        session_info.with(|info| info.session_id = None);
                     }
 
                     return session_handshake(conn, session_info).boxed();
                 },
-                Some(GatewayEvent::Dispatch(seq, Event::Ready(event))) => {
+                Some(GatewayEvent::Dispatch(seq, anyevent)) => {
+                    session_info.with(|info| {
+                        info.last_seq = seq;
+                    });
+
+                    if let Event::Ready(ref event) = anyevent {
+                        session_info.with(|info| {
+                            info.session_id = Some(event.session_id.clone());
+                        });
+                    } else if is_resume {
+                        // ok
+                    } else {
+                        debug!("Unexpected event: {:?}", anyevent);
+                        return future::err(Error::Protocol("Expected Ready during handshake")).boxed();
+                    }
+
                     let single_conn = SingleConnection {
                         session_info: session_info,
-                        pending_event: Some(Event::Ready(event)),
+                        pending_event: Some(anyevent),
                         upstream: Box::new(conn),
                         internal_send_queue: VecDeque::new(),
                         // this will be overwritten shortly, so just drop a placeholder for now
                         next_keepalive: future::ok(()).boxed()
                     };
+
+                    println!("returning from resume");
 
                     return future::ok(single_conn).boxed();
                 }

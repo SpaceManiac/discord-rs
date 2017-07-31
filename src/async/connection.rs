@@ -42,13 +42,21 @@ impl Connection {
         return conn;
     }
 
+    // Start the connection process, from any context (ignoring closed state etc)
     fn _reconnect(&mut self) {
         println!("!!! RECONNECT");
         self.state = ConnState::Connecting(start_connect(&self.handle, self.session_info.clone()));
     }
 
     fn reconnect(&mut self) {
+        if let ConnState::Closed() = self.state {
+            return;
+        }
+
         self._reconnect();
+
+        // important: We need to poll at least once to make sure we'll be notified when this finishes
+        let _ = self.connection();
     }
 
     fn connection(&mut self) -> Poll<&mut SingleConnection, Error> {
@@ -72,13 +80,14 @@ impl Connection {
             ConnState::Connecting(ref mut f) => {
                 match f.poll() {
                     Ok(Async::Ready(conn)) => {
+                        println!("conn ready");
                         // This overwrite would cause us problems without the little dance above
                         self.state = ConnState::Active(conn);
                         return self.connection();
                     },
                     Err(e) => {
                         // as would this reconnect
-                        self._reconnect();
+                        self.reconnect();
                         return Ok(Async::NotReady);
                     },
                     Ok(Async::NotReady) => {
@@ -102,8 +111,22 @@ impl Stream for Connection {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let mut need_reconnect = false;
+
         if let Ok(Async::Ready(ref mut conn)) = self.connection() {
-            return conn.poll();
+            match conn.poll() {
+                Err(_) | Ok(Async::Ready(None)) => {
+                    need_reconnect = true;
+                    // fall through to release borrows
+                },
+                success => {
+                    return success;
+                }
+            }
+        }
+
+        if need_reconnect {
+            self.reconnect();
         }
 
         Ok(Async::NotReady)
@@ -118,8 +141,20 @@ impl Sink for Connection {
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
         use futures::*;
 
+        let mut need_reconnect = false;
+
         if let Async::Ready(ref mut conn) = self.connection()? {
-            return conn.poll_complete()
+            match conn.poll_complete() {
+                Err(_) => {
+                    need_reconnect = true;
+                    // fall through to drop borrows
+                },
+                success => return success
+            }
+        }
+
+        if need_reconnect {
+            self.reconnect();
         }
 
         Ok(Async::NotReady)
@@ -127,10 +162,23 @@ impl Sink for Connection {
 
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         match self.connection() {
-            Err(e) => Err(e),
-            Ok(Async::NotReady) => Ok(AsyncSink::NotReady(item)),
-            Ok(Async::Ready(ref mut conn)) => conn.start_send(item)
-        }
+            Err(e) => return Err(e),
+            Ok(Async::NotReady) => return Ok(AsyncSink::NotReady(item)),
+            Ok(Async::Ready(ref mut conn)) => {
+                match conn.start_send(item) {
+                    Err(_) => {
+                        // fall out of match to drop borrows so we can reconnect
+                        // note that we didn't get the item back, so it'll just be lost...
+                    }
+                    other => { return other; }
+                }
+            }
+        };
+
+        self.reconnect();
+
+        // lie and say we sent the message, because the Err didn't hand it back :(
+        return Ok(AsyncSink::Ready);
     }
 
     fn close(&mut self) -> Poll<(), Self::SinkError> {

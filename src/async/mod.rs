@@ -4,6 +4,8 @@ mod mockstream;
 mod serializer;
 pub mod single_conn;
 pub mod connection;
+#[cfg(feature="fault_injection")]
+mod fault_injection;
 
 pub mod imports {
     pub use futures::{Stream, Sink, Future, Async, AsyncSink, BoxFuture, Poll, StartSend};
@@ -21,6 +23,22 @@ mod internal {
     use websocket::{OwnedMessage, WebSocketError};
     use internal::PrivateDiscord;
     use tokio_timer::Timer;
+
+    #[cfg(not(feature="fault_injection"))]
+    type FaultInjecting<T> = T;
+
+    #[cfg(feature="fault_injection")]
+    pub use super::fault_injection::FaultInjecting;
+
+    #[cfg(not(feature="fault_injection"))]
+    pub fn fault_injecting<T: Stream<Error=WebSocketError> + Sink<SinkError=WebSocketError>>(upstream: T) -> FaultInjecting<T> {
+        return upstream;
+    }
+
+    #[cfg(feature="fault_injection")]
+    pub fn fault_injecting<T: Stream<Error=WebSocketError> + Sink<SinkError=WebSocketError>>(upstream: T) -> FaultInjecting<T> {
+        return FaultInjecting::new(upstream);
+    }
 
     /// The SessionInfo struct contains persistent information about a session kept across multiple
     /// connections
@@ -47,6 +65,25 @@ mod internal {
     impl SessionInfo {
         pub fn token(&self) -> &str {
             self.discord.__get_token()
+        }
+    }
+
+    // We'll be using this trait to access session_info - control flow is a bit non-obvious with
+    // futures, so it's too easy to accidentally recursively lock the mutex if we use guards
+    // directly.
+    pub trait UseMutex {
+        type Item;
+
+        fn with<T, F: FnOnce(&mut Self::Item)->T>(&self, f: F) -> T;
+    }
+
+    impl UseMutex for Arc<Mutex<SessionInfo>> {
+        type Item = SessionInfo;
+
+        fn with<T, F: FnOnce(&mut Self::Item)->T>(&self, f: F) -> T {
+            let mut guard = self.lock().unwrap();
+
+            f(&mut *guard)
         }
     }
 
