@@ -75,10 +75,10 @@ impl Connection {
 			}
 		}
 
-		let (tx, mut rx) = mpsc::channel();
+		let (tx, rx) = mpsc::channel();
 		try!(::std::thread::Builder::new()
 			.name("Discord Keepalive".into())
-			.spawn(move || keepalive(heartbeat_interval, sender, &mut rx)));
+			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
 
 		// read the Ready event
 		let sequence;
@@ -451,7 +451,7 @@ fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
 		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
-fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: &mut mpsc::Receiver<Status>) {
+fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
 	let mut timer = ::Timer::new(interval);
 	let mut last_sequence = 0;
 
