@@ -2,7 +2,7 @@
 //!
 //! A `VoiceConnection` for a server is obtained from a `Connection`. It can then be used to
 //! join a channel, change mute/deaf status, and play and receive audio.
-
+/*
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::sync::mpsc;
@@ -767,3 +767,4 @@ enum RecvStatus {
 	Websocket(VoiceEvent),
 	Udp(Vec<u8>),
 }
+*/

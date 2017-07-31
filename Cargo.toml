@@ -14,19 +14,31 @@ documentation = "https://docs.rs/discord/0.8.0"
 [features]
 default = ["voice"]
 voice = ["opus", "sodiumoxide"]
+fault_injection = []
 
 [dependencies]
-hyper = "0.9"
+futures = "0.1"
+tokio-core = "0.1"
+tokio-io = "0.1"
+tokio-timer = "0.1"
+futures-cpupool = "0.1"
+hyper = "0.10"
+hyper-native-tls = "0.2"
+native-tls = "0.1"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-websocket = "0.17"
 bitflags = "0.7"
 byteorder = "0.5"
 log = "0.3"
 base64-rs = "0.1.1"
 flate2 = "0.2.14"
 opus = { version = "0.2", optional = true }
+
+[dependencies.websocket]
+version = "0.20"
+features = ["async", "async-ssl"]
+default-features = false
 
 [dependencies.chrono]
 version = "0.4"
@@ -38,6 +50,6 @@ default-features = false
 optional = true
 
 [dependencies.multipart]
-version = "0.8"
+version = "0.13"
 default-features = false
 features = ["hyper", "client"]
