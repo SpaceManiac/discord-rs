@@ -1068,8 +1068,7 @@ impl Discord {
 
 	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
 		let url = self.__get_gateway(shard_info)?;
-		//Connection::new(&url, &self.token, shard_info)
-		panic!("TODO");
+		Connection::connect(Discord::from_token_raw(self.token.clone()), shard_info)
 	}
 }
 

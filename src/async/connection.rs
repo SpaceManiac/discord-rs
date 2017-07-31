@@ -19,7 +19,7 @@ enum ConnState {
 }
 
 impl Connection {
-    pub fn new(discord: Discord, handle: &Handle) -> Self {
+    pub fn connect(discord: Discord, shard_info: Option<[u8; 2]>, handle: &Handle) -> Self {
         let mut conn = Connection {
             handle: handle.clone(),
             session_info: Arc::new(Mutex::new(
@@ -29,7 +29,7 @@ impl Connection {
                     gateway_failures: 0,
                     session_id: None,
                     last_seq: 0,
-                    shard_info: None,
+                    shard_info: shard_info,
                     keepalive_interval: 0,
                     timer: ::tokio_timer::Timer::default()
                 }

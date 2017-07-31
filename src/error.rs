@@ -11,6 +11,7 @@ use chrono::ParseError as ChronoError;
 use native_tls;
 #[cfg(feature="voice")]
 use opus::Error as OpusError;
+use futures::sync::mpsc;
 
 /// Discord API `Result` alias type.
 pub type Result<T> = ::std::result::Result<T, Error>;

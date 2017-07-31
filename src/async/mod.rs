@@ -2,10 +2,12 @@ mod pingfilter;
 #[cfg(test)]
 mod mockstream;
 mod serializer;
-pub mod single_conn;
-pub mod connection;
+mod single_conn;
+mod connection;
 #[cfg(feature="fault_injection")]
 mod fault_injection;
+
+pub use self::connection::Connection;
 
 pub mod imports {
     pub use futures::{Stream, Sink, Future, Async, AsyncSink, BoxFuture, Poll, StartSend};
