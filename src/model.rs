@@ -496,6 +496,8 @@ pub struct PublicChannel {
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
 	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
+	pub nsfw: bool,
+	pub parent_id: Option<ChannelId>,
 }
 
 impl PublicChannel {
@@ -519,6 +521,8 @@ impl PublicChannel {
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
+			nsfw: try!(opt(&mut value, "nsfw", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
+			parent_id: try!(opt(&mut value, "parent_id", ChannelId::decode)),
 		})
 	}
 
