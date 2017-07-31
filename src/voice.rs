@@ -370,18 +370,18 @@ enum Status {
 	Disconnect,
 }
 
-fn start_voice_thread(server_id: Option<ServerId>, rx: mpsc::Receiver<Status>) {
+fn start_voice_thread(server_id: Option<ServerId>, mut rx: mpsc::Receiver<Status>) {
 	let name = match server_id {
 		Some(ServerId(id)) => format!("discord voice (server {})", id),
 		None => "discord voice (private/groups)".to_owned(),
 	};
 	::std::thread::Builder::new()
 		.name(name)
-		.spawn(move || voice_thread(rx))
+		.spawn(move || voice_thread(&mut rx))
 		.expect("Failed to start voice thread");
 }
 
-fn voice_thread(channel: mpsc::Receiver<Status>) {
+fn voice_thread(channel: &mut mpsc::Receiver<Status>) {
 	let mut audio_source = None;
 	let mut receiver = None;
 	let mut connection = None;
