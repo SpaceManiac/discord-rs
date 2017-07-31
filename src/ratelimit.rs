@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std;
 
 use hyper;
-use time::get_time;
+use chrono::prelude::*;
 
 use {Result, Error};
 
@@ -48,7 +48,7 @@ impl RateLimit {
 		// break out if uninitialized
 		if self.limit == 0 { return }
 
-		let difference = self.reset - get_time().sec;
+		let difference = self.reset - Utc::now().timestamp();
 		if difference < 0 {
 			// If reset is apparently in the past, optimistically assume that
 			// the reset has occurred and we're good for the next three seconds

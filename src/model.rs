@@ -10,10 +10,7 @@ use serde_json::Value;
 
 use super::{Error, Result, Object};
 
-use chrono::DateTime;
-use chrono::FixedOffset;
-use chrono::offset::Utc;
-use chrono::offset::TimeZone;
+use chrono::prelude::*;
 
 pub use self::permissions::Permissions;
 
@@ -98,8 +95,8 @@ macro_rules! id {
 				///
 				/// Discord generates identifiers using a scheme based on [Twitter Snowflake]
 				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
-				pub fn creation_date(&self) -> ::time::Timespec {
-					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				pub fn creation_date(&self) -> DateTime<Utc> {
+					Utc.timestamp((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
 				}
 			}
 
@@ -499,6 +496,8 @@ pub struct PublicChannel {
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
 	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
+	pub nsfw: bool,
+	pub parent_id: Option<ChannelId>,
 }
 
 impl PublicChannel {
@@ -522,6 +521,8 @@ impl PublicChannel {
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
+			nsfw: try!(opt(&mut value, "nsfw", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
+			parent_id: try!(opt(&mut value, "parent_id", ChannelId::decode)),
 		})
 	}
 
