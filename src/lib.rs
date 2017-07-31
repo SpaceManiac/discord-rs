@@ -50,7 +50,6 @@ use std::collections::BTreeMap;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
-//mod async_connection;
 mod ratelimit;
 mod error;
 mod connection;
