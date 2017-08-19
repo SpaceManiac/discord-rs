@@ -153,7 +153,7 @@ impl Connection {
 		};
 		let game = match game {
 			Some(Game {kind: GameType::Streaming, url: Some(url), name}) => json! {{ "type": GameType::Streaming, "url": url, "name": name }},
-			Some(game) => json! {{ "name": game.name }},
+			Some(game) => json! {{ "name": game.name, "type": GameType::Playing }},
 			None => json!(null),
 		};
 		let msg = json! {{
