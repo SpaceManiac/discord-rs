@@ -204,6 +204,8 @@ fn serde<T: for<'d> ::serde::Deserialize<'d>>(value: Value) -> Result<T> {
 /// The type of a channel
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub enum ChannelType {
+	/// A channel category
+	Category,
 	/// A group channel, separate from a server
 	Group,
 	/// A private channel with only one other person
@@ -218,6 +220,7 @@ pub enum ChannelType {
 
 serial_use_mapping!(ChannelType, numeric);
 serial_names! { ChannelType;
+	Category, "category";
 	Group, "group";
 	Private, "private";
 	Text, "text";
@@ -2015,15 +2018,15 @@ fn into_string(value: Value) -> Result<String> {
 }
 
 fn into_timestamp(value: Value) -> Result<DateTime<FixedOffset>> {
-    match value {
-        Value::String(s) => {
-            match DateTime::parse_from_rfc3339(s.as_str()) {
-                Ok(dt) => Ok(dt),
-                Err(err) => Err(Error::from(err)),
-            }
-        }
-        value => Err(Error::Decode("Expected string timestamp", value)),
-    }
+	match value {
+		Value::String(s) => {
+			match DateTime::parse_from_rfc3339(s.as_str()) {
+				Ok(dt) => Ok(dt),
+				Err(err) => Err(Error::from(err)),
+			}
+		}
+		value => Err(Error::Decode("Expected string timestamp", value)),
+	}
 }
 
 fn into_array(value: Value) -> Result<Vec<Value>> {
