@@ -166,7 +166,7 @@ impl EditMember {
 
 	/// Edit whether the member is server-deafened.
 	pub fn deaf(self, deafen: bool) -> Self {
-		set!(self, "deafen", deafen)
+		set!(self, "deaf", deafen)
 	}
 
 	/// Edit the member's assigned roles.
