@@ -708,6 +708,8 @@ pub enum MessageType {
 	GroupIconUpdate,
 	/// A message was pinned
 	MessagePinned,
+	/// A user joined a server and a welcome message was generated
+	UserJoined,
 }
 
 serial_use_mapping!(MessageType, numeric);
@@ -719,6 +721,7 @@ serial_numbers! { MessageType;
 	GroupNameUpdate, 4;
 	GroupIconUpdate, 5;
 	MessagePinned, 6;
+	UserJoined, 7;
 }
 
 /// Information about an invite
