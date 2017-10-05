@@ -152,7 +152,8 @@ impl Connection {
 			other => other,
 		};
 		let game = match game {
-			Some(game) => json! {{ "name": game.name }},
+			Some(Game {kind: GameType::Streaming, url: Some(url), name}) => json! {{ "type": GameType::Streaming, "url": url, "name": name }},
+			Some(game) => json! {{ "name": game.name, "type": GameType::Playing }},
 			None => json!(null),
 		};
 		let msg = json! {{
@@ -230,7 +231,7 @@ impl Connection {
 						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
 							self.voice(server_id).__update_state(voice_state);
 						}
-						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
+						if let Event::VoiceServerUpdate { server_id, ref endpoint, ref token, .. } = event {
 							self.voice(server_id).__update_server(endpoint, token);
 						}
 					}
@@ -337,6 +338,13 @@ impl Connection {
 
 	/// Cleanly shut down the websocket connection. Optional.
 	pub fn shutdown(mut self) -> Result<()> {
+		try!(self.inner_shutdown());
+		::std::mem::forget(self); // don't call a second time
+		Ok(())
+	}
+
+	// called from shutdown() and drop()
+	fn inner_shutdown(&mut self) -> Result<()> {
 		use websocket::{Sender as S};
 		use std::io::Write;
 
@@ -349,11 +357,15 @@ impl Connection {
 		Ok(())
 	}
 
+	// called when we want to drop the connection with no fanfare
 	fn raw_shutdown(mut self) {
 		use std::io::Write;
-		let stream = self.receiver.get_mut().get_mut();
-		let _ = stream.flush();
-		let _ = stream.shutdown(::std::net::Shutdown::Both);
+		{
+			let stream = self.receiver.get_mut().get_mut();
+			let _ = stream.flush();
+			let _ = stream.shutdown(::std::net::Shutdown::Both);
+		}
+		::std::mem::forget(self); // don't call inner_shutdown()
 	}
 
 	/// Requests a download of online member lists.
@@ -400,6 +412,13 @@ impl Connection {
 			}
 		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+	}
+}
+
+impl Drop for Connection {
+	fn drop(&mut self) {
+		// Swallow errors
+		let _ = self.inner_shutdown();
 	}
 }
 

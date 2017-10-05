@@ -5,6 +5,7 @@ use hyper::Error as HyperError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use websocket::result::WebSocketError;
+use chrono::ParseError as ChronoError;
 #[cfg(feature="voice")]
 use opus::Error as OpusError;
 
@@ -16,6 +17,8 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
 	/// A `hyper` crate error
 	Hyper(HyperError),
+	/// A `chrono` crate error
+	Chrono(ChronoError),
 	/// A `serde_json` crate error
 	Json(JsonError),
 	/// A `websocket` crate error
@@ -69,6 +72,12 @@ impl From<HyperError> for Error {
 	}
 }
 
+impl From<ChronoError> for Error {
+	fn from(err: ChronoError) -> Error {
+		Error::Chrono(err)
+	}
+}
+
 impl From<JsonError> for Error {
 	fn from(err: JsonError) -> Error {
 		Error::Json(err)
@@ -92,6 +101,7 @@ impl Display for Error {
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		match *self {
 			Error::Hyper(ref inner) => inner.fmt(f),
+			Error::Chrono(ref inner) => inner.fmt(f),
 			Error::Json(ref inner) => inner.fmt(f),
 			Error::WebSocket(ref inner) => inner.fmt(f),
 			Error::Io(ref inner) => inner.fmt(f),
@@ -107,6 +117,7 @@ impl StdError for Error {
 	fn description(&self) -> &str {
 		match *self {
 			Error::Hyper(ref inner) => inner.description(),
+			Error::Chrono(ref inner) => inner.description(),
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
@@ -125,6 +136,7 @@ impl StdError for Error {
 	fn cause(&self) -> Option<&StdError> {
 		match *self {
 			Error::Hyper(ref inner) => Some(inner),
+			Error::Chrono(ref inner) => Some(inner),
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
 			Error::Io(ref inner) => Some(inner),

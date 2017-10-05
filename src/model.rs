@@ -2,12 +2,15 @@
 #![allow(missing_docs)]
 
 use std::fmt;
+use std::str::FromStr;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 
 use super::{Error, Result, Object};
+
+use chrono::prelude::*;
 
 pub use self::permissions::Permissions;
 
@@ -36,6 +39,17 @@ macro_rules! serial_decode {
 			#[doc(hidden)] // pre-deprecated
 			pub fn decode(value: Value) -> Result<Self> {
 				serde(value)
+			}
+		}
+	}
+}
+
+macro_rules! string_decode_using_serial_name {
+	($typ:ident) => {
+		impl FromStr for $typ {
+			type Err = Error;
+			fn from_str(s: &str) -> Result<Self> {
+				Self::from_name(s).ok_or(Error::Other(concat!("Unable to parse string into " , stringify!($typ))))
 			}
 		}
 	}
@@ -81,8 +95,8 @@ macro_rules! id {
 				///
 				/// Discord generates identifiers using a scheme based on [Twitter Snowflake]
 				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
-				pub fn creation_date(&self) -> ::time::Timespec {
-					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				pub fn creation_date(&self) -> DateTime<Utc> {
+					Utc.timestamp((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
 				}
 			}
 
@@ -198,6 +212,8 @@ pub enum ChannelType {
 	Text,
 	/// A voice channel
 	Voice,
+	/// A channel category in a server
+	Category,
 }
 
 serial_use_mapping!(ChannelType, numeric);
@@ -206,12 +222,15 @@ serial_names! { ChannelType;
 	Private, "private";
 	Text, "text";
 	Voice, "voice";
+	Category, "category";
 }
+string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
 	Text, 0;
 	Private, 1;
 	Voice, 2;
 	Group, 3;
+	Category, 4;
 }
 
 /// The basic information about a server only
@@ -387,7 +406,7 @@ pub struct Group {
 	pub channel_id: ChannelId,
 	pub icon: Option<String>,
 	pub last_message_id: Option<MessageId>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 	pub name: Option<String>,
 	pub owner_id: UserId,
 	#[serde(default)]
@@ -447,7 +466,7 @@ pub struct PrivateChannel {
 	pub kind: ChannelType,
 	pub recipient: User,
 	pub last_message_id: Option<MessageId>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 }
 
 impl PrivateChannel {
@@ -462,7 +481,7 @@ impl PrivateChannel {
 			kind: try!(remove(&mut value, "type").and_then(serde)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 		})
 	}
 }
@@ -480,7 +499,9 @@ pub struct PublicChannel {
 	pub last_message_id: Option<MessageId>,
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
-	pub last_pin_timestamp: Option<String>,
+	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
+	pub nsfw: bool,
+	pub parent_id: Option<ChannelId>,
 }
 
 impl PublicChannel {
@@ -503,7 +524,9 @@ impl PublicChannel {
 			permission_overwrites: try!(decode_array(try!(remove(&mut value, "permission_overwrites")), PermissionOverwrite::decode)),
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
-			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
+			nsfw: try!(opt(&mut value, "nsfw", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
+			parent_id: try!(opt(&mut value, "parent_id", ChannelId::decode)),
 		})
 	}
 
@@ -552,7 +575,7 @@ pub mod permissions {
 	bitflags! {
 		/// Set of permissions assignable to a Role or PermissionOverwrite
 		pub flags Permissions: u64 {
-			const CREATE_INVITE = 1 << 0,
+			const CREATE_INVITE = 1,
 			const KICK_MEMBERS = 1 << 1,
 			const BAN_MEMBERS = 1 << 2,
 			/// Grant all permissions, bypassing channel-specific permissions
@@ -644,11 +667,13 @@ pub struct Message {
 	pub id: MessageId,
 	pub channel_id: ChannelId,
 	pub content: String,
+	// carry on if nonce is absent or for some reason not a string
 	#[serde(deserialize_with="::serial::ignore_errors")]
+	#[serde(default)]
 	pub nonce: Option<String>,
 	pub tts: bool,
-	pub timestamp: String,
-	pub edited_timestamp: Option<String>,
+	pub timestamp: DateTime<FixedOffset>,
+	pub edited_timestamp: Option<DateTime<FixedOffset>>,
 	pub pinned: bool,
 	#[serde(rename="type")]
 	pub kind: MessageType,
@@ -683,6 +708,8 @@ pub enum MessageType {
 	GroupIconUpdate,
 	/// A message was pinned
 	MessagePinned,
+	/// A user joined a server and a welcome message was generated
+	UserJoined,
 }
 
 serial_use_mapping!(MessageType, numeric);
@@ -694,6 +721,7 @@ serial_numbers! { MessageType;
 	GroupNameUpdate, 4;
 	GroupIconUpdate, 5;
 	MessagePinned, 6;
+	UserJoined, 7;
 }
 
 /// Information about an invite
@@ -834,6 +862,7 @@ serial_names! { OnlineStatus;
 	Online, "online";
 	Idle, "idle";
 }
+string_decode_using_serial_name!(OnlineStatus);
 
 /// A type of game being played.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
@@ -951,6 +980,8 @@ pub enum VerificationLevel {
 	Medium,
 	/// Must also be a member of this server for longer than 10 minutes
 	High,
+	/// Must have a verified phone on their Discord account
+	Phone,
 }
 
 serial_use_mapping!(VerificationLevel, numeric);
@@ -959,6 +990,7 @@ serial_numbers! { VerificationLevel;
 	Low, 1;
 	Medium, 2;
 	High, 3;
+	Phone, 4;
 }
 
 /// A parter custom emoji
@@ -1019,6 +1051,7 @@ pub struct LiveServer {
 	pub channels: Vec<PublicChannel>,
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
+	pub system_channel_id: Option<ChannelId>,
 	pub verification_level: VerificationLevel,
 	pub emojis: Vec<Emoji>,
 	pub features: Vec<String>,
@@ -1049,6 +1082,7 @@ impl LiveServer {
 			large: req!(try!(remove(&mut value, "large")).as_bool()),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
+			system_channel_id: try!(opt(&mut value, "system_channel_id", ChannelId::decode)),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
@@ -1495,7 +1529,7 @@ pub enum Event {
 	TypingStart {
 		channel_id: ChannelId,
 		user_id: UserId,
-		timestamp: u64,
+		timestamp: DateTime<Utc>,
 	},
 	/// A member's presence state (or username or avatar) has changed
 	PresenceUpdate {
@@ -1518,8 +1552,8 @@ pub enum Event {
 		nonce: Option<String>,
 		tts: Option<bool>,
 		pinned: Option<bool>,
-		timestamp: Option<String>,
-		edited_timestamp: Option<String>,
+		timestamp: Option<DateTime<FixedOffset>>,
+		edited_timestamp: Option<DateTime<FixedOffset>>,
 		author: Option<User>,
 		mention_everyone: Option<bool>,
 		mentions: Option<Vec<User>>,
@@ -1578,11 +1612,11 @@ pub enum Event {
 	ChannelDelete(Channel),
 	ChannelPinsAck {
 		channel_id: ChannelId,
-		timestamp: String,
+		timestamp: DateTime<FixedOffset>,
 	},
 	ChannelPinsUpdate {
 		channel_id: ChannelId,
-		last_pin_timestamp: Option<String>,
+		last_pin_timestamp: Option<DateTime<FixedOffset>>,
 	},
 
 	ReactionAdd(Reaction),
@@ -1681,7 +1715,7 @@ impl Event {
 			warn_json!(value, Event::TypingStart {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
 				user_id: try!(remove(&mut value, "user_id").and_then(UserId::decode)),
-				timestamp: req!(try!(remove(&mut value, "timestamp")).as_u64()),
+				timestamp: Utc.timestamp(req!(try!(remove(&mut value, "timestamp")).as_i64()), 0),
 			})
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = try!(opt(&mut value, "guild_id", ServerId::decode));
@@ -1714,8 +1748,8 @@ impl Event {
 				nonce: remove(&mut value, "nonce").and_then(into_string).ok(), // nb: swallow errors
 				tts: remove(&mut value, "tts").ok().and_then(|v| v.as_bool()),
 				pinned: remove(&mut value, "pinned").ok().and_then(|v| v.as_bool()),
-				timestamp: try!(opt(&mut value, "timestamp", into_string)),
-				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_string)),
+				timestamp: try!(opt(&mut value, "timestamp", into_timestamp)),
+				edited_timestamp: try!(opt(&mut value, "edited_timestamp", into_timestamp)),
 				author: try!(opt(&mut value, "author", User::decode)),
 				mention_everyone: remove(&mut value, "mention_everyone").ok().and_then(|v| v.as_bool()),
 				mentions: try!(opt(&mut value, "mentions", |v| decode_array(v, User::decode))),
@@ -1816,12 +1850,12 @@ impl Event {
 		} else if kind == "CHANNEL_PINS_ACK" {
 			warn_json!(value, Event::ChannelPinsAck {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				timestamp: try!(remove(&mut value, "timestamp").and_then(into_string)),
+				timestamp: try!(remove(&mut value, "timestamp").and_then(into_timestamp)),
 			})
 		} else if kind == "CHANNEL_PINS_UPDATE" {
 			warn_json!(value, Event::ChannelPinsUpdate {
 				channel_id: try!(remove(&mut value, "channel_id").and_then(ChannelId::decode)),
-				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_string)),
+				last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 			})
 		} else {
 			Ok(Event::Unknown(kind, value))
@@ -1981,6 +2015,18 @@ fn into_string(value: Value) -> Result<String> {
 		Value::String(s) => Ok(s),
 		value => Err(Error::Decode("Expected string", value)),
 	}
+}
+
+fn into_timestamp(value: Value) -> Result<DateTime<FixedOffset>> {
+    match value {
+        Value::String(s) => {
+            match DateTime::parse_from_rfc3339(s.as_str()) {
+                Ok(dt) => Ok(dt),
+                Err(err) => Err(Error::from(err)),
+            }
+        }
+        value => Err(Error::Decode("Expected string timestamp", value)),
+    }
 }
 
 fn into_array(value: Value) -> Result<Vec<Value>> {

@@ -102,7 +102,7 @@ macro_rules! serial_single_field {
 	}
 }
 
-/// Special support for the oddly complex ReactionEmoji.
+/// Special support for the oddly complex `ReactionEmoji`.
 pub mod reaction_emoji {
 	use super::*;
 	use model::{ReactionEmoji, EmojiId};

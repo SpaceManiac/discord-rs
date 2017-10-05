@@ -5,6 +5,9 @@
 
 use serde_json::Value;
 
+use chrono::offset::FixedOffset;
+use chrono::DateTime;
+
 use model::*;
 use Object;
 
@@ -12,6 +15,7 @@ macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
 		$(
 			#[$attr]
+			#[derive(Serialize, Deserialize)]
 			pub struct $name($inner);
 
 			impl $name {
@@ -24,6 +28,21 @@ macro_rules! builder {
 				#[doc(hidden)]
 				pub fn __apply<F: FnOnce($name) -> $name>(f: F, inp: $inner) -> $inner {
 					f($name(inp)).0
+				}
+
+				/// Merge this builder's contents with another of the same type.
+				/// Keys in `other` will override those in `self`.
+				///
+				/// This method is intended to be used with deserialized
+				/// instances. Note that deserialization *does not* check that
+				/// the keys are valid for the relevant API call.
+				///
+				/// ```ignore
+				/// discord.edit_server(|b| b
+				///     .merge(serde_json::from_str(r#"{"name":"My Server"}"#)?))
+				/// ```
+				pub fn merge(mut self, other: $name) -> $name {
+					self.0.extend(other.0); self
 				}
 			}
 		)*
@@ -128,7 +147,7 @@ impl EditChannel {
 		set!(self, "bitrate", bitrate)
 	}
 
-	/// Edit the voice channel's user limit. Both `None` and `Some(0)` mean "unlimited".
+	/// Edit the voice channel's user limit. Zero (`0`) means unlimited.
 	pub fn user_limit(self, user_limit: u64) -> Self {
 		set!(self, "user_limit", user_limit)
 	}
@@ -147,7 +166,7 @@ impl EditMember {
 
 	/// Edit whether the member is server-deafened.
 	pub fn deaf(self, deafen: bool) -> Self {
-		set!(self, "deafen", deafen)
+		set!(self, "deaf", deafen)
 	}
 
 	/// Edit the member's assigned roles.
@@ -218,8 +237,8 @@ impl EmbedBuilder {
 	}
 
 	/// Add the "timestamp of embed content".
-	pub fn timestamp(self, timestamp: &str) -> Self {
-		set!(self, "timestamp", timestamp)
+	pub fn timestamp(self, timestamp: DateTime<FixedOffset>) -> Self {
+		set!(self, "timestamp", timestamp.to_rfc3339())
 	}
 
 	/// Add the "color code of the embed".

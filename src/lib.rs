@@ -26,11 +26,11 @@
 extern crate hyper;
 extern crate websocket;
 extern crate byteorder;
-extern crate time;
 extern crate multipart;
 extern crate base64;
 extern crate flate2;
 extern crate serde;
+extern crate chrono;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate bitflags;
@@ -39,6 +39,7 @@ extern crate serde;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
+use std::time;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -888,6 +889,18 @@ impl Discord {
 		Ok(vec)
 	}
 
+	/// Get information about a user.
+	pub fn get_user(&self, user: UserId) -> Result<User> {
+		let response = request!(self, get, "/users/{}", user);
+		from_reader(response)
+	}
+
+	/// Get the logged-in user's profile.
+	pub fn get_current_user(&self) -> Result<CurrentUser> {
+		let response = request!(self, get, "/users/@me");
+		from_reader(response)
+	}
+
 	/// Edit the logged-in bot or user's profile. See `EditProfile` for editable fields.
 	///
 	/// Usable for bot and user accounts. Only allows updating the username and
@@ -1163,44 +1176,47 @@ fn resolve_invite(invite: &str) -> &str {
 }
 
 fn sleep_ms(millis: u64) {
-	std::thread::sleep(std::time::Duration::from_millis(millis))
+	std::thread::sleep(time::Duration::from_millis(millis))
 }
 
 // Timer that remembers when it is supposed to go off
 struct Timer {
-	next_tick_at: time::Timespec,
+	next_tick_at: time::Instant,
 	tick_len: time::Duration,
 }
 
-#[cfg_attr(not(feature="voice"), allow(dead_code))]
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
 impl Timer {
 	fn new(tick_len_ms: u64) -> Timer {
-		let tick_len = time::Duration::milliseconds(tick_len_ms as i64);
+		let tick_len = time::Duration::from_millis(tick_len_ms);
 		Timer {
-			next_tick_at: time::get_time() + tick_len,
+			next_tick_at: time::Instant::now() + tick_len,
 			tick_len: tick_len,
 		}
 	}
 
 	#[allow(dead_code)]
 	fn immediately(&mut self) {
-		self.next_tick_at = time::get_time();
+		self.next_tick_at = time::Instant::now();
 	}
 
 	fn defer(&mut self) {
-		self.next_tick_at = time::get_time() + self.tick_len;
+		self.next_tick_at = time::Instant::now() + self.tick_len;
 	}
 
 	fn check_tick(&mut self) -> bool {
-		time::get_time() >= self.next_tick_at && {
-			self.next_tick_at = self.next_tick_at + self.tick_len; true
+		if time::Instant::now() >= self.next_tick_at {
+			self.next_tick_at = self.next_tick_at + self.tick_len;
+			true
+		} else {
+			false
 		}
 	}
 
 	fn sleep_until_tick(&mut self) {
-		let difference = self.next_tick_at - time::get_time();
-		if difference > time::Duration::zero() {
-			sleep_ms(difference.num_milliseconds() as u64)
+		let now = time::Instant::now();
+		if self.next_tick_at > now {
+			std::thread::sleep(self.next_tick_at - now);
 		}
 		self.next_tick_at = self.next_tick_at + self.tick_len;
 	}
@@ -1232,7 +1248,7 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 				&message.payload[..]
 			};
 			serde_json::from_reader(payload).map_err(From::from).and_then(decode).map_err(|e| {
-				warn!("Error decoding: {}", String::from_utf8_lossy(&payload));
+				warn!("Error decoding: {}", String::from_utf8_lossy(payload));
 				e
 			})
 		} else {
