@@ -26,7 +26,6 @@
 extern crate hyper;
 extern crate hyper_native_tls;
 extern crate websocket;
-extern crate byteorder;
 extern crate multipart;
 extern crate mime;
 extern crate base64;
