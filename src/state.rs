@@ -172,7 +172,7 @@ impl State {
 					Entry::Occupied(mut e) => { e.get_mut().clone_from(call); }
 				}
 			}
-			Event::CallUpdate { channel_id, message_id: _, ref region, ref ringing } => {
+			Event::CallUpdate { channel_id, ref region, ref ringing, .. } => {
 				if let Some(call) = self.calls.get_mut(&channel_id) {
 					call.region.clone_from(region);
 					call.ringing.clone_from(ringing);
@@ -191,7 +191,7 @@ impl State {
 					group.recipients.retain(|u| u.id != user.id);
 				}
 			}
-			Event::PresenceUpdate { server_id, ref presence, roles: _ } => {
+			Event::PresenceUpdate { server_id, ref presence, .. } => {
 				if let Some(server_id) = server_id {
 					self.servers.iter_mut().find(|s| s.id == server_id).map(|srv| {
 						// If the user was modified, update the member list
@@ -356,7 +356,7 @@ impl State {
 				for server in &mut self.servers {
 					for channel in &mut server.channels {
 						if channel.id == *channel_id {
-							channel.last_pin_timestamp = last_pin_timestamp.clone();
+							channel.last_pin_timestamp = *last_pin_timestamp;
 							return
 						}
 					}
@@ -364,13 +364,13 @@ impl State {
 
 				for channel in &mut self.private_channels {
 					if channel.id == *channel_id {
-						channel.last_pin_timestamp = last_pin_timestamp.clone();
+						channel.last_pin_timestamp = *last_pin_timestamp;
 						return
 					}
 				}
 
 				if let Some(group) = self.groups.get_mut(channel_id) {
-					group.last_pin_timestamp = last_pin_timestamp.clone();
+					group.last_pin_timestamp = *last_pin_timestamp;
 					return
 				}
 			}
@@ -433,6 +433,16 @@ impl State {
 	/// Returns `None` on bot accounts.
 	#[inline]
 	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> { self.notes.as_ref() }
+
+	/// Look up a server by its ID.
+	pub fn find_server(&self, id: ServerId) -> Option<&LiveServer> {
+		for server in &self.servers {
+			if server.id == id {
+				return Some(server);
+			}
+		}
+		None
+	}
 
 	/// Look up a private or public channel by its ID.
 	pub fn find_channel(&self, id: ChannelId) -> Option<ChannelRef> {
