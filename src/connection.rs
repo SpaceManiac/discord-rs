@@ -440,7 +440,7 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 		}
 	}};
 	if let Some(info) = shard_info {
-		result["shard"] = json![[info[0], info[1]]];
+		result["d"]["shard"] = json![[info[0], info[1]]];
 	}
 	result
 }
