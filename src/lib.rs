@@ -26,7 +26,6 @@
 extern crate hyper;
 extern crate hyper_native_tls;
 extern crate websocket;
-extern crate byteorder;
 extern crate multipart;
 extern crate mime;
 extern crate base64;
@@ -38,6 +37,7 @@ extern crate chrono;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate log;
 #[cfg(feature="voice")] extern crate opus;
+#[cfg(feature="voice")] extern crate byteorder;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
