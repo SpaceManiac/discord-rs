@@ -38,6 +38,7 @@ extern crate chrono;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate log;
 #[cfg(feature="voice")] extern crate opus;
+#[cfg(feature="voice")] extern crate byteorder;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
