@@ -26,6 +26,7 @@
 extern crate hyper;
 extern crate hyper_native_tls;
 extern crate websocket;
+#[cfg(feature="voice")] extern crate byteorder;
 extern crate multipart;
 extern crate mime;
 extern crate base64;
