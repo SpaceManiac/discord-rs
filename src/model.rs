@@ -1242,11 +1242,12 @@ serial_decode!(CurrentUser);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplicationInfo {
 	pub description: String,
-	pub flags: u64,
 	pub icon: Option<String>,
 	pub id: UserId,
 	pub name: String,
 	pub rpc_origins: Vec<String>,
+	pub bot_public: bool,
+	pub bot_require_code_grant: bool,
 
 	pub owner: User,
 }
