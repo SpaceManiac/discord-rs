@@ -704,6 +704,12 @@ impl Discord {
 		from_reader(response)
 	}
 
+	/// Gets a specific server.
+	pub fn get_server(&self, server_id: ServerId) -> Result<Server> {
+		let response = request!(self, get, "/guilds/{}", server_id);
+		from_reader(response)
+	}
+
 	/// Create a new server with the given name.
 	pub fn create_server(&self, name: &str, region: &str, icon: Option<&str>) -> Result<Server> {
 		let map = json! {{
