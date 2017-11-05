@@ -65,6 +65,9 @@ builder! {
 	/// Patch content for the `edit_user_profile` call.
 	EditUserProfile(Object);
 
+	/// Patch content for the `edit_role` call.
+	EditRole(Object);
+
 	/// Patch content for the `send_embed` call.
 	EmbedBuilder(Object);
 
@@ -217,6 +220,33 @@ impl EditUserProfile {
 	/// Edit the user's avatar. Use `None` to remove the avatar.
 	pub fn avatar(self, icon: Option<&str>) -> Self {
 		set!(self, "avatar", icon)
+	}
+}
+
+impl EditRole {
+	/// Edit the role's name. Supply the empty string to remove a name.
+	pub fn name(self, name: &str) -> Self {
+		set!(self, "name", name)
+	}
+
+	/// Edit the role's permissions.
+	pub fn permissions(self, permissions: Permissions) -> Self {
+		set!(self, "permissions", permissions)
+	}
+
+	/// Edit the role's color. Set to zero for default.
+	pub fn color(self, color: u64) -> Self {
+		set!(self, "color", color)
+	}
+
+	/// Edit the role's hoist status (whether the role should be displayed separately in the sidebar).
+	pub fn hoist(self, hoist: bool) -> Self {
+		set!(self, "hoist", hoist)
+	}
+
+	/// Edit the role's mentionability, if the role can be mentioned.
+	pub fn mentionable(self, mentionable: bool) -> Self {
+		set!(self, "mentionable", mentionable)
 	}
 }
 
