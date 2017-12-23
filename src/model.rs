@@ -1024,7 +1024,7 @@ pub struct MessageReaction {
 serial_decode!(MessageReaction);
 
 /// Emoji information sent only from reaction events
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReactionEmoji {
 	Unicode(String),
 	Custom { name: String, id: EmojiId },
