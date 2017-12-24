@@ -16,6 +16,8 @@ fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E>
 
 /// Ignore deserialization errors and revert to default.
 pub fn ignore_errors<'d, T: Deserialize<'d> + Default, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
+	use serde_json::Value;
+	
 	let v = Value::deserialize(d)?;
    	Ok(T::deserialize(v).ok().unwrap_or_default())
 }
