@@ -16,7 +16,8 @@ fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E>
 
 /// Ignore deserialization errors and revert to default.
 pub fn ignore_errors<'d, T: Deserialize<'d> + Default, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
-	Ok(T::deserialize(d).ok().unwrap_or_default())
+	let v = Value::deserialize(d)?;
+   	Ok(T::deserialize(v).ok().unwrap_or_default())
 }
 
 /// Deserialize a maybe-string ID into a u64.
@@ -42,7 +43,7 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 		}
 	}
 
-	d.deserialize_u64(IdVisitor)
+	d.deserialize_any(IdVisitor)
 }
 
 /// Deserialize a maybe-string discriminator into a u16.
