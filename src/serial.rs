@@ -85,7 +85,7 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 		}
 	}
 
-	d.deserialize_u16(DiscrimVisitor)
+	d.deserialize_any(DiscrimVisitor)
 }
 
 /// Deserialize a single-field struct like a newtype struct.
