@@ -233,7 +233,7 @@ pub mod numeric {
 			}
 		}
 
-		d.deserialize_string(NumVisitor(PhantomData))
+		d.deserialize_any(NumVisitor(PhantomData))
 	}
 }
 macro_rules! serial_numbers {
