@@ -569,51 +569,51 @@ pub mod permissions {
 
 	bitflags! {
 		/// Set of permissions assignable to a Role or PermissionOverwrite
-		pub flags Permissions: u64 {
-			const CREATE_INVITE = 1 << 0,
-			const KICK_MEMBERS = 1 << 1,
-			const BAN_MEMBERS = 1 << 2,
+		pub struct Permissions: u64 {
+			const CREATE_INVITE = 1 << 0;
+			const KICK_MEMBERS = 1 << 1;
+			const BAN_MEMBERS = 1 << 2;
 			/// Grant all permissions, bypassing channel-specific permissions
-			const ADMINISTRATOR = 1 << 3,
+			const ADMINISTRATOR = 1 << 3;
 			/// Modify roles below their own
-			const MANAGE_ROLES = 1 << 28,
+			const MANAGE_ROLES = 1 << 28;
 			/// Create channels or edit existing ones
-			const MANAGE_CHANNELS = 1 << 4,
+			const MANAGE_CHANNELS = 1 << 4;
 			/// Change the server's name or move regions
-			const MANAGE_SERVER = 1 << 5,
+			const MANAGE_SERVER = 1 << 5;
 			/// Change their own nickname
-			const CHANGE_NICKNAMES = 1 << 26,
+			const CHANGE_NICKNAMES = 1 << 26;
 			/// Change the nickname of other users
-			const MANAGE_NICKNAMES = 1 << 27,
+			const MANAGE_NICKNAMES = 1 << 27;
 			/// Manage the emojis in a a server.
-			const MANAGE_EMOJIS = 1 << 30,
+			const MANAGE_EMOJIS = 1 << 30;
 			/// Manage channel webhooks
-			const MANAGE_WEBHOOKS = 1 << 29,
+			const MANAGE_WEBHOOKS = 1 << 29;
 
-			const READ_MESSAGES = 1 << 10,
-			const SEND_MESSAGES = 1 << 11,
+			const READ_MESSAGES = 1 << 10;
+			const SEND_MESSAGES = 1 << 11;
 			/// Send text-to-speech messages to those focused on the channel
-			const SEND_TTS_MESSAGES = 1 << 12,
+			const SEND_TTS_MESSAGES = 1 << 12;
 			/// Delete messages by other users
-			const MANAGE_MESSAGES = 1 << 13,
-			const EMBED_LINKS = 1 << 14,
-			const ATTACH_FILES = 1 << 15,
-			const READ_HISTORY = 1 << 16,
+			const MANAGE_MESSAGES = 1 << 13;
+			const EMBED_LINKS = 1 << 14;
+			const ATTACH_FILES = 1 << 15;
+			const READ_HISTORY = 1 << 16;
 			/// Trigger a push notification for an entire channel with "@everyone"
-			const MENTION_EVERYONE = 1 << 17,
+			const MENTION_EVERYONE = 1 << 17;
 			/// Use emojis from other servers
-			const EXTERNAL_EMOJIS = 1 << 18,
+			const EXTERNAL_EMOJIS = 1 << 18;
 			/// Add emoji reactions to messages
-			const ADD_REACTIONS = 1 << 6,
+			const ADD_REACTIONS = 1 << 6;
 
-			const VOICE_CONNECT = 1 << 20,
-			const VOICE_SPEAK = 1 << 21,
-			const VOICE_MUTE_MEMBERS = 1 << 22,
-			const VOICE_DEAFEN_MEMBERS = 1 << 23,
+			const VOICE_CONNECT = 1 << 20;
+			const VOICE_SPEAK = 1 << 21;
+			const VOICE_MUTE_MEMBERS = 1 << 22;
+			const VOICE_DEAFEN_MEMBERS = 1 << 23;
 			/// Move users out of this channel into another
-			const VOICE_MOVE_MEMBERS = 1 << 24,
+			const VOICE_MOVE_MEMBERS = 1 << 24;
 			/// When denied, members must use push-to-talk
-			const VOICE_USE_VAD = 1 << 25,
+			const VOICE_USE_VAD = 1 << 25;
 		}
 	}
 
@@ -1095,7 +1095,7 @@ impl LiveServer {
 	/// Calculate the effective permissions for a specific user in a specific
 	/// channel on this server.
 	pub fn permissions_for(&self, channel: ChannelId, user: UserId) -> Permissions {
-		use self::permissions::*;
+		use self::permissions::Permissions::*;
 		// Owner has all permissions
 		if user == self.owner_id {
 			return Permissions::all();

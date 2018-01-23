@@ -1,40 +1,15 @@
 #[cfg(feature="voice")]
 use std::collections::HashMap;
 
-use std::time;
-
-use websocket::ClientBuilder;
-use websocket::futures::{Future, Stream, Sink, Poll, Async};
-use websocket::result::WebSocketError;
-use websocket::futures::sync::mpsc;
-
-use tokio_core::reactor;
 use serde_json;
 
 use model::*;
 use internal::Status;
 #[cfg(feature="voice")]
 use voice::VoiceConnection;
-use {Result, Error, SenderExt, ReceiverExt};
-*/
-const GATEWAY_VERSION: u64 = 6;
-
-#[cfg(feature="voice")]
-macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-		$($name1: $val1,)*
-		$($name2: $val2,)*
-	}}
-}
-#[cfg(not(feature="voice"))]
-macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-		$($name1: $val1,)*
-	}}
-}
+use {Result, Error};
 
 /// Websocket connection to the Discord servers.
-
 pub struct Connection {
 	input_queue: mpsc::UnboundedSender,
 	output_queue: mpsc::UnboundedReceiver,
@@ -52,91 +27,7 @@ impl Connection {
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		debug!("Gateway: {}", base_url);
 
-		// establish the async event loop
-		let mut core = reactor::Core::new().unwrap();
-
-		// establish the websocket connection
-		let client = ClientBuilder::new(&format!("{}?v={}", base_url, GATEWAY_VERSION))
-									.map_err(|e| WebSocketError::UrlError(e))?
-									.async_connect_secure(None, &core.handle())
-									.and_then(|(duplex, _)| {
-										// a sink is an async sender, a stream is an async reciever
-										let (sink, stream) = duplex.split();
-										identify(token, shard_info);
-										
-									};
-
-
-		// send the handshake
-		let identify = ;
-		try!(sender.send_json(&identify));
-
-		// read the Hello and spawn the keepalive thread
-		let heartbeat_interval;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
-			GatewayEvent::Hello(interval) => heartbeat_interval = interval,
-			other => {
-				debug!("Unexpected event: {:?}", other);
-				return Err(Error::Protocol("Expected Hello during handshake"))
-			}
-		}
-
-		let (tx, rx) = mpsc::channel();
-		try!(::std::thread::Builder::new()
-			.name("Discord Keepalive".into())
-			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
-
-		// read the Ready event
-		let sequence;
-		let ready;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
-			GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-				sequence = seq;
-				ready = event;
-			},
-			GatewayEvent::InvalidateSession => {
-				debug!("Session invalidated, reidentifying");
-				let _ = tx.send(Status::SendMessage(identify));
-				match try!(receiver.recv_json(GatewayEvent::decode)) {
-					GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
-						sequence = seq;
-						ready = event;
-					}
-					GatewayEvent::InvalidateSession => {
-						return Err(Error::Protocol("Invalid session during handshake. \
-							Double-check your token or consider waiting 5 seconds between starting shards."))
-					}
-					other => {
-						debug!("Unexpected event: {:?}", other);
-						return Err(Error::Protocol("Expected Ready during handshake"))
-					}
-				}
-			}
-			other => {
-				debug!("Unexpected event: {:?}", other);
-				return Err(Error::Protocol("Expected Ready or InvalidateSession during handshake"))
-			}
-		}
-		if ready.version != GATEWAY_VERSION {
-			warn!("Got protocol version {} instead of {}", ready.version, GATEWAY_VERSION);
-		}
-		let session_id = ready.session_id.clone();
-
-		// return the connection
-		Ok((finish_connection!(
-			keepalive_channel: tx,
-			receiver: receiver,
-			ws_url: base_url.to_owned(),
-			token: token.to_owned(),
-			session_id: Some(session_id),
-			last_sequence: sequence,
-			shard_info: shard_info;
-			// voice only
-			user_id: ready.user.id,
-			voice_handles: HashMap::new(),
-		), ready))
 	}
 
 }
@@ -450,81 +341,3 @@ impl Drop for Connection {
 	}
 } */
 
-fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
-	let mut result = json! {{
-		"op": 2,
-		"d": {
-			"token": token,
-			"properties": {
-				"$os": ::std::env::consts::OS,
-				"$browser": "Discord library for Rust",
-				"$device": "discord-rs",
-				"$referring_domain": "",
-				"$referrer": "",
-			},
-			"large_threshold": 250,
-			"compress": true,
-			"v": GATEWAY_VERSION,
-		}
-	}};
-	if let Some(info) = shard_info {
-		result["shard"] = json![[info[0], info[1]]];
-	}
-	result
-}
-
-/// sends a number every heartbeat_interval ms
-/// stops if it ever sends the same number twice in a row, implies it stopped seeing heartbeat ACK
-struct Heartbeat {
-	repeat: bool,
-	sequence: u64,
-	heartbeat_interval: time::Duration,
-	last_beat: time::Instant,
-	rx: mpsc::UnboundedReceiver<Status>,
-}
-
-impl Heartbeat {
-	fn new(rx: mpsc::UnboundedReceiver<Status>, interval: u64) {
-		Heartbeat {
-			repeat: false,
-			sequence: 0,
-			heartbeat_interval: time::Duration::from_millis(interval),
-			last_beat: time::Instant::now(),
-			rx
-		}
-	}
-}
-
-impl Stream for Heartbeat {
-	type Item = u64;
-	type Error = Error;
-
-	fn poll(&mut self) -> Result<Async<Option<u64>>, Error> {
-
-		match rx.poll() {
-			Ok(Status::Sequence(seq)) => {
-				self.sequence = seq;
-				self.repeat = false;
-			},
-			Ok(Status::ChangeInterval(interval)) => {
-				self.heartbeat_interval = time::Duration::from_millis(interval);
-			},
-			Ok(_) => {}
-			Err(_) => return Err(Error::Other("receiver lost"));
-		}
-
-		let now = time::Instant::now();
-		let duration = now - self.last_beat;
-
-		if duration >= self.heartbeat_interval {
-			if self.repeat {
-				Err(Error::Protocol("no ACK found between two heartbeats"))
-			} else {
-				self.repeat = true;
-				Ok(Async::Ready(Some(self.sequence)))
-			}
-		} else {
-			Ok(Async::NotReady)
-		}
-	}
-}

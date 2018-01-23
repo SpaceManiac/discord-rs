@@ -12,24 +12,28 @@ repository = "https://github.com/SpaceManiac/discord-rs"
 documentation = "https://docs.rs/discord/0.8.0"
 
 [features]
-default = ["voice"]
+default = []
 voice = ["opus", "sodiumoxide"]
 
 [dependencies]
-reqwest = { git = "https://github.com/tinaun/reqwest" }
 websocket = "0.20"
 futures = "0.1"
 tokio-core = "0.1"
+tokio-timer = "0.1"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-bitflags = "0.7"
-byteorder = "0.5"
+bitflags = "1.0"
+byteorder = "1.1"
 time = "0.1"
 log = "0.3"
 base64-rs = "0.1.1"
 flate2 = "0.2.14"
 opus = { version = "0.2", optional = true }
+
+[dependencies.reqwest]
+version = "0.8"
+features = ["unstable"]
 
 [dependencies.chrono]
 version = "0.4"

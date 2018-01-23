@@ -50,6 +50,7 @@ mod ratelimit;
 mod error;
 mod connection;
 mod state;
+mod async;
 #[cfg(feature="voice")]
 pub mod voice;
 
@@ -1191,47 +1192,7 @@ fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
 
-// Timer that remembers when it is supposed to go off
-struct Timer {
-	next_tick_at: time::Timespec,
-	tick_len: time::Duration,
-}
-
-#[cfg_attr(not(feature="voice"), allow(dead_code))]
-impl Timer {
-	fn new(tick_len_ms: u64) -> Timer {
-		let tick_len = time::Duration::milliseconds(tick_len_ms as i64);
-		Timer {
-			next_tick_at: time::get_time() + tick_len,
-			tick_len: tick_len,
-		}
-	}
-
-	#[allow(dead_code)]
-	fn immediately(&mut self) {
-		self.next_tick_at = time::get_time();
-	}
-
-	fn defer(&mut self) {
-		self.next_tick_at = time::get_time() + self.tick_len;
-	}
-
-	fn check_tick(&mut self) -> bool {
-		time::get_time() >= self.next_tick_at && {
-			self.next_tick_at = self.next_tick_at + self.tick_len; true
-		}
-	}
-
-	fn sleep_until_tick(&mut self) {
-		let difference = self.next_tick_at - time::get_time();
-		if difference > time::Duration::zero() {
-			sleep_ms(difference.num_milliseconds() as u64)
-		}
-		self.next_tick_at = self.next_tick_at + self.tick_len;
-	}
-}
-
-	fn recv_json<F, T>(&mut self, message: Message, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
+fn recv_json<F, T>(message: Message, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
 		if message.opcode == Type::Close {
 			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
 		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
@@ -1253,7 +1214,7 @@ impl Timer {
 		}
 	}
 
-	fn send_json(&mut self, message:: Message, value: &serde_json::Value) -> Result<()> {
+	fn send_json(message:  Message, value: &serde_json::Value) -> Result<()> {
 		serde_json::to_string(value)
 			.map(Message::text)
 			.map_err(Error::from)
@@ -1264,6 +1225,6 @@ mod internal {
 		SendMessage(::serde_json::Value),
 		Sequence(u64),
 		ChangeInterval(u64),
-		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+		//ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
 	}
 }
