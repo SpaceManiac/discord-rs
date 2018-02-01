@@ -2,13 +2,15 @@
 //! handles both api requests and gateway logic
 
 use websocket::ClientBuilder as WSClientBuilder;
-use websocket::OwnedMessage;
+use websocket::{ Message, OwnedMessage };
 use reqwest::unstable::async::ClientBuilder;
 use tokio_core::reactor;
 use tokio_timer::Timer;
 use futures::{IntoFuture, Future, Stream, Sink};
-use futures::sync::mpsc::{UnboundedSender, unbounded, UnboundedReceiver};
+use futures::sync::mpsc::{UnboundedSender, unbounded};
+use std::sync::mpsc;
 
+use flate2;
 use serde_json;
 use std::time::Duration;
 use std::thread;
@@ -19,17 +21,17 @@ use model::GatewayEvent;
 
 const GATEWAY_VERSION: u64 = 6;
 
+/// this connection does not handle any reconnects
 pub struct Connection {
     send: UnboundedSender< serde_json::Value>,
-    recv: UnboundedReceiver< GatewayEvent>,
+    recv: mpsc::Receiver< GatewayEvent>,
     handle: thread::JoinHandle<Result<(), Error>>,
 }
 
 impl Connection {
-    pub fn run(token: &str) -> Result<Self, Error> {
-        
+    fn new() -> Result<Self, Error> {
         let (send, recv) = unbounded();
-        let (send_event, recv_event) = unbounded();
+        let (send_event, recv_event) = mpsc::channel();
 
         let handle = thread::spawn(move || {
             let mut core = reactor::Core::new()?;
@@ -41,9 +43,10 @@ impl Connection {
                         .send()
                         .map_err(|e| Error::from(e))
                         .and_then(|mut resp| {
-                            resp.json::<model::Gateway>().from_err()
-                        }).and_then(|gateway| {
-                            WSClientBuilder::new(&gateway.url).map(|client| {
+                            resp.json::< serde_json::Value>().from_err()
+                        }).and_then(|url| {
+                            let url = url["url"].as_str().unwrap();
+                            WSClientBuilder::new(&url).map(|client| {
                                 client.async_connect_secure(None, &ws_handle)
                             }).map_err(|e| Error::from(e)).into_future()
                         }).and_then(|x| x.map_err(|e| Error::from(e)))
@@ -52,47 +55,44 @@ impl Connection {
                         }).and_then(|c| {
                             let mut interval = 0;
 
-                            if let Some(OwnedMessage::Text(msg)) = c.0 {
-                                let hello: model::GatewayPayload = serde_json::from_str(&msg).unwrap();
-                                match hello {
-                                    model::GatewayPayload::GatewayMsg {
-                                        op: 10,
-                                        d: model::GatewayMsg::Hello { heartbeat_interval, _trace },
-                                    } => {
-                                        
-                                        debug!("connected to discord @'{}' w/ heartbeat {}ms.", 
-                                            _trace[0],
-                                            heartbeat_interval
+                            if let Some(msg) = c.0.map(|c| recv_json(c, |value| {
+                                GatewayEvent::decode(value)
+                            })) {
+                                match msg {
+                                    Ok(GatewayEvent::Hello(beat)) => {
+                                        debug!("connected to discord w/ heartbeat {}ms.", 
+                                            beat
                                         );
-                                        interval = heartbeat_interval;
+                                        interval = beat;
                                     },
-                                    e => { bail!("invalid event: {:?}", e) }
+                                    e => { return Err(Error::Other("did not recieve hello event!")); }
                                 }
                             }
+                            
 
                             let timer = Timer::default().interval(Duration::from_millis(interval)).map(|_|{
-                                model::GatewayPayload::Heartbeat {
-                                    op: 1,
-                                    d: seq.load(Ordering::Relaxed),
-                                }
+                                json! {{ "op": 11 }}
                             }).map_err(|_| ()).select(recv).map(|e| {
                                 debug!("send: {:?}", e);
                                 OwnedMessage::Text(serde_json::to_string(&e).unwrap())
-                            }).map_err(|_| RuntimeError::Connection);
+                            }).map_err(|_| Error::Other("timer"));
 
                             let (sink, stream) = c.1.split();
                             let stream = stream.map_err(|e| Error::from(e)).for_each(|e| {
-                                if let OwnedMessage::Text(msg) = e {
-                                    let ev: model::GatewayPayload = serde_json::from_str(&msg)?;
-                                    match ev {
-                                        model::GatewayPayload::GatewayMsg { op: 11, .. } => {
-                                            debug!("gateway heartbeat response!");
-                                        }
-                                        _ => { debug!("recv: {:?}", ev); }
+                                let ev = recv_json(e, |value| {
+                                    GatewayEvent::decode(value)
+                                })?;
+
+                                match ev {
+                                    // deal with this later
+                                    GatewayEvent::HeartbeatAck => {},
+                                    GatewayEvent::Dispatch(s, e) => {
+                                        seq.store(s as isize, Ordering::Relaxed);
+                                        send_event.send(GatewayEvent::Dispatch(s, e))?;
+                                    },
+                                    e => {
+                                        send_event.send(e)?;
                                     }
-                                    
-                                } else {
-                                    debug!("recv: {:?}", e);
                                 }
                                 Ok(())
                             });
@@ -103,21 +103,41 @@ impl Connection {
             core.run(wsf)
         });
 
-        send.unbounded_send(model::GatewayPayload::default_ident(token))?;
-
-        Ok(Connection {
-            send, 
+        Ok( Connection {
+            send,
+            recv: recv_event,
             handle,
         })
+    }
+
+    /// creates a new connection to discord
+    pub fn connect(token: &str, shard_info: Option<[u8; 2]>) -> Result<Self, Error> {
+        let conn = Connection::new()?;
+        conn.send.unbounded_send( identify(token, shard_info) )?;
+
+        Ok(conn)
+    }
+
+    /// attempts to reconnect to a connection
+    pub fn reconnect() -> Result<Self, Error> {
+        unimplemented!()
     }
 
     pub fn join(self) -> Result<(), Error> {
         self.handle.join().unwrap()
     }
 
-    pub fn send(&self, msg: model::GatewayPayload) -> Result<(), Error> {
-        self.send.unbounded_send(msg).map_err(|e| e.into())
-    } 
+    pub fn send(&self, msg: serde_json::Value) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    pub fn recv(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    pub fn try_recv(&self) -> Result<GatewayEvent, mpsc::TryRecvError> {
+        self.recv.try_recv()
+    }
 }
 
 fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
@@ -141,4 +161,35 @@ fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
 		result["shard"] = json![[info[0], info[1]]];
 	}
 	result
+}
+
+fn recv_json<F, T>(message: OwnedMessage, decode: F) -> Result<T, Error> where F: FnOnce(serde_json::Value) -> Result<T, Error> {
+	use std::io::Read;
+
+    let message: Vec<u8> = match message {
+        OwnedMessage::Binary(buf) => {
+            use std::io::Read;
+			let mut payload_vec = Vec::new();
+			flate2::read::ZlibDecoder::new(&buf[..]).read_to_end(&mut payload_vec)?;
+            payload_vec
+        },
+        OwnedMessage::Text(buf) => {
+            buf.into_bytes()
+        },
+        OwnedMessage::Close(data) => {
+            let code = data.as_ref().map(|d| d.status_code);
+            let reason = data.map(|d| d.reason).unwrap_or(String::new());
+
+            return Err(Error::Closed(code, reason));
+        },
+        m => {
+            let message: Message = m.into(); 
+            return Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()));
+        }
+    };
+
+    serde_json::from_reader(&message[..]).map_err(From::from).and_then(decode).map_err(|e| {
+		warn!("Error decoding: {}", String::from_utf8_lossy(&message));
+		e
+	})
 }

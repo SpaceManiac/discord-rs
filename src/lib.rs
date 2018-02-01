@@ -27,6 +27,7 @@ extern crate reqwest;
 extern crate websocket;
 extern crate futures;
 extern crate tokio_core;
+extern crate tokio_timer;
 
 extern crate byteorder;
 extern crate time;
@@ -42,7 +43,6 @@ extern crate chrono;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
-use websocket::message::Message;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -80,21 +80,21 @@ macro_rules! status_concat {
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || { let r = $self_.client.$method(path.as_ref())?;
-											r.json($body); Ok(r) }))
+		try!($self_.request(&path, || { let r = $self_.client.$method(&path);
+											r.json($body); r }))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(path.as_ref())))
+		try!($self_.request(&path, || $self_.client.$method(&path)))
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || { let r = $self_.client.$method(path.as_ref())?;
-										   r.json($body); Ok(r) }))
+		try!($self_.request(path, || { let r = $self_.client.$method(path);
+										   r.json($body); r }))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path.as_ref())))
+		try!($self_.request(path, || $self_.client.$method(path)))
 	}};
 }
 
@@ -118,10 +118,10 @@ impl Discord {
 		map.insert("email", email);
 		map.insert("password", password);
 
-		let client = reqwest::Client::new()?;
-		let response = check_status(client.post(api_concat!("/auth/login"))?
+		let client = reqwest::Client::builder().build()?;
+		let response = check_status(client.post(api_concat!("/auth/login"))
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
-			.json(&map)?
+			.json(&map)
 			.send())?;
 
 		let mut json: BTreeMap<String, String> = response.json()?;
@@ -169,11 +169,11 @@ impl Discord {
 				map.insert("password", password);
 			}
 
-			let client = reqwest::Client::new()?;
-			let response = check_status(client.post(api_concat!("/auth/login"))?
+			let client = reqwest::Client::builder().build()?;
+			let response = check_status(client.post(api_concat!("/auth/login"))
 				.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 				.header(reqwest::header::Authorization(initial_token.clone()))
-				.json(&map)?
+				.json(&map)
 				.send())?;
 			let mut json: BTreeMap<String, String> = response.json()?;
 			let token = match json.remove("token") {
@@ -216,7 +216,7 @@ impl Discord {
 	fn from_token_raw(token: String) -> Result<Discord> {
 		Ok(Discord {
 			rate_limits: RateLimits::default(),
-			client: reqwest::Client::new()?,
+			client: reqwest::Client::builder().build()?,
 			token: token,
 		}).map_err(|e| error::Error::Reqwest(e))
 	}
@@ -244,12 +244,12 @@ impl Discord {
 	}
 
 	fn request<F>(&self, url: &str, r: F) -> Result<reqwest::Response> 
-		where F: Fn() -> reqwest::Result<reqwest::RequestBuilder>
+		where F: Fn() -> reqwest::RequestBuilder
 	{
 		self.rate_limits.pre_check(url);
 		
 		let f2 = || {
-			let mut f = r()?;
+			let mut f = r();
 			f.header(reqwest::header::Authorization(self.token.clone()));
 			Ok(f)	
 		};
@@ -476,15 +476,15 @@ impl Discord {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		let mut request = self.client.post(url)?
+		let mut request = self.client.post(url)
 			.header(reqwest::header::Authorization(self.token.clone()))
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 			.multipart(
-				reqwest::MultipartRequest::new()
-					.field(reqwest::MultipartField::param("content", text.into()))
-					.field(reqwest::MultipartField::reader("file", file)
+				reqwest::multipart::Form::new()
+					.text("content", text.to_string())
+					.part("file", reqwest::multipart::Part::reader(file)
 							.mime(reqwest::mime::APPLICATION_OCTET_STREAM)
-							.file_name(filename.into()))
+							.file_name(filename.to_string()))
 			);
 		
 		from_reader(try!(check_status(request.send())))
@@ -890,7 +890,7 @@ impl Discord {
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
 		let req = self.client.get(&self.get_user_avatar_url(user, avatar));
-		let mut response = retry(|| req);
+		let mut response = retry(|| Ok(req));
 		let mut vec = Vec::new();
 		try!(response?.read_to_end(&mut vec));
 		Ok(vec)
@@ -1191,34 +1191,6 @@ fn resolve_invite(invite: &str) -> &str {
 fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
-
-fn recv_json<F, T>(message: Message, decode: F) -> Result<T> where F: FnOnce(serde_json::Value) -> Result<T> {
-		if message.opcode == Type::Close {
-			Err(Error::Closed(message.cd_status_code, String::from_utf8_lossy(&message.payload).into_owned()))
-		} else if message.opcode == Type::Binary || message.opcode == Type::Text {
-			let mut payload_vec;
-			let payload = if message.opcode == Type::Binary {
-				use std::io::Read;
-				payload_vec = Vec::new();
-				try!(flate2::read::ZlibDecoder::new(&message.payload[..]).read_to_end(&mut payload_vec));
-				&payload_vec[..]
-			} else {
-				&message.payload[..]
-			};
-			serde_json::from_reader(payload).map_err(From::from).and_then(decode).map_err(|e| {
-				warn!("Error decoding: {}", String::from_utf8_lossy(&payload));
-				e
-			})
-		} else {
-			Err(Error::Closed(None, String::from_utf8_lossy(&message.payload).into_owned()))
-		}
-	}
-
-	fn send_json(message:  Message, value: &serde_json::Value) -> Result<()> {
-		serde_json::to_string(value)
-			.map(Message::text)
-			.map_err(Error::from)
-	}
 
 mod internal {
 	pub enum Status {

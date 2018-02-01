@@ -1095,7 +1095,7 @@ impl LiveServer {
 	/// Calculate the effective permissions for a specific user in a specific
 	/// channel on this server.
 	pub fn permissions_for(&self, channel: ChannelId, user: UserId) -> Permissions {
-		use self::permissions::Permissions::*;
+		use self::permissions::Permissions;
 		// Owner has all permissions
 		if user == self.owner_id {
 			return Permissions::all();
@@ -1121,7 +1121,7 @@ impl LiveServer {
 			}
 		}
 		// Administrators have all permissions in any channel
-		if permissions.contains(ADMINISTRATOR) {
+		if permissions.contains(Permissions::ADMINISTRATOR) {
 			return Permissions::all();
 		}
 		let mut text_channel = false;
@@ -1147,21 +1147,22 @@ impl LiveServer {
 		}
 		// Default channel is always readable
 		if channel.0 == self.id.0 {
-			permissions |= READ_MESSAGES;
+			permissions |= Permissions::READ_MESSAGES;
 		}
 		// No SEND_MESSAGES => no message-sending-related actions
-		if !permissions.contains(SEND_MESSAGES) {
-			permissions &= !(SEND_TTS_MESSAGES | MENTION_EVERYONE | EMBED_LINKS | ATTACH_FILES);
+		if !permissions.contains(Permissions::SEND_MESSAGES) {
+			permissions &= !(Permissions::SEND_TTS_MESSAGES | Permissions::MENTION_EVERYONE | 
+							Permissions::EMBED_LINKS | Permissions::ATTACH_FILES);
 		}
 		// No READ_MESSAGES => no channel actions
-		if !permissions.contains(READ_MESSAGES) {
-			permissions &= KICK_MEMBERS | BAN_MEMBERS | ADMINISTRATOR |
-				MANAGE_SERVER | CHANGE_NICKNAMES | MANAGE_NICKNAMES;
+		if !permissions.contains(Permissions::READ_MESSAGES) {
+			permissions &= Permissions::KICK_MEMBERS | Permissions::BAN_MEMBERS | Permissions::ADMINISTRATOR |
+				Permissions::MANAGE_SERVER | Permissions::CHANGE_NICKNAMES | Permissions::MANAGE_NICKNAMES;
 		}
 		// Text channel => no voice actions
 		if text_channel {
-			permissions &= !(VOICE_CONNECT | VOICE_SPEAK | VOICE_MUTE_MEMBERS |
-				VOICE_DEAFEN_MEMBERS | VOICE_MOVE_MEMBERS | VOICE_USE_VAD);
+			permissions &= !(Permissions::VOICE_CONNECT | Permissions::VOICE_SPEAK | Permissions::VOICE_MUTE_MEMBERS |
+				Permissions::VOICE_DEAFEN_MEMBERS | Permissions::VOICE_MOVE_MEMBERS | Permissions::VOICE_USE_VAD);
 		}
 		permissions
 	}

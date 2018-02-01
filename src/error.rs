@@ -5,7 +5,12 @@ use reqwest::Error as ReqwestError;
 use serde_json::Error as JsonError;
 use serde_json::Value;
 use websocket::result::WebSocketError;
+use websocket::client::builder::ParseError;
 use chrono::ParseError as ChronoError;
+
+use std::sync::mpsc::SendError;
+use futures::sync::mpsc::SendError as FutureSendError;
+
 #[cfg(feature="voice")]
 use opus::Error as OpusError;
 
@@ -23,6 +28,8 @@ pub enum Error {
 	Json(JsonError),
 	/// A `websocket` crate error
 	WebSocket(WebSocketError),
+	/// A more different `websocket` crate error
+	WebSocketParse(ParseError), 
 	/// A `std::io` module error
 	Io(IoError),
 	/// An error in the Opus library, with the function name and error code
@@ -90,6 +97,24 @@ impl From<WebSocketError> for Error {
 	}
 }
 
+impl From<ParseError> for Error {
+	fn from(err: ParseError) -> Error {
+		Error::WebSocketParse(err)
+	}
+}
+
+impl<T> From<SendError<T>> for Error {
+	fn from(err: SendError<T>) -> Error {
+		Error::Other("error sending message")
+	}
+}
+
+impl<T> From<FutureSendError<T>> for Error {
+	fn from(err: FutureSendError<T>) -> Error {
+		Error::Other("error sending message across threads")
+	}
+}
+
 #[cfg(feature="voice")]
 impl From<OpusError> for Error {
 	fn from(err: OpusError) -> Error {
@@ -120,6 +145,7 @@ impl StdError for Error {
 			Error::Chrono(ref inner) => inner.description(),
 			Error::Json(ref inner) => inner.description(),
 			Error::WebSocket(ref inner) => inner.description(),
+			Error::WebSocketParse(ref inner) => inner.description(),
 			Error::Io(ref inner) => inner.description(),
 			#[cfg(feature="voice")]
 			Error::Opus(ref inner) => inner.description(),

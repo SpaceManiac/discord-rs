@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use serde_json;
+use async;
 
 use model::*;
 use internal::Status;
@@ -11,8 +12,7 @@ use {Result, Error};
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
-	input_queue: mpsc::UnboundedSender,
-	output_queue: mpsc::UnboundedReceiver,
+	inner: async::Connection,
 	ws_url: String,
 	token: String,
 }
@@ -27,7 +27,7 @@ impl Connection {
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-
+		unimplemented!()
 	}
 
 }
