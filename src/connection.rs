@@ -1,7 +1,6 @@
 #[cfg(feature="voice")]
 use std::collections::HashMap;
 
-use serde_json;
 use async;
 
 use model::*;
@@ -13,8 +12,12 @@ use {Result, Error};
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	inner: async::Connection,
-	ws_url: String,
+	base_url: String,
 	token: String,
+
+	session_id: Option<String>,
+	last_sequence: u64,
+	shard_info: Option<[u8; 2]>,
 }
 
 impl Connection {
@@ -27,29 +30,73 @@ impl Connection {
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		unimplemented!()
+		let inner = async::Connection::connect(base_url, token, shard_info)?;
+
+		let mut conn = Connection {
+			inner,
+			base_url: base_url.to_string(),
+			token: token.to_string(),
+
+			session_id: None,
+			last_sequence: 0,
+			shard_info,
+		};
+
+		let ready = loop {
+			if let Ok(Event::Ready(r)) = conn.recv_event() {
+				conn.session_id = Some(r.session_id.clone());
+
+				break r;
+			}
+
+			println!("loop?");
+		};
+
+
+		Ok((conn, ready))
 	}
 
-}
-/*
-pub struct Connection {
-	
-	keepalive_channel: mpsc::Sender<Status>,
-	receiver: Receiver<WebSocketStream>,
-	#[cfg(feature="voice")]
-	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
-	#[cfg(feature="voice")]
-	user_id: UserId,
+	fn internal_events(&mut self, e: GatewayEvent) -> Option<Event> {
+		match e {
+			GatewayEvent::Dispatch(seq, e) => {
+				self.last_sequence = seq;
+				Some(e)
+			},
+			GatewayEvent::Heartbeat(_) => {
+				let _ = self.inner.send( json! {{ "op": 11}} );
+				None
+			},
+			GatewayEvent::Reconnect | GatewayEvent::InvalidateSession => {
+				panic!("nyi!");
+			}, 
+			_ => None,
+		}
+	}
 
-	session_id: Option<String>,
-	last_sequence: u64,
-	shard_info: Option<[u8; 2]>,
-	
-} 
+	/// Receive an event over the websocket, blocking until one is available.
+	pub fn recv_event(&mut self) -> Result<Event> {
+		while let Ok(ge) = self.inner.recv() {
+			match self.internal_events(ge) {
+				Some(e) => return Ok(e),
+				None => {},
+			}
+		}
 
+		Err(Error::Other("channel closed"))
+	}
 
+	/// Receive an event over the websocket, nonblocking.
+	pub fn try_recv_event(&mut self) -> Result<Option<Event>> {
+		use std::sync::mpsc::TryRecvError;
 
-	/// Change the game information that this client reports as playing.
+		match self.inner.try_recv() {
+			Ok(e) => Ok(self.internal_events(e)),
+			Err(TryRecvError::Empty) => Ok(None),
+			_ => Err(Error::Other("channel closed"))
+		}
+	}
+
+		/// Change the game information that this client reports as playing.
 	pub fn set_game(&self, game: Option<Game>) {
 		self.set_presence(game, OnlineStatus::Online, false)
 	}
@@ -83,8 +130,27 @@ pub struct Connection {
 				"game": game,
 			}
 		}};
-		let _ = self.keepalive_channel.send(Status::SendMessage(msg));
+		let _ = self.inner.send(msg);
 	}
+	
+	
+
+}
+/*
+pub struct Connection {
+	
+	keepalive_channel: mpsc::Sender<Status>,
+	receiver: Receiver<WebSocketStream>,
+	#[cfg(feature="voice")]
+	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
+	#[cfg(feature="voice")]
+	user_id: UserId,
+	
+} 
+
+
+
+
 
 	/// Get a handle to the voice connection for a server.
 	///

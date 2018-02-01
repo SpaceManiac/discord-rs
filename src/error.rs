@@ -53,7 +53,7 @@ pub enum Error {
 
 impl Error {
 	#[doc(hidden)]
-	pub fn from_response(response: ::reqwest::Response) -> Error {
+	pub fn from_response(mut response: ::reqwest::Response) -> Error {
 		let status = response.status();
 		let value = response.json().ok();
 		if status == ::reqwest::StatusCode::TooManyRequests {
@@ -104,13 +104,13 @@ impl From<ParseError> for Error {
 }
 
 impl<T> From<SendError<T>> for Error {
-	fn from(err: SendError<T>) -> Error {
+	fn from(_err: SendError<T>) -> Error {
 		Error::Other("error sending message")
 	}
 }
 
 impl<T> From<FutureSendError<T>> for Error {
-	fn from(err: FutureSendError<T>) -> Error {
+	fn from(_err: FutureSendError<T>) -> Error {
 		Error::Other("error sending message across threads")
 	}
 }

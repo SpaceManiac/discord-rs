@@ -29,9 +29,10 @@ pub struct Connection {
 }
 
 impl Connection {
-    fn new() -> Result<Self, Error> {
+    fn new(base_url: &str) -> Result<Self, Error> {
         let (send, recv) = unbounded();
         let (send_event, recv_event) = mpsc::channel();
+        let base_url = base_url.to_string();
 
         let handle = thread::spawn(move || {
             let mut core = reactor::Core::new()?;
@@ -39,7 +40,7 @@ impl Connection {
             let ws_handle = core.handle();
 
             let seq = AtomicIsize::new(-1);
-            let wsf = api_client.get("https://discordapp.com/api/gateway")
+            let wsf = api_client.get(&base_url)
                         .send()
                         .map_err(|e| Error::from(e))
                         .and_then(|mut resp| {
@@ -65,13 +66,13 @@ impl Connection {
                                         );
                                         interval = beat;
                                     },
-                                    e => { return Err(Error::Other("did not recieve hello event!")); }
+                                    _ => { return Err(Error::Other("did not recieve hello event!")); }
                                 }
                             }
                             
 
                             let timer = Timer::default().interval(Duration::from_millis(interval)).map(|_|{
-                                json! {{ "op": 11 }}
+                                json! {{ "op": 1, "d": seq.load(Ordering::Relaxed) }}
                             }).map_err(|_| ()).select(recv).map(|e| {
                                 debug!("send: {:?}", e);
                                 OwnedMessage::Text(serde_json::to_string(&e).unwrap())
@@ -82,6 +83,8 @@ impl Connection {
                                 let ev = recv_json(e, |value| {
                                     GatewayEvent::decode(value)
                                 })?;
+
+                                debug!("recieved an event! {:?}", ev);
 
                                 match ev {
                                     // deal with this later
@@ -111,16 +114,25 @@ impl Connection {
     }
 
     /// creates a new connection to discord
-    pub fn connect(token: &str, shard_info: Option<[u8; 2]>) -> Result<Self, Error> {
-        let conn = Connection::new()?;
+    pub fn connect(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<Self, Error> {
+        let conn = Connection::new(base_url)?;
         conn.send.unbounded_send( identify(token, shard_info) )?;
 
         Ok(conn)
     }
 
     /// attempts to reconnect to a connection
-    pub fn reconnect() -> Result<Self, Error> {
-        unimplemented!()
+    pub fn reconnect(base_url: &str, token: &str, sess: &str, seq: u64) -> Result<Self, Error> {
+        let conn = Connection::new(base_url)?;
+
+        let reconnect = json! {{
+            "token": token,
+            "session_id": sess,
+            "seq": seq,
+        }};
+
+        conn.send.unbounded_send( reconnect )?;
+        Ok(conn)
     }
 
     pub fn join(self) -> Result<(), Error> {
@@ -128,11 +140,11 @@ impl Connection {
     }
 
     pub fn send(&self, msg: serde_json::Value) -> Result<(), Error> {
-        unimplemented!()
+        self.send.unbounded_send(msg).map_err(|e| e.into())
     }
 
-    pub fn recv(&self) -> Result<(), Error> {
-        Ok(())
+    pub fn recv(&self) -> Result<GatewayEvent, mpsc::RecvError> {
+        self.recv.recv()
     }
 
     pub fn try_recv(&self) -> Result<GatewayEvent, mpsc::TryRecvError> {

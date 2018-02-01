@@ -80,7 +80,7 @@ macro_rules! status_concat {
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || { let r = $self_.client.$method(&path);
+		try!($self_.request(&path, || { let mut r = $self_.client.$method(&path);
 											r.json($body); r }))
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
@@ -89,7 +89,7 @@ macro_rules! request {
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || { let r = $self_.client.$method(path);
+		try!($self_.request(path, || { let mut r = $self_.client.$method(path);
 										   r.json($body); r }))
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
@@ -119,7 +119,7 @@ impl Discord {
 		map.insert("password", password);
 
 		let client = reqwest::Client::builder().build()?;
-		let response = check_status(client.post(api_concat!("/auth/login"))
+		let mut response = check_status(client.post(api_concat!("/auth/login"))
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 			.json(&map)
 			.send())?;
@@ -170,7 +170,7 @@ impl Discord {
 			}
 
 			let client = reqwest::Client::builder().build()?;
-			let response = check_status(client.post(api_concat!("/auth/login"))
+			let mut response = check_status(client.post(api_concat!("/auth/login"))
 				.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 				.header(reqwest::header::Authorization(initial_token.clone()))
 				.json(&map)
@@ -277,19 +277,19 @@ impl Discord {
 			"type": kind.name(),
 		}};
 		
-		let response = request!(self, post(&body), "/guilds/{}/channels", server);
+		let mut response = request!(self, post(&body), "/guilds/{}/channels", server);
 		Channel::decode(response.json()?)
 	}
 
 	/// Get the list of channels in a server.
 	pub fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
-		let response = request!(self, get, "/guilds/{}/channels", server);
+		let mut response = request!(self, get, "/guilds/{}/channels", server);
 		decode_array(response.json()?, PublicChannel::decode)
 	}
 
 	/// Get information about a channel.
 	pub fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
-		let response = request!(self, get, "/channels/{}", channel);
+		let mut response = request!(self, get, "/channels/{}", channel);
 		Channel::decode(response.json()?)
 	}
 
@@ -322,13 +322,13 @@ impl Discord {
 			Channel::Group(group) => { map.insert("name".into(), json!(group.name)); },
 		};
 		let map = EditChannel::__apply(f, map);
-		let response = request!(self, patch(&map), "/channels/{}", channel);
+		let mut response = request!(self, patch(&map), "/channels/{}", channel);
 		PublicChannel::decode(response.json()?)
 	}
 
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
-		let response = request!(self, delete, "/channels/{}", channel);
+		let mut response = request!(self, delete, "/channels/{}", channel);
 		Channel::decode(response.json()?)
 	}
 
@@ -471,13 +471,13 @@ impl Discord {
 	/// Send a file attached to a message on a given channel.
 	///
 	/// The `text` is allowed to be empty, but the filename must always be specified.
-	pub fn send_file<R: ::std::io::Read + Send + 'static>(&self, channel: ChannelId, text: &str, mut file: R, filename: &str) -> Result<Message> {
+	pub fn send_file<R: ::std::io::Read + Send + 'static>(&self, channel: ChannelId, text: &str, file: R, filename: &str) -> Result<Message> {
 		let url = match reqwest::Url::parse(&format!(api_concat!("/channels/{}/messages"), channel)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid URL in send_file"))
 		};
-		let mut request = self.client.post(url)
-			.header(reqwest::header::Authorization(self.token.clone()))
+		let mut request = self.client.post(url);
+		request.header(reqwest::header::Authorization(self.token.clone()))
 			.header(reqwest::header::UserAgent::new(USER_AGENT.to_owned()))
 			.multipart(
 				reqwest::multipart::Form::new()
@@ -889,10 +889,10 @@ impl Discord {
 	/// Download a user's avatar.
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
-		let req = self.client.get(&self.get_user_avatar_url(user, avatar));
-		let mut response = retry(|| Ok(req));
+		//let req = self.client.get(&self.get_user_avatar_url(user, avatar));
+		let response = retry(|| Ok(self.client.get(&self.get_user_avatar_url(user, avatar))));
 		let mut vec = Vec::new();
-		try!(response?.read_to_end(&mut vec));
+		response?.read_to_end(&mut vec)?;
 		Ok(vec)
 	}
 
@@ -1051,12 +1051,7 @@ impl Discord {
 	}
 
 	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		let response = request!(self, get, "/gateway");
-		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
-		let url = match value.get("url") {
-			Some(url) => url,
-			None => return Err(Error::Protocol("Response missing \"url\" in Discord::connect()"))
-		};
+		let url = api_concat!("/gateway");
 		Connection::new(url, &self.token, shard_info)
 	}
 }
@@ -1082,7 +1077,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
-	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
 	let mut json: Object = response.json()?;
 
 	match json.remove("incidents") {
@@ -1093,7 +1088,7 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
-	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
 	let mut json: Object = response.json()?;
 
 	match json.remove("scheduled_maintenances") {
@@ -1104,7 +1099,7 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
-	let response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
+	let mut response = check_status(reqwest::get(status_concat!("/scheduled-maintenances/upcoming.json")))?;
 	let mut json: Object = response.json()?;
 
 	match json.remove("scheduled_maintenances") {
@@ -1139,12 +1134,14 @@ pub enum GetMessages {
 		// retry on a ConnectionAborted, which occurs if it's been a while since the last request
 		match f2() {
 			Err(e) => {
-				match e.get_ref().and_then(|e| e.downcast_ref::<std::io::Error>()) {
+				let res = match e.get_ref().and_then(|e| e.downcast_ref::<std::io::Error>()) {
 					Some( io ) if io.kind() == std::io::ErrorKind::ConnectionAborted => {
-						f2()
-					}
-					_ => Err(e)
-				}
+						Some(f2())
+					},
+					_ => None
+				};
+
+				res.unwrap_or(Err(e))
 			}
 			
 			other => other
