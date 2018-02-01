@@ -1,6 +1,6 @@
 [package]
 name = "discord"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
 
 description = "Client library for the Discord API"
