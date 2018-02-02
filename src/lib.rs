@@ -50,7 +50,7 @@ mod ratelimit;
 mod error;
 mod connection;
 mod state;
-mod async;
+pub mod async;
 #[cfg(feature="voice")]
 pub mod voice;
 

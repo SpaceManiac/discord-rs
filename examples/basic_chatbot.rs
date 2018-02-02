@@ -1,10 +1,13 @@
 extern crate discord;
+extern crate env_logger;
 
 use discord::Discord;
 use discord::model::Event;
 use std::env;
 
 fn main() {
+	env_logger::init();
+
 	// Log in to Discord using a bot token from the environment
 	let discord = Discord::from_bot_token(
 		&env::var("DISCORD_TOKEN").expect("Expected token"),
@@ -17,9 +20,9 @@ fn main() {
 		match connection.recv_event() {
 			Ok(Event::MessageCreate(message)) => {
 				println!("{} says: {}", message.author.name, message.content);
-				if message.content == "!test" {
+				if message.content == ">test" {
 					let _ = discord.send_message(message.channel_id, "This is a reply to the test.", "", false);
-				} else if message.content == "!quit" {
+				} else if message.content == ">quit" {
 					println!("Quitting.");
 					break
 				}
