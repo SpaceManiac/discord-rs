@@ -10,6 +10,7 @@ use reqwest::unstable::async::ClientBuilder;
 use tokio_core::reactor;
 use tokio_timer::{ Timer, Interval };
 
+use websocket::async::futures::task;
 use websocket::async::futures::sink::With;
 use websocket::async::futures::{ 
     IntoFuture, 
@@ -21,7 +22,7 @@ use websocket::async::futures::{
     AsyncSink
 };
 
-use futures::sync::mpsc::{UnboundedSender, unbounded};
+use futures::sync::mpsc::{UnboundedSender, unbounded, UnboundedReceiver};
 use std::sync::mpsc;
 
 use flate2;
@@ -32,14 +33,14 @@ use std::thread;
 use error::Error;
 use model::GatewayEvent;
 
-const GATEWAY_VERSION: u64 = 6;
-
+/// a future that will create a discord gateway connection.
 pub type GatewayNew = Box<Future<Item = Gateway, Error = Error>>;
 type ClientWith<S> = With<Client<S>, serde_json::Value, fn(serde_json::Value) -> Result<OwnedMessage, Error>, Result<OwnedMessage, Error>>;
 
 /// represents an asyncronous connection to a discord gateway
 /// 
 /// does not handle reconnects automatically, but it should disconnect gracefully.
+/// 
 pub struct Gateway {
     ws: ClientWith<::websocket::client::async::TlsStream<::tokio_core::net::TcpStream>>,
     timer: Interval,
@@ -149,6 +150,8 @@ impl Stream for Gateway {
 
                     debug!("sending heartbeat!");
                     self.heartbeat_buffer = Some( json! {{ "op": 1, "d": self.last_seq }} );
+                    let t = task::current();
+                    t.notify();
 
                     self.recieved_ack = false;
                 } else {
@@ -157,7 +160,7 @@ impl Stream for Gateway {
                     return Err(Error::Protocol("couldn't send heartbeats"));
                 }
             },
-            _ => { debug!("no heartbeat") },
+            _ => {},
         }
 
         // then poll the websocket
@@ -237,109 +240,129 @@ impl Sink for Gateway {
     }
 }
 
-// this should go away soon
+// type to restart the gateway after a reconnect / restart
+type GatewayNewSender = UnboundedSender<(String, mpsc::Sender<Result<GatewayEvent, Error>>, 
+                                         UnboundedReceiver< serde_json::Value>)>;
+
 #[doc(hidden)]
-pub struct Connection {
-    send: UnboundedSender< serde_json::Value>,
-    recv: mpsc::Receiver< GatewayEvent>,
-    handle: thread::JoinHandle<Result<(), Error>>,
+pub struct ConnectionHandle {
+    gateway: Option<GatewayNewSender>,
+    send: Option<UnboundedSender< serde_json::Value>>,
+    recv: Option<mpsc::Receiver<Result<GatewayEvent, Error>>>,
+    handle: Option<thread::JoinHandle<()>>,
 }
 
-impl Connection {
-    fn new(base_url: &str) -> Result<Self, Error> {
-        let (send, recv) = unbounded();
-        let (send_event, recv_event) = mpsc::channel();
-        let base_url = base_url.to_string();
+impl ConnectionHandle {
+    /// create a new thread for running gateway clients
+    pub fn new() -> Result<Self, Error> {
+        let (gateway, gateway_recv): (GatewayNewSender, _) = unbounded();
+        
+        let handle = thread::Builder::new().name("discord-gateway".into()).spawn(move || {
+            let mut core = reactor::Core::new().expect("cannot create event loop");
+            let handle = core.handle();
 
-        let handle = thread::spawn(move || {
-            let mut core = reactor::Core::new()?;
-            let ws_handle = core.handle();
+            // for each gateway connection
+            let work = gateway_recv.for_each(|(gateway_str, tx, rx)| {
+                
+                let wsf = Gateway::new(&gateway_str, &handle)
+                                 .into_future()
+                                 .flatten()
+                                 .map(|gateway| {
+                                     let (sink, stream) = gateway.split();
 
-            let wsf = Gateway::new(&base_url, &ws_handle)?.and_then(|c| {
+                                     // send all the values in the stream
+                                     let stream = stream.for_each(move |e| {
+                                        tx.send(Ok(e))?;
+                                        Ok(())
+                                     });
 
-                let (sink, stream) = c.split();
-                let stream = stream.map_err(|e| Error::from(e)).for_each(|e| {
-                    send_event.send(e)?;
-                    Ok(())
-                });
+                                     let sink = sink.send_all(rx.map_err(|_| Error::Other("channel err")));
 
-                Ok(sink.send_all(recv.map_err(|_| Error::Other("channel err"))).join(stream).map(|_| ()))
-            }).flatten();
+                                     sink.join(stream)
+                                 }).flatten().map_err(|_| ()).map(|_| ());
+                
+                handle.spawn(wsf);
 
-            core.run(wsf)
-        });
+                Ok(())
+            });
 
-        Ok( Connection {
-            send,
-            recv: recv_event,
-            handle,
+            // this thread should never exit unless we drop the gateway channel (shutdown)
+            // or something went terribly wrong (panic)
+            let _ = core.run(work);
+        })?;
+
+        Ok(ConnectionHandle {
+            gateway: Some(gateway), 
+            send: None,
+            recv: None,
+            handle: Some(handle),
         })
     }
 
-    /// creates a new connection to discord
-    pub fn connect(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<Self, Error> {
-        let conn = Connection::new(base_url)?;
-        conn.send.unbounded_send( identify(token, shard_info) )?;
+    /// spawn a new connection to discord
+    pub fn connect(&mut self, get_gateway_str: &str) -> Result<(), Error> {
+        if self.send.is_some() {
+            self.disconnect();
+        }
 
-        Ok(conn)
+        let (send, gateway_recv) = unbounded();
+        let (gateway_send, recv) = mpsc::channel();
+
+        self.send = Some(send);
+        self.recv = Some(recv);
+
+        self.gateway.as_ref().map(|g| {
+            g.unbounded_send((get_gateway_str.to_string(), gateway_send, gateway_recv)).map_err(|_| {
+                Error::Other("can't send new client")
+            })
+        }).unwrap_or(Err(Error::Other("no gateway thread")))
     }
 
-    /// attempts to reconnect to a connection
-    pub fn reconnect(base_url: &str, token: &str, sess: &str, seq: u64) -> Result<Self, Error> {
-        let conn = Connection::new(base_url)?;
-
-        let reconnect = json! {{
-            "token": token,
-            "session_id": sess,
-            "seq": seq,
-        }};
-
-        conn.send.unbounded_send( reconnect )?;
-        Ok(conn)
+    /// close the currently running connection
+    pub fn disconnect(&mut self) {
+        debug!("closing gateway");
+        self.send.take();
+        self.recv.take();
     }
 
-    pub fn join(self) -> Result<(), Error> {
-        self.handle.join().unwrap()
+    /// send
+    pub fn send(&self, value: serde_json::Value) -> Result<(), Error> {
+        self.send.as_ref().and_then(|s| {
+            s.unbounded_send(value).ok()
+        }).ok_or(Error::Other("no gateway"))
     }
 
-    pub fn send(&self, msg: serde_json::Value) -> Result<(), Error> {
-        self.send.unbounded_send(msg).map_err(|e| e.into())
+    /// recv (blocking)
+    pub fn recv(&self) -> Result<GatewayEvent, Error> {
+        self.recv.as_ref().and_then(|r| {
+            r.recv().ok()
+        }).unwrap_or(Err(Error::Other("no gateway")))
     }
 
-    pub fn recv(&self) -> Result<GatewayEvent, mpsc::RecvError> {
-        self.recv.recv()
-    }
-
-    pub fn try_recv(&self) -> Result<GatewayEvent, mpsc::TryRecvError> {
-        self.recv.try_recv()
+    /// recv (non-blocking)
+    pub fn try_recv(&self) -> Result<Option<GatewayEvent>, Error> {
+        use std::sync::mpsc::TryRecvError;
+        
+        self.recv.as_ref().map(|r| {
+            match r.try_recv() {
+                Ok(Ok(ev)) => Ok(Some(ev)),
+                Ok(Err(e)) => Err(e),
+                Err(TryRecvError::Empty) => Ok(None),
+                _ => Err(Error::Other("disconnected")),
+            }
+        }).unwrap_or(Err(Error::Other("no gateway")))
     }
 }
 
-fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
-	let mut result = json! {{
-		"op": 2,
-		"d": {
-			"token": token,
-			"properties": {
-				"$os": ::std::env::consts::OS,
-				"$browser": "Discord library for Rust",
-				"$device": "discord-rs",
-				"$referring_domain": "",
-				"$referrer": "",
-			},
-			"large_threshold": 250,
-			"compress": true,
-			"v": GATEWAY_VERSION,
-		}
-	}};
-	if let Some(info) = shard_info {
-		result["shard"] = json![[info[0], info[1]]];
-	}
-	result
+impl Drop for ConnectionHandle {
+    fn drop(&mut self) {
+        self.disconnect();
+        self.gateway.take();
+        self.handle.take().map(|h| h.join());
+    }
 }
 
 fn recv_json<F, T>(message: OwnedMessage, decode: F) -> Result<T, Error> where F: FnOnce(serde_json::Value) -> Result<T, Error> {
-	use std::io::Read;
 
     let message: Vec<u8> = match message {
         OwnedMessage::Binary(buf) => {

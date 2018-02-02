@@ -50,7 +50,7 @@ mod ratelimit;
 mod error;
 mod connection;
 mod state;
-pub mod async;
+mod async;
 #[cfg(feature="voice")]
 pub mod voice;
 
@@ -1189,11 +1189,11 @@ fn sleep_ms(millis: u64) {
 	std::thread::sleep(std::time::Duration::from_millis(millis))
 }
 
-mod internal {
-	pub enum Status {
-		SendMessage(::serde_json::Value),
-		Sequence(u64),
-		ChangeInterval(u64),
-		//ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
-	}
-}
+// mod internal {
+// 	pub enum Status {
+// 		SendMessage(::serde_json::Value),
+// 		Sequence(u64),
+// 		ChangeInterval(u64),
+// 		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+// 	}
+// }

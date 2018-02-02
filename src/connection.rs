@@ -4,14 +4,15 @@ use std::collections::HashMap;
 use async;
 
 use model::*;
-use internal::Status;
 #[cfg(feature="voice")]
 use voice::VoiceConnection;
 use {Result, Error};
 
+const GATEWAY_VERSION: u64 = 6;
+
 /// Websocket connection to the Discord servers.
 pub struct Connection {
-	inner: async::Connection,
+	inner: async::ConnectionHandle,
 	base_url: String,
 	token: String,
 
@@ -30,7 +31,9 @@ impl Connection {
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
 	pub fn new(base_url: &str, token: &str, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
-		let inner = async::Connection::connect(base_url, token, shard_info)?;
+		let mut inner = async::ConnectionHandle::new()?;
+		inner.connect(base_url)?;
+		inner.send( identify(token, shard_info) )?;
 
 		let mut conn = Connection {
 			inner,
@@ -87,12 +90,11 @@ impl Connection {
 
 	/// Receive an event over the websocket, nonblocking.
 	pub fn try_recv_event(&mut self) -> Result<Option<Event>> {
-		use std::sync::mpsc::TryRecvError;
 
 		match self.inner.try_recv() {
-			Ok(e) => Ok(self.internal_events(e)),
-			Err(TryRecvError::Empty) => Ok(None),
-			_ => Err(Error::Other("channel closed"))
+			Ok(Some(e)) => Ok(self.internal_events(e)),
+			Ok(None) => Ok(None),
+			Err(e) => Err(e),
 		}
 	}
 
@@ -133,9 +135,31 @@ impl Connection {
 		let _ = self.inner.send(msg);
 	}
 	
-	
-
 }
+
+fn identify(token: &str, shard_info: Option<[u8; 2]>) -> ::serde_json::Value {
+	let mut result = json! {{
+		"op": 2,
+		"d": {
+			"token": token,
+			"properties": {
+				"$os": ::std::env::consts::OS,
+				"$browser": "Discord library for Rust",
+				"$device": "discord-rs",
+				"$referring_domain": "",
+				"$referrer": "",
+			},
+			"large_threshold": 250,
+			"compress": true,
+			"v": GATEWAY_VERSION,
+		}
+	}};
+	if let Some(info) = shard_info {
+		result["shard"] = json![[info[0], info[1]]];
+	}
+	result
+}
+
 /*
 pub struct Connection {
 	
