@@ -263,6 +263,7 @@ impl ConnectionHandle {
 
             // for each gateway connection
             let work = gateway_recv.for_each(|(gateway_str, tx, rx)| {
+                let err_tx = tx.clone();
                 
                 let wsf = Gateway::new(&gateway_str, &handle)
                                  .into_future()
@@ -279,7 +280,10 @@ impl ConnectionHandle {
                                      let sink = sink.send_all(rx.map_err(|_| Error::Other("channel err")));
 
                                      sink.join(stream)
-                                 }).flatten().map_err(|_| ()).map(|_| ());
+                                 }).flatten().map_err(move |e| {
+                                     // if the stream errors, send them too
+                                     let _ = err_tx.send(Err(e));
+                                 }).map(|_| ());
                 
                 handle.spawn(wsf);
 

@@ -52,7 +52,6 @@ impl Connection {
 				break r;
 			}
 
-			println!("loop?");
 		};
 
 
@@ -70,7 +69,8 @@ impl Connection {
 				None
 			},
 			GatewayEvent::Reconnect | GatewayEvent::InvalidateSession => {
-				panic!("nyi!");
+				self.inner.disconnect();
+				None
 			}, 
 			_ => None,
 		}
