@@ -48,6 +48,7 @@ pub struct Gateway {
     heartbeat_buffer: Option< serde_json::Value>,
     should_close: bool,
     recieved_ack: bool,
+    is_voice: bool,
 }
 
 impl Gateway {
@@ -63,38 +64,49 @@ impl Gateway {
                             resp.json::< serde_json::Value>().from_err()
                         }).and_then(move |url| {
                             let url = url["url"].as_str().unwrap();
-                            WSClientBuilder::new(&url).map(|client| {
-                                client.async_connect_secure(None, &ws_handle)
-                            }).map_err(|e| Error::from(e)).into_future()
-                        }).and_then(|x| x.map_err(|e| Error::from(e)))
-                        .and_then(|(c, _)| {
-                            c.into_future().map_err(|e| Error::from(e.0))
-                        }).and_then(|c| {
-                            let mut interval = 0;
-
-                            if let Some(msg) = c.0.map(|c| recv_json(c, |value| {
-                                GatewayEvent::decode(value)
-                            })) {
-                                match msg {
-                                    Ok(GatewayEvent::Hello(beat)) => {
-                                        debug!("connected to discord w/ heartbeat {}ms.", 
-                                            beat
-                                        );
-                                        interval = beat;
-                                    },
-                                    _ => { return Err(Error::Other("did not recieve hello event!")); }
-                                }
-                            }
-
-
-                            Ok(Gateway::from_client(c.1, interval))
+                            Gateway::from_gateway(url, false, &ws_handle)
                         });
 
         Ok(Box::new(wsf))
     }
 
+    /// creates a websocket connection from a known gateway endpoint
+    pub fn from_gateway(gateway_url: &str, is_voice: bool, handle: &reactor::Handle) -> GatewayNew {
+        let url = if is_voice {
+            format!("wss://{}/?v=3", gateway_url)
+        } else {
+            gateway_url.to_string()
+        };
+        
+        let wsf = WSClientBuilder::new(&url).map(|client| {
+            client.async_connect_secure(None, handle)
+        }).into_future().flatten().map_err(|e| Error::from(e))
+        .and_then(|(c, _)| {
+            c.into_future().map_err(|e| Error::from(e.0))
+        }).and_then(move |c| {
+            let mut interval = 0;
+            if let Some(msg) = c.0.map(|c| recv_json(c, |value| {
+                GatewayEvent::decode(value)
+            })) {
+                match msg {
+                    Ok(GatewayEvent::Hello(beat)) => {
+                        debug!("connected to discord w/ heartbeat {}ms.", 
+                            beat
+                        );
+                        interval = beat;
+                    },
+                    _ => { return Err(Error::Other("did not recieve hello event!")); }
+                }
+            }
+
+            Ok(Gateway::from_client(c.1, interval, is_voice))    
+        });
+
+        Box::new(wsf)
+    }
+
     /// creates a gateway from an existing secure websocket connection and a given heartbeat interval
-    pub fn from_client(conn: Client<::websocket::client::async::TlsStream<::tokio_core::net::TcpStream>>, interval: u64) -> Self {
+    fn from_client(conn: Client<::websocket::client::async::TlsStream<::tokio_core::net::TcpStream>>, interval: u64, is_voice: bool) -> Self {
         fn to_websocket(v: serde_json::Value) -> Result<OwnedMessage, Error> {
             debug!("send: {:?}", v);
             let msg = serde_json::to_string(&v)?;
@@ -110,6 +122,7 @@ impl Gateway {
             heartbeat_buffer: None,
             should_close: false,
             recieved_ack: true,
+            is_voice,
         }
     }
 
