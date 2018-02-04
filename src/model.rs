@@ -1000,6 +1000,7 @@ pub struct Emoji {
 	pub name: String,
 	pub managed: bool,
 	pub require_colons: bool,
+	pub animated: bool,
 	pub roles: Vec<RoleId>,
 }
 serial_decode!(Emoji);

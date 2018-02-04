@@ -894,6 +894,15 @@ impl Discord {
 		check_empty(request!(self, patch(body), "/guilds/{}/members/{}", server, user))
 	}
 
+	/// Nickname current user.
+	///
+	/// Similar to `edit_member`
+	pub fn edit_nickname(&self, server: ServerId, nick: &str) -> Result<()> {
+		let map = json! {{ "nick": nick }};
+		let body = try!(serde_json::to_string(&map));
+		check_empty(request!(self, patch(body), "/guilds/{}/members/@me/nick", server))
+	}
+
 	/// Kick a member from a server.
 	pub fn kick_member(&self, server: ServerId, user: UserId) -> Result<()> {
 		check_empty(request!(self, delete, "/guilds/{}/members/{}", server, user))
@@ -1081,9 +1090,7 @@ impl Discord {
 	/// This endpoint is only available for users, and so does not work for
 	/// bots.
 	pub fn edit_note(&self, user: UserId, note: &str) -> Result<()> {
-		let map = json! {{
-			"note": note
-		}};
+		let map = json! {{ "note": note }};
 		let body = try!(serde_json::to_string(&map));
 		check_empty(request!(self, put(body), "/users/@me/notes/{}", user))
 	}
