@@ -63,7 +63,7 @@ pub fn main() {
 				}
 
 				// reply to a command if there was one
-				let mut split = message.content.split(" ");
+				let mut split = message.content.split(' ');
 				let first_word = split.next().unwrap_or("");
 				let argument = split.next().unwrap_or("");
 
@@ -73,14 +73,12 @@ pub fn main() {
 						if let Some((server_id, _)) = voice_channel {
 							connection.drop_voice(server_id);
 						}
+					} else if let Some((server_id, channel_id)) = voice_channel {
+						let voice = connection.voice(server_id);
+						voice.connect(channel_id);
+						voice.set_receiver(Box::new(VoiceTest));
 					} else {
-						if let Some((server_id, channel_id)) = voice_channel {
-							let voice = connection.voice(server_id);
-							voice.connect(channel_id);
-							voice.set_receiver(Box::new(VoiceTest));
-						} else {
-							warn(discord.send_message(message.channel_id, "You must be in a voice channel.", "", false));
-						}
+						warn(discord.send_message(message.channel_id, "You must be in a voice channel.", "", false));
 					}
 				}
 			}

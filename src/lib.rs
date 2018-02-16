@@ -30,7 +30,6 @@ extern crate tokio_core;
 extern crate tokio_timer;
 
 extern crate byteorder;
-extern crate time;
 extern crate base64;
 extern crate flate2;
 extern crate serde;
@@ -43,6 +42,7 @@ extern crate chrono;
 #[cfg(feature="voice")] extern crate sodiumoxide;
 
 use std::collections::BTreeMap;
+use std::time;
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
@@ -689,6 +689,12 @@ impl Discord {
 		from_reader(response)
 	}
 
+	/// Gets a specific server.
+	pub fn get_server(&self, server_id: ServerId) -> Result<Server> {
+		let response = request!(self, get, "/guilds/{}", server_id);
+		from_reader(response)
+	}
+
 	/// Create a new server with the given name.
 	pub fn create_server(&self, name: &str, region: &str, icon: Option<&str>) -> Result<Server> {
 		let map = json! {{
@@ -860,6 +866,14 @@ impl Discord {
 		let map = EditMember::__build(f);
 		
 		check_empty(request!(self, patch(&map), "/guilds/{}/members/{}", server, user))
+	}
+
+	/// Nickname current user.
+	///
+	/// Similar to `edit_member`
+	pub fn edit_nickname(&self, server: ServerId, nick: &str) -> Result<()> {
+		let map = json! {{ "nick": nick }};
+		check_empty(request!(self, patch(&map), "/guilds/{}/members/@me/nick", server))
 	}
 
 	/// Kick a member from a server.
@@ -1186,7 +1200,7 @@ fn resolve_invite(invite: &str) -> &str {
 }
 
 fn sleep_ms(millis: u64) {
-	std::thread::sleep(std::time::Duration::from_millis(millis))
+	std::thread::sleep(time::Duration::from_millis(millis))
 }
 
 // mod internal {

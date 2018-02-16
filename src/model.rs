@@ -10,10 +10,7 @@ use serde_json::Value;
 
 use super::{Error, Result, Object};
 
-use chrono::DateTime;
-use chrono::FixedOffset;
-use chrono::offset::Utc;
-use chrono::offset::TimeZone;
+use chrono::prelude::*;
 
 pub use self::permissions::Permissions;
 
@@ -98,8 +95,8 @@ macro_rules! id {
 				///
 				/// Discord generates identifiers using a scheme based on [Twitter Snowflake]
 				/// (https://github.com/twitter/snowflake/tree/b3f6a3c6ca8e1b6847baa6ff42bf72201e2c2231#snowflake).
-				pub fn creation_date(&self) -> ::time::Timespec {
-					::time::Timespec::new((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
+				pub fn creation_date(&self) -> DateTime<Utc> {
+					Utc.timestamp((1420070400 + (self.0 >> 22) / 1000) as i64, 0)
 				}
 			}
 
@@ -215,6 +212,8 @@ pub enum ChannelType {
 	Text,
 	/// A voice channel
 	Voice,
+	/// A channel category in a server
+	Category,
 }
 
 serial_use_mapping!(ChannelType, numeric);
@@ -223,6 +222,7 @@ serial_names! { ChannelType;
 	Private, "private";
 	Text, "text";
 	Voice, "voice";
+	Category, "category";
 }
 string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
@@ -230,6 +230,7 @@ serial_numbers! { ChannelType;
 	Private, 1;
 	Voice, 2;
 	Group, 3;
+	Category, 4;
 }
 
 /// The basic information about a server only
@@ -499,6 +500,8 @@ pub struct PublicChannel {
 	pub bitrate: Option<u64>,
 	pub user_limit: Option<u64>,
 	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
+	pub nsfw: bool,
+	pub parent_id: Option<ChannelId>,
 }
 
 impl PublicChannel {
@@ -522,6 +525,8 @@ impl PublicChannel {
 			bitrate: remove(&mut value, "bitrate").ok().and_then(|v| v.as_u64()),
 			user_limit: remove(&mut value, "user_limit").ok().and_then(|v| v.as_u64()),
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
+			nsfw: try!(opt(&mut value, "nsfw", |v| Ok(req!(v.as_bool())))).unwrap_or(false),
+			parent_id: try!(opt(&mut value, "parent_id", ChannelId::decode)),
 		})
 	}
 
@@ -570,7 +575,7 @@ pub mod permissions {
 	bitflags! {
 		/// Set of permissions assignable to a Role or PermissionOverwrite
 		pub struct Permissions: u64 {
-			const CREATE_INVITE = 1 << 0;
+			const CREATE_INVITE = 1;
 			const KICK_MEMBERS = 1 << 1;
 			const BAN_MEMBERS = 1 << 2;
 			/// Grant all permissions, bypassing channel-specific permissions
@@ -703,6 +708,8 @@ pub enum MessageType {
 	GroupIconUpdate,
 	/// A message was pinned
 	MessagePinned,
+	/// A user joined a server and a welcome message was generated
+	UserJoined,
 }
 
 serial_use_mapping!(MessageType, numeric);
@@ -714,6 +721,7 @@ serial_numbers! { MessageType;
 	GroupNameUpdate, 4;
 	GroupIconUpdate, 5;
 	MessagePinned, 6;
+	UserJoined, 7;
 }
 
 /// Information about an invite
@@ -992,6 +1000,7 @@ pub struct Emoji {
 	pub name: String,
 	pub managed: bool,
 	pub require_colons: bool,
+	pub animated: bool,
 	pub roles: Vec<RoleId>,
 }
 serial_decode!(Emoji);
@@ -1043,6 +1052,7 @@ pub struct LiveServer {
 	pub channels: Vec<PublicChannel>,
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
+	pub system_channel_id: Option<ChannelId>,
 	pub verification_level: VerificationLevel,
 	pub emojis: Vec<Emoji>,
 	pub features: Vec<String>,
@@ -1073,6 +1083,7 @@ impl LiveServer {
 			large: req!(try!(remove(&mut value, "large")).as_bool()),
 			afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
+			system_channel_id: try!(opt(&mut value, "system_channel_id", ChannelId::decode)),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),

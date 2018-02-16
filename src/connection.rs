@@ -118,7 +118,7 @@ impl Connection {
 		};
 		let game = match game {
 			Some(Game {kind: GameType::Streaming, url: Some(url), name}) => json! {{ "type": GameType::Streaming, "url": url, "name": name }},
-			Some(game) => json! {{ "name": game.name }},
+			Some(game) => json! {{ "name": game.name, "type": GameType::Playing }},
 			None => json!(null),
 		};
 		let msg = json! {{
@@ -237,7 +237,7 @@ pub struct Connection {
 						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
 							self.voice(server_id).__update_state(voice_state);
 						}
-						if let Event::VoiceServerUpdate { server_id, channel_id: _, ref endpoint, ref token } = event {
+						if let Event::VoiceServerUpdate { server_id, ref endpoint, ref token, .. } = event {
 							self.voice(server_id).__update_server(endpoint, token);
 						}
 					}

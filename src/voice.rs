@@ -164,9 +164,9 @@ impl VoiceConnection {
 	}
 
 	#[doc(hidden)]
-	pub fn __update_server(&mut self, endpoint: &Option<String>, token: &String) {
+	pub fn __update_server(&mut self, endpoint: &Option<String>, token: &str) {
 		if let Some(endpoint) = endpoint.clone() {
-			let token = token.clone();
+			let token = token.to_string();
 			// nb: .take() is not used; in the event of server transfer, only this is called
 			if let Some(session_id) = self.session_id.clone() {
 				self.internal_connect(session_id, endpoint, token);
@@ -581,7 +581,7 @@ impl InternalConnection {
 					let mut buffer = [0; 512];
 					loop {
 						let (len, _) = udp_clone.recv_from(&mut buffer).unwrap();
-						match tx2.send(RecvStatus::Udp(buffer[..len].iter().cloned().collect())) {
+						match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
 							Ok(()) => {},
 							Err(_) => return
 						}
@@ -718,7 +718,7 @@ impl InternalConnection {
 			try!(cursor.write_u16::<BigEndian>(self.sequence));
 			try!(cursor.write_u32::<BigEndian>(self.timestamp));
 			try!(cursor.write_u32::<BigEndian>(self.ssrc));
-			debug_assert!(cursor.len() == 0);
+			debug_assert!(cursor.is_empty());
 		}
 		nonce.0[..HEADER_LEN].clone_from_slice(&packet[..HEADER_LEN]);
 
