@@ -294,6 +294,7 @@ impl ConnectionHandle {
 
                                      sink.join(stream)
                                  }).flatten().map_err(move |e| {
+                                     debug!("stream error: {:?}", e);
                                      // if the stream errors, send them too
                                      let _ = err_tx.send(Err(e));
                                  }).map(|_| ());

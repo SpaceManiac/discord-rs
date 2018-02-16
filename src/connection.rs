@@ -6,19 +6,19 @@ use async;
 use model::*;
 #[cfg(feature="voice")]
 use voice::VoiceConnection;
-use {Result, Error};
+use {Result};
 
 const GATEWAY_VERSION: u64 = 6;
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	inner: async::ConnectionHandle,
-	base_url: String,
-	token: String,
+	_base_url: String,
+	_token: String,
 
 	session_id: Option<String>,
 	last_sequence: u64,
-	shard_info: Option<[u8; 2]>,
+	_shard_info: Option<[u8; 2]>,
 }
 
 impl Connection {
@@ -37,16 +37,16 @@ impl Connection {
 
 		let mut conn = Connection {
 			inner,
-			base_url: base_url.to_string(),
-			token: token.to_string(),
+			_base_url: base_url.to_string(),
+			_token: token.to_string(),
 
 			session_id: None,
 			last_sequence: 0,
-			shard_info,
+			_shard_info: shard_info,
 		};
 
 		let ready = loop {
-			if let Ok(Event::Ready(r)) = conn.recv_event() {
+			if let Event::Ready(r) = conn.recv_event()? {
 				conn.session_id = Some(r.session_id.clone());
 
 				break r;
@@ -78,19 +78,17 @@ impl Connection {
 
 	/// Receive an event over the websocket, blocking until one is available.
 	pub fn recv_event(&mut self) -> Result<Event> {
-		while let Ok(ge) = self.inner.recv() {
+		loop {
+			let ge = self.inner.recv()?; 
 			match self.internal_events(ge) {
 				Some(e) => return Ok(e),
 				None => {},
 			}
 		}
-
-		Err(Error::Other("channel closed"))
 	}
 
 	/// Receive an event over the websocket, nonblocking.
 	pub fn try_recv_event(&mut self) -> Result<Option<Event>> {
-
 		match self.inner.try_recv() {
 			Ok(Some(e)) => Ok(self.internal_events(e)),
 			Ok(None) => Ok(None),
