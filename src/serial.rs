@@ -42,7 +42,7 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 		}
 	}
 
-	d.deserialize_u64(IdVisitor)
+	d.deserialize_any(IdVisitor)
 }
 
 /// Deserialize a maybe-string discriminator into a u16.
@@ -82,7 +82,7 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 		}
 	}
 
-	d.deserialize_u16(DiscrimVisitor)
+	d.deserialize_any(DiscrimVisitor)
 }
 
 /// Deserialize a single-field struct like a newtype struct.
@@ -162,7 +162,7 @@ pub mod named {
 			}
 		}
 
-		d.deserialize_string(NameVisitor(PhantomData))
+		d.deserialize_any(NameVisitor(PhantomData))
 	}
 }
 macro_rules! serial_names {
@@ -230,7 +230,7 @@ pub mod numeric {
 			}
 		}
 
-		d.deserialize_string(NumVisitor(PhantomData))
+		d.deserialize_any(NumVisitor(PhantomData))
 	}
 }
 macro_rules! serial_numbers {
