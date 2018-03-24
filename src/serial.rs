@@ -165,7 +165,7 @@ pub mod named {
 			}
 		}
 
-		d.deserialize_string(NameVisitor(PhantomData))
+		d.deserialize_any(NameVisitor(PhantomData))
 	}
 }
 macro_rules! serial_names {
