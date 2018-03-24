@@ -710,6 +710,12 @@ impl Discord {
 		from_reader(response)
 	}
 
+	/// Gets the list of a specific server's members.
+	pub fn get_server_members(&self, server_id: ServerId) -> Result<Vec<User>> {
+		let response = request!(self, get, "/guilds/{}/members", server_id);
+		from_reader(response)
+	}
+
 	/// Create a new server with the given name.
 	pub fn create_server(&self, name: &str, region: &str, icon: Option<&str>) -> Result<Server> {
 		let map = json! {{
