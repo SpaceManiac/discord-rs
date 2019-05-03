@@ -214,6 +214,10 @@ pub enum ChannelType {
 	Voice,
 	/// A channel category in a server
 	Category,
+	/// 
+	News,
+	/// 
+	Store
 }
 
 serial_use_mapping!(ChannelType, numeric);
@@ -223,6 +227,8 @@ serial_names! { ChannelType;
 	Text, "text";
 	Voice, "voice";
 	Category, "category";
+	News, "news";
+	Store, "store";
 }
 string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
@@ -231,6 +237,8 @@ serial_numbers! { ChannelType;
 	Voice, 2;
 	Group, 3;
 	Category, 4;
+	News, 5;
+	Store, 6;
 }
 
 /// The basic information about a server only
