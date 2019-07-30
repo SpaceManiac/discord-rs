@@ -262,6 +262,9 @@ impl Connection {
 	/// Reconnect after receiving an OP7 RECONNECT
 	fn reconnect(&mut self) -> Result<ReadyEvent> {
 		::sleep_ms(1000);
+                self.keepalive_channel
+                    .send(Status::Aborted)
+                    .expect("Could not stop the keepalive thread, there will be a thread leak.");
 		debug!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
