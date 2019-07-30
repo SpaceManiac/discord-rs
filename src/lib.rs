@@ -1377,5 +1377,6 @@ mod internal {
 		Sequence(u64),
 		ChangeInterval(u64),
 		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+                Aborted,
 	}
 }
