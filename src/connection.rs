@@ -262,6 +262,9 @@ impl Connection {
 	/// Reconnect after receiving an OP7 RECONNECT
 	fn reconnect(&mut self) -> Result<ReadyEvent> {
 		::sleep_ms(1000);
+                self.keepalive_channel
+                    .send(Status::Aborted)
+                    .expect("Could not stop the keepalive thread, there will be a thread leak.");
 		debug!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
@@ -354,6 +357,9 @@ impl Connection {
 			.send_message(&::websocket::message::Message::close_because(1000, "")));
 		try!(stream.flush());
 		try!(stream.shutdown(::std::net::Shutdown::Both));
+                self.keepalive_channel
+                    .send(Status::Aborted)
+                    .expect("Could not stop the keepalive thread, there will be a thread leak.");
 		Ok(())
 	}
 
@@ -475,6 +481,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 				Ok(Status::ChangeSender(new_sender)) => {
 					sender = new_sender;
 				}
+                                Ok(Status::Aborted) => break 'outer,
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
 			}
