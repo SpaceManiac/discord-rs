@@ -994,10 +994,23 @@ impl Discord {
 		Ok(vec)
 	}
 
-	/// Get information about a user.
+	/// Get information about a user.  
+	/// https://discordapp.com/developers/docs/resources/user#get-user
 	pub fn get_user(&self, user: UserId) -> Result<User> {
 		let response = request!(self, get, "/users/{}", user);
 		from_reader(response)
+	}
+
+	/// Create a new DM channel with a user.  
+	/// https://discordapp.com/developers/docs/resources/user#create-dm
+	pub fn create_dm(&self, recipient_id: UserId) -> Result<PrivateChannel> {
+		let map = json! {{
+			"recipient_id": recipient_id.0,
+		}};
+		let body = serde_json::to_string(&map)?;
+		let response = request!(self, post(body), "/users/@me/channels");
+		let json: serde_json::Value = from_reader(response)?;
+		PrivateChannel::decode(json)
 	}
 
 	/// Get the logged-in user's profile.

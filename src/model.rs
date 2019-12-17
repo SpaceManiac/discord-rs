@@ -110,6 +110,8 @@ macro_rules! id {
 }
 
 id! {
+	/// Bots are identified sometimes by their application ID
+	ApplicationId;
 	/// An identifier for a User
 	UserId;
 	/// An identifier for a Server
@@ -467,13 +469,16 @@ pub struct Call {
 }
 serial_decode!(Call);
 
-/// Private text channel to another user
+/// Private text channel to another user  
+/// https://discordapp.com/developers/docs/resources/channel#channel-object
 #[derive(Debug, Clone)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
 	pub kind: ChannelType,
 	pub recipient: User,
 	pub last_message_id: Option<MessageId>,
+	pub owner_id: Option<UserId>,
+	pub application_id: Option<ApplicationId>,
 	pub last_pin_timestamp: Option<DateTime<FixedOffset>>,
 }
 
@@ -489,6 +494,8 @@ impl PrivateChannel {
 			kind: try!(remove(&mut value, "type").and_then(serde)),
 			recipient: recipients.remove(0),
 			last_message_id: try!(opt(&mut value, "last_message_id", MessageId::decode)),
+			owner_id: opt(&mut value, "owner_id", UserId::decode)?,
+			application_id: opt(&mut value, "application_id", ApplicationId::decode)?,
 			last_pin_timestamp: try!(opt(&mut value, "last_pin_timestamp", into_timestamp)),
 		})
 	}
