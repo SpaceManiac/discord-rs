@@ -1,2 +1,5 @@
 target
 Cargo.lock
+
+# Local IDE configuration
+/.vscode/tasks.json
