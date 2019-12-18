@@ -941,12 +941,17 @@ pub struct Presence {
 	pub game: Option<Game>,
 	pub user: Option<User>,
 	pub nick: Option<String>,
+	/// user's current activities
+	pub activities: Option<Vec<Activity>>
 }
 
 impl Presence {
 	pub fn decode(value: Value) -> Result<Presence> {
 		let mut value = try!(into_map(value));
 		let mut user_map = try!(remove(&mut value, "user").and_then(into_map));
+
+		let activities = match value.remove("activities") {Some (v) => v, None => Value::default()};
+		let activities: Option<Vec<Activity>> = serde_json::from_value(activities)?;
 
 		let (user_id, user) = if user_map.len() > 1 {
 			let user = try!(User::decode(Value::Object(user_map)));
@@ -965,6 +970,7 @@ impl Presence {
 			},
 			user: user,
 			nick: try!(opt(&mut value, "nick", into_string)),
+			activities,
 		})
 	}
 }
@@ -1482,6 +1488,33 @@ pub struct ReadyEvent {
 	pub shard: Option<[u8; 2]>,
 }
 
+/// the emoji used for a custom status  
+/// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-emoji
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEmoji {
+	pub name: String,
+	pub id: Option<EmojiId>,
+	pub animated: Option<bool>,
+}
+serial_decode!(ActivityEmoji);
+
+/// User's activity  
+/// https://discordapp.com/developers/docs/topics/gateway#activity-object
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Activity {
+	/// 0 - Game, 1 - Streaming, 2 - Listening, 4 - Custom  
+	/// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-types
+	#[serde(rename = "type")]
+	pub kind: i8,
+	/// This is where the custom user status appears  
+	pub state: Option<String>,
+	/// the emoji used for a custom status
+	pub emoji: Option<ActivityEmoji>,
+	/// unix timestamp of when the activity was added to the user's session
+	pub created_at: u64
+}
+serial_decode!(Activity);
+
 /// Event received over a websocket connection
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -1548,7 +1581,8 @@ pub enum Event {
 		user_id: UserId,
 		timestamp: DateTime<Utc>,
 	},
-	/// A member's presence state (or username or avatar) has changed
+	/// A member's presence state (or username or avatar) has changed  
+	/// https://discordapp.com/developers/docs/topics/gateway#presence-update
 	PresenceUpdate {
 		presence: Presence,
 		server_id: Option<ServerId>,
@@ -1739,9 +1773,9 @@ impl Event {
 			let roles = try!(opt(&mut value, "roles", |v| decode_array(v, RoleId::decode)));
 			let presence = try!(Presence::decode(Value::Object(value)));
 			Ok(Event::PresenceUpdate {
-				server_id: server_id,
-				roles: roles,
-				presence: presence,
+				server_id,
+				roles,
+				presence,
 			})
 		} else if kind == "RELATIONSHIP_ADD" {
 			Relationship::decode(Value::Object(value)).map(Event::RelationshipAdd)
