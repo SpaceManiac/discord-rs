@@ -394,16 +394,26 @@ pub enum Channel {
 	Private(PrivateChannel),
 	/// Voice or text channel within a server
 	Public(PublicChannel),
+	/// an organizational category that contains channels
+	Category,
+	/// a channel that users can follow and crosspost into their own server
+	News,
+	/// a channel in which game developers can sell their game on Discord
+	Store,
 }
 
 impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
 		let map = try!(into_map(value));
+		// https://discordapp.com/developers/docs/resources/channel#channel-object-channel-types
 		match req!(map.get("type").and_then(|x| x.as_u64())) {
 			0 |
 			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
+			4 => Ok(Channel::Category),
+			5 => Ok(Channel::News),
+			6 => Ok(Channel::Store),
 			other => Err(Error::Decode("Expected value Channel type", Value::from(other))),
 		}
 	}
@@ -892,7 +902,9 @@ serial_numbers! { GameType;
 	Streaming, 1;
 }
 
-/// Information about a game being played
+/// Information about a game being played  
+/// https://discordapp.com/developers/docs/topics/gateway#activity-object  
+/// (might merge it with `Activity` in the future)
 #[derive(Debug, Clone)]
 pub struct Game {
 	pub name: String,

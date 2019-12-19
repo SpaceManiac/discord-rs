@@ -307,6 +307,9 @@ impl State {
 						srv.channels.push(channel.clone());
 					});
 				}
+				Channel::Category => {}
+				Channel::News => {}
+				Channel::Store => {}
 			},
 			Event::ChannelUpdate(ref channel) => match *channel {
 				Channel::Group(ref group) => {
@@ -338,6 +341,9 @@ impl State {
 						})
 					});
 				}
+				Channel::Category => {}
+				Channel::News => {}
+				Channel::Store => {}
 			},
 			Event::ChannelDelete(ref channel) => match *channel {
 				Channel::Group(ref group) => {
@@ -351,6 +357,9 @@ impl State {
 						srv.channels.retain(|c| c.id != channel.id);
 					});
 				}
+				Channel::Category => {}
+				Channel::News => {}
+				Channel::Store => {}
 			},
 			Event::ChannelPinsUpdate { ref channel_id, ref last_pin_timestamp } => {
 				for server in &mut self.servers {

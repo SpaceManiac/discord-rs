@@ -318,6 +318,9 @@ impl Discord {
 				}
 			},
 			Channel::Group(group) => { map.insert("name".into(), json!(group.name)); },
+			Channel::Category => {},
+			Channel::News => {},
+			Channel::Store => {},
 		};
 		let map = EditChannel::__apply(f, map);
 		let body = try!(serde_json::to_string(&map));
