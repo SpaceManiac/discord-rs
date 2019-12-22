@@ -21,7 +21,8 @@ hyper-native-tls = "0.3.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-websocket = { git = "https://github.com/mraof/rust-websocket", branch = "hyper-bump" }
+# cf. https://github.com/mraof/rust-websocket
+websocket = { git = "https://github.com/ArtemGr/rust-websocket", branch = "hyper-bump" }
 bitflags = "0.7"
 byteorder = { version = "0.5", optional = true }
 log = "0.3"
