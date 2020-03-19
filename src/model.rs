@@ -243,6 +243,20 @@ serial_numbers! { ChannelType;
 	Store, 6;
 }
 
+/// A channel category.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelCategory {
+	pub permission_overwrites: Vec<PermissionOverwrite>,
+	pub name: String,
+	pub parent_id: Option<ChannelId>,
+	pub nsfw: bool,
+	pub position: i64,
+    #[serde(rename = "guild_id")]
+	pub server_id: ServerId,
+    pub id: ChannelId,
+}
+serial_decode!(ChannelCategory);
+
 /// The basic information about a server only
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
@@ -395,7 +409,7 @@ pub enum Channel {
 	/// Voice or text channel within a server
 	Public(PublicChannel),
 	/// an organizational category that contains channels
-	Category,
+	Category(ChannelCategory),
 	/// a channel that users can follow and crosspost into their own server
 	News,
 	/// a channel in which game developers can sell their game on Discord
@@ -411,7 +425,7 @@ impl Channel {
 			2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
-			4 => Ok(Channel::Category),
+			4 => ChannelCategory::decode(Value::Object(map)).map(Channel::Category),
 			5 => Ok(Channel::News),
 			6 => Ok(Channel::Store),
 			other => Err(Error::Decode("Expected value Channel type", Value::from(other))),
@@ -561,14 +575,14 @@ impl PublicChannel {
 }
 
 /// The type of edit being made to a Channel's permissions.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PermissionOverwriteType {
 	Member(UserId),
 	Role(RoleId),
 }
 
 /// A channel-specific permission overwrite for a role or member.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionOverwrite {
 	pub kind: PermissionOverwriteType,
 	pub allow: Permissions,
@@ -1083,6 +1097,7 @@ pub struct LiveServer {
 	pub icon: Option<String>,
 	pub large: bool,
 	pub channels: Vec<PublicChannel>,
+    pub categories: Vec<ChannelCategory>,
 	pub afk_timeout: u64,
 	pub afk_channel_id: Option<ChannelId>,
 	pub system_channel_id: Option<ChannelId>,
@@ -1118,6 +1133,7 @@ impl LiveServer {
 			afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
 			system_channel_id: try!(opt(&mut value, "system_channel_id", ChannelId::decode)),
 			channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| PublicChannel::decode_server(v, id))),
+			categories: try!(decode_array(try!(remove(&mut value, "categories")), ChannelCategory::decode)),
 			verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
 			emojis: try!(remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))),
 			features: try!(remove(&mut value, "features").and_then(|v| decode_array(v, into_string))),

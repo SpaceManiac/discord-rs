@@ -307,7 +307,11 @@ impl State {
 						srv.channels.push(channel.clone());
 					});
 				}
-				Channel::Category => {}
+				Channel::Category(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.categories.push(channel.clone());
+					});
+                }
 				Channel::News => {}
 				Channel::Store => {}
 			},
@@ -341,7 +345,13 @@ impl State {
 						})
 					});
 				}
-				Channel::Category => {}
+				Channel::Category(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.categories.iter_mut().find(|c| c.id == channel.id).map(|chan| {
+							chan.clone_from(channel);
+						})
+					});
+				}
 				Channel::News => {}
 				Channel::Store => {}
 			},
@@ -357,7 +367,11 @@ impl State {
 						srv.channels.retain(|c| c.id != channel.id);
 					});
 				}
-				Channel::Category => {}
+				Channel::Category(ref channel) => {
+					self.servers.iter_mut().find(|s| s.id == channel.server_id).map(|srv| {
+						srv.categories.retain(|c| c.id != channel.id);
+					});
+				}
 				Channel::News => {}
 				Channel::Store => {}
 			},

@@ -318,7 +318,7 @@ impl Discord {
 				}
 			},
 			Channel::Group(group) => { map.insert("name".into(), json!(group.name)); },
-			Channel::Category => {},
+			Channel::Category(_) => {},
 			Channel::News => {},
 			Channel::Store => {},
 		};
