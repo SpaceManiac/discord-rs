@@ -18,6 +18,7 @@ fn main() {
 		"tokens.txt",
 		args.get(1).expect("No email specified"),
 		args.get(2).map(|x| &**x),
-	).expect("Login failed");
+	)
+	.expect("Login failed");
 	println!("Logged in successfully!");
 }

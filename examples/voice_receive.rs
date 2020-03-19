@@ -1,9 +1,9 @@
 extern crate discord;
 
-use std::env;
-use discord::{Discord, State};
-use discord::voice::AudioReceiver;
 use discord::model::{Event, UserId};
+use discord::voice::AudioReceiver;
+use discord::{Discord, State};
+use std::env;
 
 // A simple voice listener example.
 // Use by issuing the "!listen" command in a PM. The bot will join your voice channel and begin
@@ -17,20 +17,33 @@ impl AudioReceiver for VoiceTest {
 		println!("[{}] is {:?} -> {}", ssrc, user_id, speaking);
 	}
 
-	fn voice_packet(&mut self, ssrc: u32, sequence: u16, timestamp: u32, stereo: bool, _data: &[i16]) {
-		println!("[{}] ({}, {}) stereo = {}", ssrc, sequence, timestamp, stereo);
+	fn voice_packet(
+		&mut self,
+		ssrc: u32,
+		sequence: u16,
+		timestamp: u32,
+		stereo: bool,
+		_data: &[i16],
+	) {
+		println!(
+			"[{}] ({}, {}) stereo = {}",
+			ssrc, sequence, timestamp, stereo
+		);
 	}
 }
 
 pub fn main() {
 	// log in to the API
-	let discord = Discord::from_bot_token(
-		&env::var("DISCORD_TOKEN").expect("Expected token"),
-	).expect("Login failed");
+	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Expected token"))
+		.expect("Login failed");
 
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
-	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
+	println!(
+		"[Ready] {} is serving {} servers",
+		ready.user.username,
+		ready.servers.len()
+	);
 	let mut state = State::new(ready);
 
 	// receive events forever
@@ -47,10 +60,10 @@ pub fn main() {
 					println!("[Ready] Reconnected successfully.");
 				}
 				if let discord::Error::Closed(..) = err {
-					break
+					break;
 				}
-				continue
-			},
+				continue;
+			}
 		};
 		state.update(&event);
 
@@ -59,7 +72,7 @@ pub fn main() {
 				use std::ascii::AsciiExt;
 				// safeguard: stop if the message is from us
 				if message.author.id == state.user().id {
-					continue
+					continue;
 				}
 
 				// reply to a command if there was one
@@ -69,7 +82,9 @@ pub fn main() {
 
 				if first_word.eq_ignore_ascii_case("!listen") {
 					let voice_channel = state.find_voice_user(message.author.id);
-					if argument.eq_ignore_ascii_case("quit") || argument.eq_ignore_ascii_case("stop") {
+					if argument.eq_ignore_ascii_case("quit")
+						|| argument.eq_ignore_ascii_case("stop")
+					{
 						if let Some((server_id, _)) = voice_channel {
 							connection.drop_voice(server_id);
 						}
@@ -78,7 +93,12 @@ pub fn main() {
 						voice.connect(channel_id);
 						voice.set_receiver(Box::new(VoiceTest));
 					} else {
-						warn(discord.send_message(message.channel_id, "You must be in a voice channel.", "", false));
+						warn(discord.send_message(
+							message.channel_id,
+							"You must be in a voice channel.",
+							"",
+							false,
+						));
 					}
 				}
 			}
@@ -87,20 +107,31 @@ pub fn main() {
 				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
 					// and our current voice channel is empty, disconnect from voice
 					match server_id {
-						Some(server_id) => if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-							if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
-								connection.voice(Some(server_id)).disconnect();
+						Some(server_id) => {
+							if let Some(srv) =
+								state.servers().iter().find(|srv| srv.id == server_id)
+							{
+								if srv
+									.voice_states
+									.iter()
+									.filter(|vs| vs.channel_id == Some(cur_channel))
+									.count() <= 1
+								{
+									connection.voice(Some(server_id)).disconnect();
+								}
 							}
-						},
-						None => if let Some(call) = state.calls().get(&cur_channel) {
-							if call.voice_states.len() <= 1 {
-								connection.voice(server_id).disconnect();
+						}
+						None => {
+							if let Some(call) = state.calls().get(&cur_channel) {
+								if call.voice_states.len() <= 1 {
+									connection.voice(server_id).disconnect();
+								}
 							}
 						}
 					}
 				}
 			}
-			_ => {}, // discard other events
+			_ => {} // discard other events
 		}
 	}
 }
@@ -108,7 +139,7 @@ pub fn main() {
 #[allow(dead_code)]
 fn warn<T, E: ::std::fmt::Debug>(result: Result<T, E>) {
 	match result {
-		Ok(_) => {},
-		Err(err) => println!("[Warning] {:?}", err)
+		Ok(_) => {}
+		Err(err) => println!("[Warning] {:?}", err),
 	}
 }

@@ -1,21 +1,15 @@
 extern crate discord;
 
 use discord::model::{
-	ChannelId,
-	PermissionOverwriteType,
-	PermissionOverwrite,
-	RoleId,
-	UserId,
-	permissions
+	permissions, ChannelId, PermissionOverwrite, PermissionOverwriteType, RoleId, UserId,
 };
 use discord::Discord;
 use std::env;
 
 fn main() {
 	// Log in to Discord using a bot token from the environment
-	let discord = Discord::from_bot_token(
-		&env::var("DISCORD_TOKEN").expect("Expected token"),
-	).expect("login failed");
+	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Expected token"))
+		.expect("login failed");
 	println!("Ready.");
 
 	// Create bitflags of the permissions to allow and deny
