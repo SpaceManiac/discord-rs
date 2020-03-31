@@ -38,6 +38,6 @@ default-features = false
 optional = true
 
 [dependencies.multipart]
-version = "0.8"
+version = "0.16"
 default-features = false
 features = ["hyper", "client"]
