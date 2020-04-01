@@ -423,12 +423,14 @@ impl State {
 						});
 				}
 				Channel::Category(ref channel) => {
-					self.servers
-						.iter_mut()
-						.find(|s| s.id == channel.server_id)
-						.map(|srv| {
-							srv.categories.push(channel.clone());
-						});
+					if let Some(server_id) = channel.server_id {
+						self.servers
+							.iter_mut()
+							.find(|s| s.id == server_id)
+							.map(|srv| {
+								srv.categories.push(channel.clone());
+							});
+					}
 				}
 				Channel::News => {}
 				Channel::Store => {}
@@ -476,17 +478,19 @@ impl State {
 						});
 				}
 				Channel::Category(ref channel) => {
-					self.servers
-						.iter_mut()
-						.find(|s| s.id == channel.server_id)
-						.map(|srv| {
-							srv.categories
-								.iter_mut()
-								.find(|c| c.id == channel.id)
-								.map(|chan| {
-									chan.clone_from(channel);
-								})
-						});
+					if let Some(server_id) = channel.server_id {
+						self.servers
+							.iter_mut()
+							.find(|s| s.id == server_id)
+							.map(|srv| {
+								srv.categories
+									.iter_mut()
+									.find(|c| c.id == channel.id)
+									.map(|chan| {
+										chan.clone_from(channel);
+									})
+							});
+					}
 				}
 				Channel::News => {}
 				Channel::Store => {}
@@ -507,12 +511,14 @@ impl State {
 						});
 				}
 				Channel::Category(ref channel) => {
-					self.servers
-						.iter_mut()
-						.find(|s| s.id == channel.server_id)
-						.map(|srv| {
-							srv.categories.retain(|c| c.id != channel.id);
-						});
+					if let Some(server_id) = channel.server_id {
+						self.servers
+							.iter_mut()
+							.find(|s| s.id == server_id)
+							.map(|srv| {
+								srv.categories.retain(|c| c.id != channel.id);
+							});
+					}
 				}
 				Channel::News => {}
 				Channel::Store => {}

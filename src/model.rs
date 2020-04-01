@@ -261,13 +261,13 @@ serial_numbers! { ChannelType;
 /// A channel category.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelCategory {
-	pub permission_overwrites: Vec<PermissionOverwrite>,
 	pub name: String,
 	pub parent_id: Option<ChannelId>,
+	#[serde(default)]
 	pub nsfw: bool,
 	pub position: i64,
 	#[serde(rename = "guild_id")]
-	pub server_id: ServerId,
+	pub server_id: Option<ServerId>,
 	pub id: ChannelId,
 }
 serial_decode!(ChannelCategory);
@@ -630,7 +630,7 @@ pub enum PermissionOverwriteType {
 }
 
 /// A channel-specific permission overwrite for a role or member.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PermissionOverwrite {
 	pub kind: PermissionOverwriteType,
 	pub allow: Permissions,
@@ -1222,11 +1222,11 @@ impl LiveServer {
 				afk_timeout: req!(try!(remove(&mut value, "afk_timeout")).as_u64()),
 				afk_channel_id: try!(opt(&mut value, "afk_channel_id", ChannelId::decode)),
 				system_channel_id: try!(opt(&mut value, "system_channel_id", ChannelId::decode)),
-				channels: try!(decode_array(try!(remove(&mut value, "channels")), |v| {
+				channels: try!(decode_array(try!(get(&mut value, "channels")), |v| {
 					PublicChannel::decode_server(v, id)
 				})),
 				categories: try!(decode_array(
-					try!(remove(&mut value, "categories")),
+					try!(get(&mut value, "channels")),
 					ChannelCategory::decode
 				)),
 				verification_level: try!(remove(&mut value, "verification_level").and_then(serde)),
@@ -2360,6 +2360,12 @@ impl VoiceEvent {
 
 //=================
 // Decode helpers
+
+fn get(map: &Object, key: &str) -> Result<Value> {
+	map.get(key)
+		.map(|v| v.clone())
+		.ok_or_else(|| Error::Decode("Unexpected absent key", Value::String(key.into())))
+}
 
 fn remove(map: &mut Object, key: &str) -> Result<Value> {
 	map.remove(key)
