@@ -231,8 +231,8 @@ impl Connection {
 				}
 				Err(Error::Closed(num, message)) => {
 					debug!("Closure, reconnecting: {:?}: {}", num, message);
-					// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
-					if num != Some(1000) && num != Some(4006) {
+					// Try resuming if we haven't received a 4006 or an InvalidateSession
+					if num != Some(4006) {
 						if let Some(session_id) = self.session_id.clone() {
 							match self.resume(session_id) {
 								Ok(event) => return Ok(event),
