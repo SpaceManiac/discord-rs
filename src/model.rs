@@ -2480,6 +2480,6 @@ pub fn decode_array<T, F: Fn(Value) -> Result<T>>(value: Value, f: F) -> Result<
 
 fn warn_field(name: &str, map: Object) {
 	if !map.is_empty() {
-		debug!("Unhandled keys: {} has {:?}", name, Value::Object(map))
+		trace!("Unhandled keys: {} has {:?}", name, Value::Object(map))
 	}
 }

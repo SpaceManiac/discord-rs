@@ -58,7 +58,7 @@ impl Connection {
 		token: &str,
 		shard_info: Option<[u8; 2]>,
 	) -> Result<(Connection, ReadyEvent)> {
-		debug!("Gateway: {}", base_url);
+		trace!("Gateway: {}", base_url);
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
 		let response = Client::connect(url)?.send()?;
@@ -230,7 +230,7 @@ impl Connection {
 					return self.reconnect().map(Event::Ready);
 				}
 				Err(Error::Closed(num, message)) => {
-					warn!("Closure, reconnecting: {:?}: {}", num, message);
+					debug!("Closure, reconnecting: {:?}: {}", num, message);
 					// Try resuming if we haven't received a 1000, a 4006, or an InvalidateSession
 					if num != Some(1000) && num != Some(4006) {
 						if let Some(session_id) = self.session_id.clone() {
@@ -296,7 +296,7 @@ impl Connection {
 		self.keepalive_channel
 			.send(Status::Aborted)
 			.expect("Could not stop the keepalive thread, there will be a thread leak.");
-		debug!("Reconnecting...");
+		trace!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
 			if let Ok((conn, ready)) = Connection::new(&self.ws_url, &self.token, self.shard_info) {
@@ -316,7 +316,7 @@ impl Connection {
 	/// Resume using our existing session
 	fn resume(&mut self, session_id: String) -> Result<Event> {
 		::sleep_ms(1000);
-		debug!("Resuming...");
+		trace!("Resuming...");
 		// close connection and re-establish
 		self
 			.receiver
@@ -350,7 +350,7 @@ impl Connection {
 				}
 				GatewayEvent::Dispatch(seq, event) => {
 					if let Event::Resumed { .. } = event {
-						debug!("Resumed successfully");
+						trace!("Resumed successfully");
 					}
 					if let Event::Ready(ReadyEvent { ref session_id, .. }) = event {
 						self.session_id = Some(session_id.clone());
