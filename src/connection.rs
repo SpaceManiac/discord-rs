@@ -60,18 +60,18 @@ impl Connection {
 	) -> Result<(Connection, ReadyEvent)> {
 		debug!("Gateway: {}", base_url);
 		// establish the websocket connection
-		let url = try!(build_gateway_url(base_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
+		let url = build_gateway_url(base_url)?;
+		let response = Client::connect(url)?.send()?;
+		response.validate()?;
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the handshake
 		let identify = identify(token, shard_info);
-		try!(sender.send_json(&identify));
+		sender.send_json(&identify)?;
 
 		// read the Hello and spawn the keepalive thread
 		let heartbeat_interval;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
+		match receiver.recv_json(GatewayEvent::decode)? {
 			GatewayEvent::Hello(interval) => heartbeat_interval = interval,
 			other => {
 				debug!("Unexpected event: {:?}", other);
@@ -80,14 +80,14 @@ impl Connection {
 		}
 
 		let (tx, rx) = mpsc::channel();
-		try!(::std::thread::Builder::new()
+		::std::thread::Builder::new()
 			.name("Discord Keepalive".into())
-			.spawn(move || keepalive(heartbeat_interval, sender, rx)));
+			.spawn(move || keepalive(heartbeat_interval, sender, rx))?;
 
 		// read the Ready event
 		let sequence;
 		let ready;
-		match try!(receiver.recv_json(GatewayEvent::decode)) {
+		match receiver.recv_json(GatewayEvent::decode)? {
 			GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
 				sequence = seq;
 				ready = event;
@@ -95,7 +95,7 @@ impl Connection {
 			GatewayEvent::InvalidateSession => {
 				debug!("Session invalidated, reidentifying");
 				let _ = tx.send(Status::SendMessage(identify));
-				match try!(receiver.recv_json(GatewayEvent::decode)) {
+				match receiver.recv_json(GatewayEvent::decode)? {
 					GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
 						sequence = seq;
 						ready = event;
@@ -307,7 +307,7 @@ impl Connection {
 			::sleep_ms(1000);
 		}
 		// If those fail, hit REST for a new endpoint
-		let (conn, ready) = try!(::Discord::from_token_raw(self.token.to_owned()).connect());
+		let (conn, ready) = ::Discord::from_token_raw(self.token.to_owned()).connect()?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
@@ -318,14 +318,14 @@ impl Connection {
 		::sleep_ms(1000);
 		debug!("Resuming...");
 		// close connection and re-establish
-		try!(self
+		self
 			.receiver
 			.get_mut()
 			.get_mut()
-			.shutdown(::std::net::Shutdown::Both));
-		let url = try!(build_gateway_url(&self.ws_url));
-		let response = try!(try!(Client::connect(url)).send());
-		try!(response.validate());
+			.shutdown(::std::net::Shutdown::Both)?;
+		let url = build_gateway_url(&self.ws_url)?;
+		let response = Client::connect(url)?.send()?;
+		response.validate()?;
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the resume request
@@ -337,12 +337,12 @@ impl Connection {
 				"session_id": session_id,
 			}
 		}};
-		try!(sender.send_json(&resume));
+		sender.send_json(&resume)?;
 
 		// TODO: when Discord has implemented it, observe the RESUMING event here
 		let first_event;
 		loop {
-			match try!(receiver.recv_json(GatewayEvent::decode)) {
+			match receiver.recv_json(GatewayEvent::decode)? {
 				GatewayEvent::Hello(interval) => {
 					let _ = self
 						.keepalive_channel
@@ -361,7 +361,7 @@ impl Connection {
 				}
 				GatewayEvent::InvalidateSession => {
 					debug!("Session invalidated in resume, reidentifying");
-					try!(sender.send_json(&identify(&self.token, self.shard_info)));
+					sender.send_json(&identify(&self.token, self.shard_info))?;
 				}
 				other => {
 					debug!("Unexpected event: {:?}", other);
@@ -378,7 +378,7 @@ impl Connection {
 
 	/// Cleanly shut down the websocket connection. Optional.
 	pub fn shutdown(mut self) -> Result<()> {
-		try!(self.inner_shutdown());
+		self.inner_shutdown()?;
 		::std::mem::forget(self); // don't call a second time
 		Ok(())
 	}
@@ -390,10 +390,10 @@ impl Connection {
 
 		// Hacky horror: get the WebSocketStream from the Receiver and formally close it
 		let stream = self.receiver.get_mut().get_mut();
-		try!(Sender::new(stream.by_ref(), true)
-			.send_message(&::websocket::message::Message::close_because(1000, "")));
-		try!(stream.flush());
-		try!(stream.shutdown(::std::net::Shutdown::Both));
+		Sender::new(stream.by_ref(), true)
+			.send_message(&::websocket::message::Message::close_because(1000, ""))?;
+		stream.flush()?;
+		stream.shutdown(::std::net::Shutdown::Both)?;
 		self.keepalive_channel
 			.send(Status::Aborted)
 			.expect("Could not stop the keepalive thread, there will be a thread leak.");

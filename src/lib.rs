@@ -25,6 +25,7 @@
 //!
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
+#![allow(deprecated)]
 
 extern crate base64;
 extern crate chrono;
@@ -98,19 +99,19 @@ macro_rules! status_concat {
 macro_rules! request {
 	($self_:ident, $method:ident($body:expr), $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path).body(&$body)))
+		$self_.request(&path, || $self_.client.$method(&path).body(&$body))?
 	}};
 	($self_:ident, $method:ident, $url:expr, $($rest:tt)*) => {{
 		let path = format!(api_concat!($url), $($rest)*);
-		try!($self_.request(&path, || $self_.client.$method(&path)))
+		$self_.request(&path, || $self_.client.$method(&path))?
 	}};
 	($self_:ident, $method:ident($body:expr), $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path).body(&$body)))
+		$self_.request(path, || $self_.client.$method(path).body(&$body))?
 	}};
 	($self_:ident, $method:ident, $url:expr) => {{
 		let path = api_concat!($url);
-		try!($self_.request(path, || $self_.client.$method(path)))
+		$self_.request(path, || $self_.client.$method(path))?
 	}};
 }
 
@@ -141,15 +142,15 @@ impl Discord {
 		map.insert("password", password);
 
 		let client = tls_client();
-		let response = try!(check_status(
+		let response = check_status(
 			client
 				.post(api_concat!("/auth/login"))
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
-				.body(&try!(serde_json::to_string(&map)))
+				.body(&serde_json::to_string(&map)?)
 				.send()
-		));
-		let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+		)?;
+		let mut json: BTreeMap<String, String> = serde_json::from_reader(response)?;
 		let token = match json.remove("token") {
 			Some(token) => token,
 			None => {
@@ -185,7 +186,7 @@ impl Discord {
 		let mut initial_token: Option<String> = None;
 		if let Ok(file) = File::open(path) {
 			for line in BufReader::new(file).lines() {
-				let line = try!(line);
+				let line = line?;
 				let parts: Vec<_> = line.split('\t').collect();
 				if parts.len() == 2 && parts[0] == email {
 					initial_token = Some(parts[1].trim().into());
@@ -203,16 +204,16 @@ impl Discord {
 			}
 
 			let client = tls_client();
-			let response = try!(check_status(
+			let response = check_status(
 				client
 					.post(api_concat!("/auth/login"))
 					.header(hyper::header::ContentType::json())
 					.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 					.header(hyper::header::Authorization(initial_token.clone()))
-					.body(&try!(serde_json::to_string(&map)))
+					.body(&serde_json::to_string(&map)?)
 					.send()
-			));
-			let mut json: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+			)?;
+			let mut json: BTreeMap<String, String> = serde_json::from_reader(response)?;
 			let token = match json.remove("token") {
 				Some(token) => token,
 				None => {
@@ -227,7 +228,7 @@ impl Discord {
 				token: token,
 			}
 		} else if let Some(password) = password {
-			try!(Discord::new(email, password))
+			Discord::new(email, password)?
 		} else {
 			return Err(Error::Other(
 				"No password was specified and no cached token was found",
@@ -240,16 +241,16 @@ impl Discord {
 			tokens.push(format!("{}\t{}", email, discord.token));
 			if let Ok(file) = File::open(path) {
 				for line in BufReader::new(file).lines() {
-					let line = try!(line);
+					let line = line?;
 					if line.split('\t').next() != Some(email) {
 						tokens.push(line);
 					}
 				}
 			}
-			let mut file = try!(File::create(path));
+			let mut file = File::create(path)?;
 			for line in tokens {
-				try!(file.write_all(line.as_bytes()));
-				try!(file.write_all(&[b'\n']));
+				file.write_all(line.as_bytes())?;
+				file.write_all(&[b'\n'])?;
 			}
 		}
 
@@ -283,7 +284,7 @@ impl Discord {
 			"provider": null,
 			"token": null,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(self, post(body), "/auth/logout"))
 	}
 
@@ -324,16 +325,16 @@ impl Discord {
 			"name": name,
 			"type": kind.name(),
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/channels", server);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Get the list of channels in a server.
 	pub fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
 		let response = request!(self, get, "/guilds/{}/channels", server);
 		decode_array(
-			try!(serde_json::from_reader(response)),
+			serde_json::from_reader(response)?,
 			PublicChannel::decode,
 		)
 	}
@@ -341,7 +342,7 @@ impl Discord {
 	/// Get information about a channel.
 	pub fn get_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, get, "/channels/{}", channel);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Edit a channel's details. See `EditChannel` for the editable fields.
@@ -359,7 +360,7 @@ impl Discord {
 	) -> Result<PublicChannel> {
 		// Work around the fact that this supposed PATCH call actually requires all fields
 		let mut map = Object::new();
-		match try!(self.get_channel(channel)) {
+		match self.get_channel(channel)? {
 			Channel::Private(_) => return Err(Error::Other("Can not edit private channels")),
 			Channel::Public(channel) => {
 				map.insert("name".into(), channel.name.into());
@@ -389,15 +390,15 @@ impl Discord {
 			Channel::Store => {}
 		};
 		let map = EditChannel::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/channels/{}", channel);
-		PublicChannel::decode(try!(serde_json::from_reader(response)))
+		PublicChannel::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, delete, "/channels/{}", channel);
-		Channel::decode(try!(serde_json::from_reader(response)))
+		Channel::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Indicate typing on a channel for the next 5 seconds.
@@ -441,7 +442,7 @@ impl Discord {
 				let _ = write!(url, "&around={}", id);
 			}
 		}
-		let response = try!(self.request(&url, || self.client.get(&url)));
+		let response = self.request(&url, || self.client.get(&url))?;
 		from_reader(response)
 	}
 
@@ -493,7 +494,7 @@ impl Discord {
 			"nonce": nonce,
 			"tts": tts,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
 		from_reader(response)
 	}
@@ -509,7 +510,7 @@ impl Discord {
 		text: &str,
 	) -> Result<Message> {
 		let map = json! {{ "content": text }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(
 			self,
 			patch(body),
@@ -561,7 +562,7 @@ impl Discord {
 		}
 
 		let map = json! {{ "messages": ids }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(
 			self,
 			post(body),
@@ -584,7 +585,7 @@ impl Discord {
 			"content": text,
 			"embed": EmbedBuilder::__build(f),
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/channels/{}/messages", channel);
 		from_reader(response)
 	}
@@ -601,7 +602,7 @@ impl Discord {
 		let map = json! {{
 			"embed": EmbedBuilder::__build(f)
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(
 			self,
 			patch(body),
@@ -630,10 +631,10 @@ impl Discord {
 		};
 		// NB: We're NOT using the Hyper itegration of multipart in order not to wrestle with the openssl-sys dependency hell.
 		let cr = multipart::mock::ClientRequest::default();
-		let mut multi = try!(multipart::client::Multipart::from_request(cr));
-		try!(multi.write_text("content", text));
-		try!(multi.write_stream("file", &mut file, Some(filename), None));
-		let http_buffer: multipart::mock::HttpBuffer = try!(multi.send());
+		let mut multi = multipart::client::Multipart::from_request(cr)?;
+		multi.write_text("content", text)?;
+		multi.write_stream("file", &mut file, Some(filename), None)?;
+		let http_buffer: multipart::mock::HttpBuffer = multi.send()?;
 		fn multipart_mime(bound: &str) -> hyper::mime::Mime {
 			use hyper::mime::{Attr, Mime, SubLevel, TopLevel, Value};
 			Mime(
@@ -643,10 +644,10 @@ impl Discord {
 			)
 		}
 
-		let mut request = try!(hyper::client::Request::new(
+		let mut request = hyper::client::Request::new(
 			hyper::method::Method::Post,
 			url
-		));
+		)?;
 		request
 			.headers_mut()
 			.set(hyper::header::Authorization(self.token.clone()));
@@ -658,11 +659,11 @@ impl Discord {
 			.set(hyper::header::ContentType(multipart_mime(
 				&http_buffer.boundary,
 			)));
-		let mut request = try!(request.start());
-		try!(request.write(&http_buffer.buf[..]));
-		Message::decode(try!(serde_json::from_reader(try!(check_status(
+		let mut request = request.start()?;
+		request.write(&http_buffer.buf[..])?;
+		Message::decode(serde_json::from_reader(check_status(
 			request.send()
-		)))))
+		)?)?)
 	}
 
 	/// Acknowledge this message as "read" by this client.
@@ -720,7 +721,7 @@ impl Discord {
 			"allow": target.allow.bits(),
 			"deny": target.deny.bits(),
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(
 			self,
 			put(body),
@@ -942,7 +943,7 @@ impl Discord {
 			"region": region,
 			"icon": icon,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds");
 		from_reader(response)
 	}
@@ -966,7 +967,7 @@ impl Discord {
 		f: F,
 	) -> Result<Server> {
 		let map = EditServer::__build(f);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/guilds/{}", server_id);
 		from_reader(response)
 	}
@@ -993,7 +994,7 @@ impl Discord {
 			"name": name,
 			"image": image,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/emojis", server);
 		from_reader(response)
 	}
@@ -1006,7 +1007,7 @@ impl Discord {
 		let map = json! {{
 			"name": name
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/guilds/{}/emojis/{}", server, emoji);
 		from_reader(response)
 	}
@@ -1057,26 +1058,26 @@ impl Discord {
 	pub fn get_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
 		let response = request!(self, get, "/invite/{}", invite);
-		Invite::decode(try!(serde_json::from_reader(response)))
+		Invite::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Get the active invites for a server.
 	pub fn get_server_invites(&self, server: ServerId) -> Result<Vec<RichInvite>> {
 		let response = request!(self, get, "/guilds/{}/invites", server);
-		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
+		decode_array(serde_json::from_reader(response)?, RichInvite::decode)
 	}
 
 	/// Get the active invites for a channel.
 	pub fn get_channel_invites(&self, channel: ChannelId) -> Result<Vec<RichInvite>> {
 		let response = request!(self, get, "/channels/{}/invites", channel);
-		decode_array(try!(serde_json::from_reader(response)), RichInvite::decode)
+		decode_array(serde_json::from_reader(response)?, RichInvite::decode)
 	}
 
 	/// Accept an invite. See `get_invite` for details.
 	pub fn accept_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
 		let response = request!(self, post, "/invite/{}", invite);
-		Invite::decode(try!(serde_json::from_reader(response)))
+		Invite::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Create an invite to a channel.
@@ -1096,16 +1097,16 @@ impl Discord {
 			"max_uses": max_uses,
 			"temporary": temporary,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/channels/{}/invites", channel);
-		RichInvite::decode(try!(serde_json::from_reader(response)))
+		RichInvite::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Delete an invite. See `get_invite` for details.
 	pub fn delete_invite(&self, invite: &str) -> Result<Invite> {
 		let invite = resolve_invite(invite);
 		let response = request!(self, delete, "/invite/{}", invite);
-		Invite::decode(try!(serde_json::from_reader(response)))
+		Invite::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Retrieve a member object for a server given the member's user id.
@@ -1158,7 +1159,7 @@ impl Discord {
 		f: F,
 	) -> Result<()> {
 		let map = EditMember::__build(f);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(
 			self,
 			patch(body),
@@ -1173,7 +1174,7 @@ impl Discord {
 	/// Similar to `edit_member`
 	pub fn edit_nickname(&self, server: ServerId, nick: &str) -> Result<()> {
 		let map = json! {{ "nick": nick }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(
 			self,
 			patch(body),
@@ -1196,7 +1197,7 @@ impl Discord {
 	/// Retrieve the list of roles for a server.
 	pub fn get_roles(&self, server: ServerId) -> Result<Vec<Role>> {
 		let response = request!(self, get, "/guilds/{}/roles", server);
-		decode_array(try!(serde_json::from_reader(response)), Role::decode)
+		decode_array(serde_json::from_reader(response)?, Role::decode)
 	}
 
 	/// Create a new role on a server.
@@ -1216,9 +1217,9 @@ impl Discord {
 			"hoist": hoist,
 			"mentionable": mentionable,
 		}};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/roles", server);
-		Role::decode(try!(serde_json::from_reader(response)))
+		Role::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Create a new role on a server.
@@ -1228,9 +1229,9 @@ impl Discord {
 		f: F,
 	) -> Result<Role> {
 		let map = EditRole::__build(f);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/roles", server);
-		Role::decode(try!(serde_json::from_reader(response)))
+		Role::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Modify a role on a server.
@@ -1241,9 +1242,9 @@ impl Discord {
 		f: F,
 	) -> Result<Role> {
 		let map = EditRole::__build(f);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/guilds/{}/roles/{}", server, role);
-		Role::decode(try!(serde_json::from_reader(response)))
+		Role::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Reorder the roles on a server.
@@ -1257,9 +1258,9 @@ impl Discord {
 				}}
 			})
 			.collect();
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/guilds/{}/roles", server);
-		decode_array(try!(serde_json::from_reader(response)), Role::decode)
+		decode_array(serde_json::from_reader(response)?, Role::decode)
 	}
 
 	/// Remove specified role from a server.
@@ -1271,9 +1272,9 @@ impl Discord {
 	/// one if it exists.
 	pub fn create_private_channel(&self, recipient: UserId) -> Result<PrivateChannel> {
 		let map = json! {{ "recipient_id": recipient }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/users/@me/channels");
-		PrivateChannel::decode(try!(serde_json::from_reader(response)))
+		PrivateChannel::decode(serde_json::from_reader(response)?)
 	}
 
 	/// Get the URL at which a user's avatar is located.
@@ -1284,11 +1285,11 @@ impl Discord {
 	/// Download a user's avatar.
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
-		let mut response = try!(retry(|| self
+		let mut response = retry(|| self
 			.client
-			.get(&self.get_user_avatar_url(user, avatar))));
+			.get(&self.get_user_avatar_url(user, avatar)))?;
 		let mut vec = Vec::new();
-		try!(response.read_to_end(&mut vec));
+		response.read_to_end(&mut vec)?;
 		Ok(vec)
 	}
 
@@ -1324,14 +1325,14 @@ impl Discord {
 	pub fn edit_profile<F: FnOnce(EditProfile) -> EditProfile>(&self, f: F) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
-		let user: CurrentUser = try!(from_reader(response));
+		let user: CurrentUser = from_reader(response)?;
 		let mut map = Object::new();
 		map.insert("username".into(), json!(user.username));
 		map.insert("avatar".into(), json!(user.avatar));
 
 		// Then, send the profile patch.
 		let map = EditProfile::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/users/@me");
 		from_reader(response)
 	}
@@ -1346,7 +1347,7 @@ impl Discord {
 	) -> Result<CurrentUser> {
 		// First, get the current profile, so that providing username and avatar is optional.
 		let response = request!(self, get, "/users/@me");
-		let user: CurrentUser = try!(from_reader(response));
+		let user: CurrentUser = from_reader(response)?;
 		if user.bot {
 			return Err(Error::Other(
 				"Cannot call edit_user_profile on a bot account",
@@ -1361,9 +1362,9 @@ impl Discord {
 
 		// Then, send the profile patch.
 		let map = EditUserProfile::__apply(f, map);
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, patch(body), "/users/@me");
-		let mut json: Object = try!(serde_json::from_reader(response));
+		let mut json: Object = serde_json::from_reader(response)?;
 
 		// If a token was included in the response, switch to it. Important because if the
 		// password was changed, the old token is invalidated.
@@ -1387,7 +1388,7 @@ impl Discord {
 		channel: ChannelId,
 	) -> Result<()> {
 		let map = json! {{ "channel_id": channel }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(
 			self,
 			patch(body),
@@ -1402,7 +1403,7 @@ impl Discord {
 	/// pruned.
 	pub fn begin_server_prune(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = json! {{ "days": days }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/prune", server);
 		from_reader(response)
 	}
@@ -1412,7 +1413,7 @@ impl Discord {
 	/// role assigned will never be pruned.
 	pub fn get_server_prune_count(&self, server: ServerId, days: u16) -> Result<ServerPrune> {
 		let map = json! {{ "days": days }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		let response = request!(self, get(body), "/guilds/{}/prune", server);
 		from_reader(response)
 	}
@@ -1424,7 +1425,7 @@ impl Discord {
 	/// bots.
 	pub fn edit_note(&self, user: UserId, note: &str) -> Result<()> {
 		let map = json! {{ "note": note }};
-		let body = try!(serde_json::to_string(&map));
+		let body = serde_json::to_string(&map)?;
 		check_empty(request!(self, put(body), "/users/@me/notes/{}", user))
 	}
 
@@ -1440,7 +1441,7 @@ impl Discord {
 	/// This endpoint is only available for bots.
 	pub fn suggested_shard_count(&self) -> Result<u64> {
 		let response = request!(self, get, "/gateway/bot");
-		let mut value: Object = try!(serde_json::from_reader(response));
+		let mut value: Object = serde_json::from_reader(response)?;
 		match value.remove("shards") {
 			Some(value) => match value.as_u64() {
 				Some(shards) => Ok(shards),
@@ -1482,7 +1483,7 @@ impl Discord {
 
 	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
 		let response = request!(self, get, "/gateway");
-		let value: BTreeMap<String, String> = try!(serde_json::from_reader(response));
+		let value: BTreeMap<String, String> = serde_json::from_reader(response)?;
 		let url = match value.get("url") {
 			Some(url) => url,
 			None => {
@@ -1507,7 +1508,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 	use std::io::Read;
 	let path = path.as_ref();
 	let mut vec = Vec::new();
-	try!(try!(std::fs::File::open(path)).read_to_end(&mut vec));
+	std::fs::File::open(path)?.read_to_end(&mut vec)?;
 	Ok(format!(
 		"data:image/{};base64,{}",
 		if path.extension() == Some("png".as_ref()) {
@@ -1522,10 +1523,10 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 	let client = tls_client();
-	let response = try!(retry(
+	let response = retry(
 		|| client.get(status_concat!("/incidents/unresolved.json"))
-	));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	)?;
+	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("incidents") {
 		Some(incidents) => decode_array(incidents, Incident::decode),
@@ -1536,10 +1537,10 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	let client = tls_client();
-	let response = try!(check_status(retry(
+	let response = check_status(retry(
 		|| client.get(status_concat!("/scheduled-maintenances/active.json"))
-	)));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	))?;
+	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("scheduled_maintenances") {
 		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
@@ -1550,10 +1551,10 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = tls_client();
-	let response = try!(check_status(retry(
+	let response = check_status(retry(
 		|| client.get(status_concat!("/scheduled-maintenances/upcoming.json"))
-	)));
-	let mut json: Object = try!(serde_json::from_reader(response));
+	))?;
+	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("scheduled_maintenances") {
 		Some(scheduled_maintenances) => decode_array(scheduled_maintenances, Maintenance::decode),
@@ -1597,7 +1598,7 @@ fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(
 fn check_status(
 	response: hyper::Result<hyper::client::Response>,
 ) -> Result<hyper::client::Response> {
-	let response: hyper::client::Response = try!(response);
+	let response: hyper::client::Response = response?;
 	if !response.status.is_success() {
 		return Err(Error::from_response(response));
 	}
@@ -1614,7 +1615,7 @@ fn check_empty(mut response: hyper::client::Response) -> Result<()> {
 			debug!("Header: {}", header);
 		}
 		let mut content = String::new();
-		try!(response.read_to_string(&mut content));
+		response.read_to_string(&mut content)?;
 		debug!("Content: {}", content);
 	}
 	Ok(())
@@ -1696,7 +1697,7 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 	{
 		use websocket::message::{Message, Type};
 		use websocket::ws::receiver::Receiver;
-		let message: Message = try!(self.recv_message());
+		let message: Message = self.recv_message()?;
 		if message.opcode == Type::Close {
 			Err(Error::Closed(
 				message.cd_status_code,
@@ -1707,8 +1708,8 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 			let payload = if message.opcode == Type::Binary {
 				use std::io::Read;
 				payload_vec = Vec::new();
-				try!(flate2::read::ZlibDecoder::new(&message.payload[..])
-					.read_to_end(&mut payload_vec));
+				flate2::read::ZlibDecoder::new(&message.payload[..])
+					.read_to_end(&mut payload_vec)?;
 				&payload_vec[..]
 			} else {
 				&message.payload[..]

@@ -99,17 +99,17 @@ impl RateLimit {
 	}
 
 	fn try_post_update(&mut self, response: &hyper::client::Response) -> Result<bool> {
-		if let Some(reset) = try!(read_header(&response.headers, "X-RateLimit-Reset")) {
+		if let Some(reset) = read_header(&response.headers, "X-RateLimit-Reset")? {
 			self.reset = reset;
 		}
-		if let Some(limit) = try!(read_header(&response.headers, "X-RateLimit-Limit")) {
+		if let Some(limit) = read_header(&response.headers, "X-RateLimit-Limit")? {
 			self.limit = limit;
 		}
-		if let Some(remaining) = try!(read_header(&response.headers, "X-RateLimit-Remaining")) {
+		if let Some(remaining) = read_header(&response.headers, "X-RateLimit-Remaining")? {
 			self.remaining = remaining;
 		}
 		if response.status == hyper::status::StatusCode::TooManyRequests {
-			if let Some(delay) = try!(read_header(&response.headers, "Retry-After")) {
+			if let Some(delay) = read_header(&response.headers, "Retry-After")? {
 				let delay = delay as u64 + 100; // 100ms of leeway
 				warn!("429: sleeping for {}ms", delay);
 				::sleep_ms(delay);

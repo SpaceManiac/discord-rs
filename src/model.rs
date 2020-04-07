@@ -1,5 +1,6 @@
 //! Struct and enum definitions of values in the Discord model.
 #![allow(missing_docs)]
+#![allow(deprecated)]
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -519,7 +520,7 @@ pub struct Call {
 }
 serial_decode!(Call);
 
-/// Private text channel to another user  
+/// Private text channel to another user
 /// https://discordapp.com/developers/docs/resources/channel#channel-object
 #[derive(Debug, Clone)]
 pub struct PrivateChannel {
@@ -1013,8 +1014,8 @@ serial_numbers! { GameType;
 	Streaming, 1;
 }
 
-/// Information about a game being played  
-/// https://discordapp.com/developers/docs/topics/gateway#activity-object  
+/// Information about a game being played
+/// https://discordapp.com/developers/docs/topics/gateway#activity-object
 /// (might merge it with `Activity` in the future)
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -1699,7 +1700,7 @@ pub struct ReadyEvent {
 	pub shard: Option<[u8; 2]>,
 }
 
-/// the emoji used for a custom status  
+/// the emoji used for a custom status
 /// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-emoji
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityEmoji {
@@ -1709,15 +1710,15 @@ pub struct ActivityEmoji {
 }
 serial_decode!(ActivityEmoji);
 
-/// User's activity  
+/// User's activity
 /// https://discordapp.com/developers/docs/topics/gateway#activity-object
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Activity {
-	/// 0 - Game, 1 - Streaming, 2 - Listening, 4 - Custom  
+	/// 0 - Game, 1 - Streaming, 2 - Listening, 4 - Custom
 	/// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-types
 	#[serde(rename = "type")]
 	pub kind: i8,
-	/// This is where the custom user status appears  
+	/// This is where the custom user status appears
 	pub state: Option<String>,
 	/// the emoji used for a custom status
 	pub emoji: Option<ActivityEmoji>,
@@ -1792,7 +1793,7 @@ pub enum Event {
 		user_id: UserId,
 		timestamp: DateTime<Utc>,
 	},
-	/// A member's presence state (or username or avatar) has changed  
+	/// A member's presence state (or username or avatar) has changed
 	/// https://discordapp.com/developers/docs/topics/gateway#presence-update
 	PresenceUpdate {
 		presence: Presence,

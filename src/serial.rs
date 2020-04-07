@@ -145,7 +145,7 @@ pub mod reaction_emoji {
 	}
 
 	pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
-		Ok(match try!(EmojiDe::deserialize(d)) {
+		Ok(match EmojiDe::deserialize(d)? {
 			EmojiDe { name, id: None } => ReactionEmoji::Unicode(name),
 			EmojiDe { name, id: Some(id) } => ReactionEmoji::Custom { name: name, id: id },
 		})
