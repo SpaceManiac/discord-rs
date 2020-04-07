@@ -32,7 +32,6 @@ extern crate chrono;
 extern crate flate2;
 extern crate hyper;
 extern crate hyper_native_tls;
-extern crate mime;
 extern crate multipart;
 extern crate serde;
 extern crate websocket;
@@ -636,8 +635,8 @@ impl Discord {
 		try!(multi.write_text("content", text));
 		try!(multi.write_stream("file", &mut file, Some(filename), None));
 		let http_buffer: multipart::mock::HttpBuffer = try!(multi.send());
-		fn multipart_mime(bound: &str) -> mime::Mime {
-			use mime::{Attr, Mime, SubLevel, TopLevel, Value};
+		fn multipart_mime(bound: &str) -> hyper::mime::Mime {
+			use hyper::mime::{Attr, Mime, SubLevel, TopLevel, Value};
 			Mime(
 				TopLevel::Multipart,
 				SubLevel::Ext("form-data".into()),
