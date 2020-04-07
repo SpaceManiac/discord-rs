@@ -25,6 +25,7 @@
 //!
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
+#![allow(deprecated)]
 
 extern crate base64;
 extern crate chrono;
@@ -1293,14 +1294,14 @@ impl Discord {
 		Ok(vec)
 	}
 
-	/// Get information about a user.  
+	/// Get information about a user.
 	/// https://discordapp.com/developers/docs/resources/user#get-user
 	pub fn get_user(&self, user: UserId) -> Result<User> {
 		let response = request!(self, get, "/users/{}", user);
 		from_reader(response)
 	}
 
-	/// Create a new DM channel with a user.  
+	/// Create a new DM channel with a user.
 	/// https://discordapp.com/developers/docs/resources/user#create-dm
 	pub fn create_dm(&self, recipient_id: UserId) -> Result<PrivateChannel> {
 		let map = json! {{
