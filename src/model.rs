@@ -12,8 +12,6 @@ use super::{Error, Object, Result};
 
 use chrono::prelude::*;
 
-pub use self::permissions::Permissions;
-
 macro_rules! req {
 	($opt:expr) => {
 		try!($opt.ok_or(Error::Decode(
@@ -663,66 +661,103 @@ impl PermissionOverwrite {
 	}
 }
 
+bitflags! {
+	/// Set of permissions assignable to a Role or PermissionOverwrite
+	pub struct Permissions: u64 {
+		const CREATE_INVITE = 1;
+		const KICK_MEMBERS = 1 << 1;
+		const BAN_MEMBERS = 1 << 2;
+		/// Grant all permissions, bypassing channel-specific permissions
+		const ADMINISTRATOR = 1 << 3;
+		/// Modify roles below their own
+		const MANAGE_ROLES = 1 << 28;
+		/// Create channels or edit existing ones
+		const MANAGE_CHANNELS = 1 << 4;
+		/// Change the server's name or move regions
+		const MANAGE_SERVER = 1 << 5;
+		/// Change their own nickname
+		const CHANGE_NICKNAMES = 1 << 26;
+		/// Change the nickname of other users
+		const MANAGE_NICKNAMES = 1 << 27;
+		/// Manage the emojis in a a server.
+		const MANAGE_EMOJIS = 1 << 30;
+		/// Manage channel webhooks
+		const MANAGE_WEBHOOKS = 1 << 29;
+
+		const READ_MESSAGES = 1 << 10;
+		const SEND_MESSAGES = 1 << 11;
+		/// Send text-to-speech messages to those focused on the channel
+		const SEND_TTS_MESSAGES = 1 << 12;
+		/// Delete messages by other users
+		const MANAGE_MESSAGES = 1 << 13;
+		const EMBED_LINKS = 1 << 14;
+		const ATTACH_FILES = 1 << 15;
+		const READ_HISTORY = 1 << 16;
+		/// Trigger a push notification for an entire channel with "@everyone"
+		const MENTION_EVERYONE = 1 << 17;
+		/// Use emojis from other servers
+		const EXTERNAL_EMOJIS = 1 << 18;
+		/// Add emoji reactions to messages
+		const ADD_REACTIONS = 1 << 6;
+
+		const VOICE_CONNECT = 1 << 20;
+		const VOICE_SPEAK = 1 << 21;
+		const VOICE_MUTE_MEMBERS = 1 << 22;
+		const VOICE_DEAFEN_MEMBERS = 1 << 23;
+		/// Move users out of this channel into another
+		const VOICE_MOVE_MEMBERS = 1 << 24;
+		/// When denied, members must use push-to-talk
+		const VOICE_USE_VAD = 1 << 25;
+	}
+}
+
+serial_single_field!(Permissions as bits: u64);
+
+impl Permissions {
+	pub fn decode(value: Value) -> Result<Permissions> {
+		Ok(Self::from_bits_truncate(req!(value.as_u64())))
+	}
+}
+
 pub mod permissions {
-	use serde_json::Value;
-	use {Error, Result};
+	pub use super::Permissions;
 
-	bitflags! {
-		/// Set of permissions assignable to a Role or PermissionOverwrite
-		pub flags Permissions: u64 {
-			const CREATE_INVITE = 1,
-			const KICK_MEMBERS = 1 << 1,
-			const BAN_MEMBERS = 1 << 2,
-			/// Grant all permissions, bypassing channel-specific permissions
-			const ADMINISTRATOR = 1 << 3,
-			/// Modify roles below their own
-			const MANAGE_ROLES = 1 << 28,
-			/// Create channels or edit existing ones
-			const MANAGE_CHANNELS = 1 << 4,
-			/// Change the server's name or move regions
-			const MANAGE_SERVER = 1 << 5,
-			/// Change their own nickname
-			const CHANGE_NICKNAMES = 1 << 26,
-			/// Change the nickname of other users
-			const MANAGE_NICKNAMES = 1 << 27,
-			/// Manage the emojis in a a server.
-			const MANAGE_EMOJIS = 1 << 30,
-			/// Manage channel webhooks
-			const MANAGE_WEBHOOKS = 1 << 29,
-
-			const READ_MESSAGES = 1 << 10,
-			const SEND_MESSAGES = 1 << 11,
-			/// Send text-to-speech messages to those focused on the channel
-			const SEND_TTS_MESSAGES = 1 << 12,
-			/// Delete messages by other users
-			const MANAGE_MESSAGES = 1 << 13,
-			const EMBED_LINKS = 1 << 14,
-			const ATTACH_FILES = 1 << 15,
-			const READ_HISTORY = 1 << 16,
-			/// Trigger a push notification for an entire channel with "@everyone"
-			const MENTION_EVERYONE = 1 << 17,
-			/// Use emojis from other servers
-			const EXTERNAL_EMOJIS = 1 << 18,
-			/// Add emoji reactions to messages
-			const ADD_REACTIONS = 1 << 6,
-
-			const VOICE_CONNECT = 1 << 20,
-			const VOICE_SPEAK = 1 << 21,
-			const VOICE_MUTE_MEMBERS = 1 << 22,
-			const VOICE_DEAFEN_MEMBERS = 1 << 23,
-			/// Move users out of this channel into another
-			const VOICE_MOVE_MEMBERS = 1 << 24,
-			/// When denied, members must use push-to-talk
-			const VOICE_USE_VAD = 1 << 25,
+	macro_rules! permission_backcompat {
+		($($i:ident,)*) => {
+			$(pub const $i: Permissions = Permissions::$i;)*
 		}
 	}
 
-	serial_single_field!(Permissions as bits: u64);
-
-	impl Permissions {
-		pub fn decode(value: Value) -> Result<Permissions> {
-			Ok(Self::from_bits_truncate(req!(value.as_u64())))
-		}
+	// Backwards-compatibility names to allow `use discord::model::permissions::*;`.
+	// Don't expand this list.
+	permission_backcompat! {
+		CREATE_INVITE,
+		KICK_MEMBERS,
+		BAN_MEMBERS,
+		ADMINISTRATOR,
+		MANAGE_ROLES,
+		MANAGE_CHANNELS,
+		MANAGE_SERVER,
+		CHANGE_NICKNAMES,
+		MANAGE_NICKNAMES,
+		MANAGE_EMOJIS,
+		MANAGE_WEBHOOKS,
+		READ_MESSAGES,
+		SEND_MESSAGES,
+		SEND_TTS_MESSAGES,
+		MANAGE_MESSAGES,
+		EMBED_LINKS,
+		ATTACH_FILES,
+		READ_HISTORY,
+		MENTION_EVERYONE,
+		EXTERNAL_EMOJIS,
+		ADD_REACTIONS,
+		VOICE_CONNECT,
+		VOICE_SPEAK,
+		VOICE_MUTE_MEMBERS,
+		VOICE_DEAFEN_MEMBERS,
+		VOICE_MOVE_MEMBERS,
+		VOICE_USE_VAD,
 	}
 }
 
