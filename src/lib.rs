@@ -25,7 +25,6 @@
 //!
 //! For examples, see the `examples` directory in the source tree.
 #![warn(missing_docs)]
-#![allow(deprecated)]
 
 extern crate base64;
 extern crate chrono;

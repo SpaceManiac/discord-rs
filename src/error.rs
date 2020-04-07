@@ -98,6 +98,7 @@ impl From<OpusError> for Error {
 }
 
 impl Display for Error {
+	#[allow(deprecated)]
 	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		match *self {
 			Error::Hyper(ref inner) => inner.fmt(f),
@@ -114,6 +115,7 @@ impl Display for Error {
 }
 
 impl StdError for Error {
+	#[allow(deprecated)]
 	fn description(&self) -> &str {
 		match *self {
 			Error::Hyper(ref inner) => inner.description(),
