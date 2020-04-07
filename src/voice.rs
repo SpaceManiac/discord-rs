@@ -195,7 +195,7 @@ impl VoiceConnection {
 
 	/// Play from the given audio source.
 	#[inline]
-	pub fn play(&mut self, source: Box<AudioSource>) {
+	pub fn play(&mut self, source: Box<dyn AudioSource>) {
 		self.thread_send(Status::SetSource(Some(source)));
 	}
 
@@ -207,7 +207,7 @@ impl VoiceConnection {
 
 	/// Set the receiver to which incoming voice will be sent.
 	#[inline]
-	pub fn set_receiver(&mut self, receiver: Box<AudioReceiver>) {
+	pub fn set_receiver(&mut self, receiver: Box<dyn AudioReceiver>) {
 		self.thread_send(Status::SetReceiver(Some(receiver)));
 	}
 
@@ -267,7 +267,7 @@ impl Drop for VoiceConnection {
 ///
 /// The input data should be in signed 16-bit little-endian PCM input stream at 48000Hz. If
 /// `stereo` is true, the channels should be interleaved, left first.
-pub fn create_pcm_source<R: Read + Send + 'static>(stereo: bool, read: R) -> Box<AudioSource> {
+pub fn create_pcm_source<R: Read + Send + 'static>(stereo: bool, read: R) -> Box<dyn AudioSource> {
 	Box::new(PcmSource(stereo, read))
 }
 
@@ -293,7 +293,7 @@ impl<R: Read + Send> AudioSource for PcmSource<R> {
 ///
 /// Requires `ffmpeg` to be on the path and executable. If `ffprobe` is available and indicates
 /// that the input file is stereo, the returned audio source will be stereo.
-pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<Box<AudioSource>> {
+pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<Box<dyn AudioSource>> {
 	use std::process::{Command, Stdio};
 	let path = path.as_ref();
 	let stereo = check_stereo(path).unwrap_or(false);
@@ -364,7 +364,7 @@ impl Drop for ProcessStream {
 ///
 /// The audio download is streamed rather than downloaded in full; this may be desireable for
 /// longer audios but can introduce occasional brief interruptions.
-pub fn open_ytdl_stream(url: &str) -> Result<Box<AudioSource>> {
+pub fn open_ytdl_stream(url: &str) -> Result<Box<dyn AudioSource>> {
 	use std::process::{Command, Stdio};
 	let output = try!(Command::new("youtube-dl")
 		.args(&[
@@ -398,8 +398,8 @@ pub fn open_ytdl_stream(url: &str) -> Result<Box<AudioSource>> {
 }
 
 enum Status {
-	SetSource(Option<Box<AudioSource>>),
-	SetReceiver(Option<Box<AudioReceiver>>),
+	SetSource(Option<Box<dyn AudioSource>>),
+	SetReceiver(Option<Box<dyn AudioReceiver>>),
 	Connect(ConnStartInfo),
 	Disconnect,
 }
@@ -676,8 +676,8 @@ impl InternalConnection {
 
 	fn update(
 		&mut self,
-		source: &mut Option<Box<AudioSource>>,
-		receiver: &mut Option<Box<AudioReceiver>>,
+		source: &mut Option<Box<dyn AudioSource>>,
+		receiver: &mut Option<Box<dyn AudioReceiver>>,
 		audio_timer: &mut ::Timer,
 	) -> Result<()> {
 		let mut audio_buffer = [0i16; 960 * 2]; // 20 ms, stereo
