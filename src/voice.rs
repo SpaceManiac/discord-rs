@@ -309,7 +309,7 @@ pub fn open_ffmpeg_stream<P: AsRef<::std::ffi::OsStr>>(path: P) -> Result<Box<dy
 			"48000",
 			"-acodec",
 			"pcm_s16le",
-			"-"
+			"-",
 		])
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
@@ -373,7 +373,7 @@ pub fn open_ytdl_stream(url: &str) -> Result<Box<dyn AudioSource>> {
 			"--no-playlist",
 			"--print-json",
 			"--skip-download",
-			url
+			url,
 		])
 		.stdin(Stdio::null())
 		.output()?;
@@ -634,14 +634,19 @@ impl InternalConnection {
 					{
 						match *receiver.get_mut().get_mut() {
 							WebSocketStream::Tcp(ref inner) => inner.set_nonblocking(true).unwrap(),
-							WebSocketStream::Ssl(ref inner) => inner.lock().unwrap().get_ref().set_nonblocking(true).unwrap(),
+							WebSocketStream::Ssl(ref inner) => inner
+								.lock()
+								.unwrap()
+								.get_ref()
+								.set_nonblocking(true)
+								.unwrap(),
 						};
 					}
 					loop {
 						while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
 							match tx1.send(RecvStatus::Websocket(msg)) {
-								Ok(()) => {},
-								Err(_) => return
+								Ok(()) => {}
+								Err(_) => return,
 							}
 						}
 						if let Ok(_) = ws_reader_close.try_recv() {
@@ -653,13 +658,15 @@ impl InternalConnection {
 			let udp_thread = Some(try!(::std::thread::Builder::new()
 				.name(format!("{} (UDP reader)", thread_name))
 				.spawn(move || {
-					udp_clone.set_read_timeout(Some(::std::time::Duration::from_millis(100))).unwrap();
+					udp_clone
+						.set_read_timeout(Some(::std::time::Duration::from_millis(100)))
+						.unwrap();
 					let mut buffer = [0; 512];
 					loop {
 						if let Ok((len, _)) = udp_clone.recv_from(&mut buffer) {
 							match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
-								Ok(()) => {},
-								Err(_) => return
+								Ok(()) => {}
+								Err(_) => return,
 							}
 						} else if let Ok(_) = udp_reader_close.try_recv() {
 							return;
@@ -690,7 +697,7 @@ impl InternalConnection {
 			encoder: opus::Encoder::new(
 				SAMPLE_RATE,
 				opus::Channels::Mono,
-				opus::Application::Audio
+				opus::Application::Audio,
 			)?,
 			encoder_stereo: false,
 			keepalive_timer: ::Timer::new(interval),
@@ -737,9 +744,9 @@ impl InternalConnection {
 							let len = self
 								.decoder_map
 								.entry((ssrc, channels))
-								.or_insert_with(
-									|| opus::Decoder::new(SAMPLE_RATE, channels).unwrap()
-								)
+								.or_insert_with(|| {
+									opus::Decoder::new(SAMPLE_RATE, channels).unwrap()
+								})
 								.decode(&decrypted, &mut audio_buffer, false)?;
 							let stereo = channels == opus::Channels::Stereo;
 							receiver.voice_packet(
@@ -784,11 +791,7 @@ impl InternalConnection {
 				} else {
 					opus::Channels::Mono
 				};
-				self.encoder = opus::Encoder::new(
-					SAMPLE_RATE,
-					channels,
-					opus::Application::Audio
-				)?;
+				self.encoder = opus::Encoder::new(SAMPLE_RATE, channels, opus::Application::Audio)?;
 				self.encoder_stereo = stereo;
 			}
 			let buffer_len = if stereo { 960 * 2 } else { 960 };
@@ -841,7 +844,9 @@ impl InternalConnection {
 		// encode the audio data
 		let extent = packet.len() - 16; // leave 16 bytes for encryption overhead
 		let buffer_len = if self.encoder_stereo { 960 * 2 } else { 960 };
-		let len = self.encoder.encode(&audio_buffer[..buffer_len], &mut packet[HEADER_LEN..extent])?;
+		let len = self
+			.encoder
+			.encode(&audio_buffer[..buffer_len], &mut packet[HEADER_LEN..extent])?;
 		let crypted = crypto::seal(
 			&packet[HEADER_LEN..HEADER_LEN + len],
 			&nonce,
@@ -854,7 +859,8 @@ impl InternalConnection {
 
 		// wait until the right time, then transmit the packet
 		audio_timer.sleep_until_tick();
-		self.udp.send_to(&packet[..HEADER_LEN + crypted.len()], self.destination)?;
+		self.udp
+			.send_to(&packet[..HEADER_LEN + crypted.len()], self.destination)?;
 		self.audio_keepalive_timer.defer();
 		Ok(())
 	}

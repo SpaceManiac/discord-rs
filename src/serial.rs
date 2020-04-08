@@ -95,10 +95,9 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 	match deserialize_discrim_opt(d) {
 		Ok(Some(result)) => Ok(result),
 		Err(e) => Err(e),
-		Ok(None) => Err(D::Error::missing_field("discriminator"))
+		Ok(None) => Err(D::Error::missing_field("discriminator")),
 	}
 }
-
 
 /// Deserialize a single-field struct like a newtype struct.
 macro_rules! serial_single_field {

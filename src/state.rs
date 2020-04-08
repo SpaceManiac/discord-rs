@@ -108,7 +108,7 @@ impl State {
 			Event::Ready(ref ready) => *self = State::new(ready.clone()),
 			Event::UserUpdate(ref user) => {
 				self.user.update_from(user);
-			},
+			}
 			Event::UserNoteUpdate(user_id, ref note) => {
 				if let Some(notes) = self.notes.as_mut() {
 					if note.is_empty() {

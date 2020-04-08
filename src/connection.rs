@@ -318,8 +318,7 @@ impl Connection {
 		::sleep_ms(1000);
 		trace!("Resuming...");
 		// close connection and re-establish
-		self
-			.receiver
+		self.receiver
 			.get_mut()
 			.get_mut()
 			.shutdown(::std::net::Shutdown::Both)?;

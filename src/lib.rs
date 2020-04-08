@@ -148,7 +148,7 @@ impl Discord {
 				.header(hyper::header::ContentType::json())
 				.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 				.body(&serde_json::to_string(&map)?)
-				.send()
+				.send(),
 		)?;
 		let mut json: BTreeMap<String, String> = serde_json::from_reader(response)?;
 		let token = match json.remove("token") {
@@ -211,7 +211,7 @@ impl Discord {
 					.header(hyper::header::UserAgent(USER_AGENT.to_owned()))
 					.header(hyper::header::Authorization(initial_token.clone()))
 					.body(&serde_json::to_string(&map)?)
-					.send()
+					.send(),
 			)?;
 			let mut json: BTreeMap<String, String> = serde_json::from_reader(response)?;
 			let token = match json.remove("token") {
@@ -333,10 +333,7 @@ impl Discord {
 	/// Get the list of channels in a server.
 	pub fn get_server_channels(&self, server: ServerId) -> Result<Vec<PublicChannel>> {
 		let response = request!(self, get, "/guilds/{}/channels", server);
-		decode_array(
-			serde_json::from_reader(response)?,
-			PublicChannel::decode,
-		)
+		decode_array(serde_json::from_reader(response)?, PublicChannel::decode)
 	}
 
 	/// Get information about a channel.
@@ -644,10 +641,7 @@ impl Discord {
 			)
 		}
 
-		let mut request = hyper::client::Request::new(
-			hyper::method::Method::Post,
-			url
-		)?;
+		let mut request = hyper::client::Request::new(hyper::method::Method::Post, url)?;
 		request
 			.headers_mut()
 			.set(hyper::header::Authorization(self.token.clone()));
@@ -661,9 +655,7 @@ impl Discord {
 			)));
 		let mut request = request.start()?;
 		request.write(&http_buffer.buf[..])?;
-		Message::decode(serde_json::from_reader(check_status(
-			request.send()
-		)?)?)
+		Message::decode(serde_json::from_reader(check_status(request.send())?)?)
 	}
 
 	/// Acknowledge this message as "read" by this client.
@@ -1285,9 +1277,7 @@ impl Discord {
 	/// Download a user's avatar.
 	pub fn get_user_avatar(&self, user: UserId, avatar: &str) -> Result<Vec<u8>> {
 		use std::io::Read;
-		let mut response = retry(|| self
-			.client
-			.get(&self.get_user_avatar_url(user, avatar)))?;
+		let mut response = retry(|| self.client.get(&self.get_user_avatar_url(user, avatar)))?;
 		let mut vec = Vec::new();
 		response.read_to_end(&mut vec)?;
 		Ok(vec)
@@ -1523,9 +1513,7 @@ pub fn read_image<P: AsRef<::std::path::Path>>(path: P) -> Result<String> {
 /// Retrieves the current unresolved incidents from the status page.
 pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 	let client = tls_client();
-	let response = retry(
-		|| client.get(status_concat!("/incidents/unresolved.json"))
-	)?;
+	let response = retry(|| client.get(status_concat!("/incidents/unresolved.json")))?;
 	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("incidents") {
@@ -1537,9 +1525,9 @@ pub fn get_unresolved_incidents() -> Result<Vec<Incident>> {
 /// Retrieves the active maintenances from the status page.
 pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 	let client = tls_client();
-	let response = check_status(retry(
-		|| client.get(status_concat!("/scheduled-maintenances/active.json"))
-	))?;
+	let response = check_status(retry(|| {
+		client.get(status_concat!("/scheduled-maintenances/active.json"))
+	}))?;
 	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("scheduled_maintenances") {
@@ -1551,9 +1539,9 @@ pub fn get_active_maintenances() -> Result<Vec<Maintenance>> {
 /// Retrieves the upcoming maintenances from the status page.
 pub fn get_upcoming_maintenances() -> Result<Vec<Maintenance>> {
 	let client = tls_client();
-	let response = check_status(retry(
-		|| client.get(status_concat!("/scheduled-maintenances/upcoming.json"))
-	))?;
+	let response = check_status(retry(|| {
+		client.get(status_concat!("/scheduled-maintenances/upcoming.json"))
+	}))?;
 	let mut json: Object = serde_json::from_reader(response)?;
 
 	match json.remove("scheduled_maintenances") {

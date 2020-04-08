@@ -72,7 +72,6 @@ fn update_field_opt<T: Clone>(item: &mut Option<T>, patch: &Option<T>) {
 	}
 }
 
-
 //=================
 // Discord identifier types
 
@@ -1471,7 +1470,7 @@ serial_decode!(CurrentUser);
 pub struct CurrentUserPatch {
 	pub id: Option<UserId>,
 	pub username: Option<String>,
-	#[serde(deserialize_with="::serial::deserialize_discrim_opt")]
+	#[serde(deserialize_with = "::serial::deserialize_discrim_opt")]
 	pub discriminator: Option<u16>,
 	pub avatar: Option<String>,
 	pub email: Option<String>,
@@ -1531,7 +1530,7 @@ mod test {
 			email: Some("foo@example.com".into()),
 			verified: true,
 			bot: false,
-			mfa_enabled: true
+			mfa_enabled: true,
 		};
 
 		let p1 = CurrentUserPatch {
@@ -1542,7 +1541,7 @@ mod test {
 			email: None,
 			verified: None,
 			bot: None,
-			mfa_enabled: None
+			mfa_enabled: None,
 		};
 
 		let mut user = u1.clone();
@@ -1560,7 +1559,7 @@ mod test {
 			email: Some("bar@example.com".into()),
 			verified: Some(false),
 			bot: Some(true),
-			mfa_enabled: Some(false)
+			mfa_enabled: Some(false),
 		};
 
 		let mut user = u1.clone();
@@ -1578,15 +1577,21 @@ mod test {
 			email: Some("bar@example.com".into()),
 			verified: Some(false),
 			bot: Some(true),
-			mfa_enabled: Some(false)
+			mfa_enabled: Some(false),
 		};
 
 		let mut user = u1.clone();
 		user.update_from(&p3);
 
-		assert_field_unwrap!(user, p3,
-			id, username, discriminator, verified,
-			bot, mfa_enabled
+		assert_field_unwrap!(
+			user,
+			p3,
+			id,
+			username,
+			discriminator,
+			verified,
+			bot,
+			mfa_enabled
 		);
 		assert_field!(user, p3, email, avatar);
 	}
