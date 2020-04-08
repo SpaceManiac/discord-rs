@@ -3,8 +3,8 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use serde::de::{Error, Unexpected, Visitor};
 use serde::*;
-use serde::de::{Visitor, Error, Unexpected};
 
 fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E> {
 	if n >= 0 {
@@ -15,8 +15,13 @@ fn i64_to_u64<'d, V: Visitor<'d>, E: Error>(v: V, n: i64) -> Result<V::Value, E>
 }
 
 /// Ignore deserialization errors and revert to default.
-pub fn ignore_errors<'d, T: Deserialize<'d> + Default, D: Deserializer<'d>>(d: D) -> Result<T, D::Error> {
-	Ok(T::deserialize(d).ok().unwrap_or_default())
+pub fn ignore_errors<'d, T: Deserialize<'d> + Default, D: Deserializer<'d>>(
+	d: D,
+) -> Result<T, D::Error> {
+	use serde_json::Value;
+
+	let v = Value::deserialize(d)?;
+	Ok(T::deserialize(v).ok().unwrap_or_default())
 }
 
 /// Deserialize a maybe-string ID into a u64.
@@ -38,11 +43,12 @@ pub fn deserialize_id<'d, D: Deserializer<'d>>(d: D) -> Result<u64, D::Error> {
 		}
 
 		fn visit_str<E: Error>(self, v: &str) -> Result<u64, E> {
-			v.parse::<u64>().map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
+			v.parse::<u64>()
+				.map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
 		}
 	}
 
-	d.deserialize_u64(IdVisitor)
+	d.deserialize_any(IdVisitor)
 }
 
 /// Deserialize a maybe-string discriminator into a u16.
@@ -55,8 +61,8 @@ pub fn deserialize_discrim_opt<'d, D: Deserializer<'d>>(d: D) -> Result<Option<u
 				Ok(Some($v as u16))
 			} else {
 				Err(E::invalid_value($wrong, &$self))
-			}
-		}
+				}
+		};
 	}
 
 	struct DiscrimVisitor;
@@ -82,7 +88,7 @@ pub fn deserialize_discrim_opt<'d, D: Deserializer<'d>>(d: D) -> Result<Option<u
 		}
 	}
 
-	d.deserialize_u16(DiscrimVisitor)
+	d.deserialize_any(DiscrimVisitor)
 }
 
 pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Error> {
@@ -98,28 +104,33 @@ pub fn deserialize_discrim<'d, D: Deserializer<'d>>(d: D) -> Result<u16, D::Erro
 macro_rules! serial_single_field {
 	($typ:ident as $field:ident: $inner:path) => {
 		impl ::serde::Serialize for $typ {
-			fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+			fn serialize<S: ::serde::ser::Serializer>(
+				&self,
+				s: S,
+			) -> ::std::result::Result<S::Ok, S::Error> {
 				self.$field.serialize(s)
 			}
 		}
 
 		impl<'d> ::serde::Deserialize<'d> for $typ {
-			fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
+			fn deserialize<D: ::serde::de::Deserializer<'d>>(
+				d: D,
+			) -> ::std::result::Result<$typ, D::Error> {
 				<$inner as ::serde::de::Deserialize>::deserialize(d).map(|v| $typ { $field: v })
 			}
 		}
-	}
+	};
 }
 
-/// Special support for the oddly complex ReactionEmoji.
+/// Special support for the oddly complex `ReactionEmoji`.
 pub mod reaction_emoji {
 	use super::*;
-	use model::{ReactionEmoji, EmojiId};
+	use model::{EmojiId, ReactionEmoji};
 
 	#[derive(Serialize)]
 	struct EmojiSer<'s> {
 		name: &'s str,
-		id: Option<EmojiId>
+		id: Option<EmojiId>,
 	}
 
 	#[derive(Deserialize)]
@@ -130,13 +141,20 @@ pub mod reaction_emoji {
 
 	pub fn serialize<S: Serializer>(v: &ReactionEmoji, s: S) -> Result<S::Ok, S::Error> {
 		(match *v {
-			ReactionEmoji::Unicode(ref name) => EmojiSer { name: name, id: None },
-			ReactionEmoji::Custom { ref name, id } => EmojiSer { name: name, id: Some(id) },
-		}).serialize(s)
+			ReactionEmoji::Unicode(ref name) => EmojiSer {
+				name: name,
+				id: None,
+			},
+			ReactionEmoji::Custom { ref name, id } => EmojiSer {
+				name: name,
+				id: Some(id),
+			},
+		})
+		.serialize(s)
 	}
 
 	pub fn deserialize<'d, D: Deserializer<'d>>(d: D) -> Result<ReactionEmoji, D::Error> {
-		Ok(match try!(EmojiDe::deserialize(d)) {
+		Ok(match EmojiDe::deserialize(d)? {
 			EmojiDe { name, id: None } => ReactionEmoji::Unicode(name),
 			EmojiDe { name, id: Some(id) } => ReactionEmoji::Custom { name: name, id: id },
 		})
@@ -171,7 +189,7 @@ pub mod named {
 			}
 		}
 
-		d.deserialize_string(NameVisitor(PhantomData))
+		d.deserialize_any(NameVisitor(PhantomData))
 	}
 }
 macro_rules! serial_names {
@@ -239,7 +257,7 @@ pub mod numeric {
 			}
 		}
 
-		d.deserialize_string(NumVisitor(PhantomData))
+		d.deserialize_any(NumVisitor(PhantomData))
 	}
 }
 macro_rules! serial_numbers {
@@ -279,16 +297,21 @@ macro_rules! serial_use_mapping {
 	($typ:ident, $which:ident) => {
 		impl ::serde::Serialize for $typ {
 			#[inline]
-			fn serialize<S: ::serde::ser::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+			fn serialize<S: ::serde::ser::Serializer>(
+				&self,
+				s: S,
+			) -> ::std::result::Result<S::Ok, S::Error> {
 				::serial::$which::serialize(self, s)
 			}
 		}
 
 		impl<'d> ::serde::Deserialize<'d> for $typ {
 			#[inline]
-			fn deserialize<D: ::serde::de::Deserializer<'d>>(d: D) -> ::std::result::Result<$typ, D::Error> {
+			fn deserialize<D: ::serde::de::Deserializer<'d>>(
+				d: D,
+			) -> ::std::result::Result<$typ, D::Error> {
 				::serial::$which::deserialize(d)
 			}
 		}
-	}
+	};
 }

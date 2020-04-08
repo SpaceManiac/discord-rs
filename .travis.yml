@@ -1,0 +1,5 @@
+language: rust
+dist: xenial
+addons:
+    apt:
+        - libsodium-dev

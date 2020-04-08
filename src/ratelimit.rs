@@ -1,11 +1,11 @@
-use std::sync::Mutex;
-use std::collections::BTreeMap;
 use std;
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 
+use chrono::prelude::*;
 use hyper;
-use time::get_time;
 
-use {Result, Error};
+use {Error, Result};
 
 #[derive(Default)]
 pub struct RateLimits {
@@ -16,8 +16,16 @@ pub struct RateLimits {
 impl RateLimits {
 	/// Check before issuing a request for the given URL.
 	pub fn pre_check(&self, url: &str) {
-		self.global.lock().expect("Rate limits poisoned").pre_check();
-		if let Some(rl) = self.endpoints.lock().expect("Rate limits poisoned").get_mut(url) {
+		self.global
+			.lock()
+			.expect("Rate limits poisoned")
+			.pre_check();
+		if let Some(rl) = self
+			.endpoints
+			.lock()
+			.expect("Rate limits poisoned")
+			.get_mut(url)
+		{
 			rl.pre_check();
 		}
 	}
@@ -26,9 +34,14 @@ impl RateLimits {
 	/// Returns `true` if the request was rate limited and should be retried.
 	pub fn post_update(&self, url: &str, response: &hyper::client::Response) -> bool {
 		if response.headers.get_raw("X-RateLimit-Global").is_some() {
-			self.global.lock().expect("Rate limits poisoned").post_update(response)
+			self.global
+				.lock()
+				.expect("Rate limits poisoned")
+				.post_update(response)
 		} else {
-			self.endpoints.lock().expect("Rate limits poisoned")
+			self.endpoints
+				.lock()
+				.expect("Rate limits poisoned")
 				.entry(url.to_owned())
 				.or_insert_with(RateLimit::default)
 				.post_update(response)
@@ -46,16 +59,18 @@ struct RateLimit {
 impl RateLimit {
 	fn pre_check(&mut self) {
 		// break out if uninitialized
-		if self.limit == 0 { return }
+		if self.limit == 0 {
+			return;
+		}
 
-		let difference = self.reset - get_time().sec;
+		let difference = self.reset - Utc::now().timestamp();
 		if difference < 0 {
 			// If reset is apparently in the past, optimistically assume that
 			// the reset has occurred and we're good for the next three seconds
 			// or so. When the response comes back we will know for real.
 			self.reset += 3;
 			self.remaining = self.limit;
-			return
+			return;
 		}
 
 		// if no requests remain, wait a bit
@@ -64,7 +79,7 @@ impl RateLimit {
 			let delay = difference as u64 * 1000 + 900;
 			warn!("pre-ratelimit: sleeping for {}ms", delay);
 			::sleep_ms(delay);
-			return
+			return;
 		}
 
 		// Deduct from our remaining requests. If a lot of requests are issued
@@ -79,22 +94,22 @@ impl RateLimit {
 				error!("rate limit checking error: {}", e);
 				false
 			}
-			Ok(r) => r
+			Ok(r) => r,
 		}
 	}
 
 	fn try_post_update(&mut self, response: &hyper::client::Response) -> Result<bool> {
-		if let Some(reset) = try!(read_header(&response.headers, "X-RateLimit-Reset")) {
+		if let Some(reset) = read_header(&response.headers, "X-RateLimit-Reset")? {
 			self.reset = reset;
 		}
-		if let Some(limit) = try!(read_header(&response.headers, "X-RateLimit-Limit")) {
+		if let Some(limit) = read_header(&response.headers, "X-RateLimit-Limit")? {
 			self.limit = limit;
 		}
-		if let Some(remaining) = try!(read_header(&response.headers, "X-RateLimit-Remaining")) {
+		if let Some(remaining) = read_header(&response.headers, "X-RateLimit-Remaining")? {
 			self.remaining = remaining;
 		}
 		if response.status == hyper::status::StatusCode::TooManyRequests {
-			if let Some(delay) = try!(read_header(&response.headers, "Retry-After")) {
+			if let Some(delay) = read_header(&response.headers, "Retry-After")? {
 				let delay = delay as u64 + 100; // 100ms of leeway
 				warn!("429: sleeping for {}ms", delay);
 				::sleep_ms(delay);
@@ -107,17 +122,19 @@ impl RateLimit {
 
 fn read_header(headers: &hyper::header::Headers, name: &str) -> Result<Option<i64>> {
 	match headers.get_raw(name) {
-		Some(hdr) => if hdr.len() == 1 {
-			match std::str::from_utf8(&hdr[0]) {
-				Ok(text) => match text.parse() {
-					Ok(val) => Ok(Some(val)),
-					Err(_) => Err(Error::Other("header is not an i64"))
-				},
-				Err(_) => Err(Error::Other("header is not UTF-8"))
+		Some(hdr) => {
+			if hdr.len() == 1 {
+				match std::str::from_utf8(&hdr[0]) {
+					Ok(text) => match text.parse() {
+						Ok(val) => Ok(Some(val)),
+						Err(_) => Err(Error::Other("header is not an i64")),
+					},
+					Err(_) => Err(Error::Other("header is not UTF-8")),
+				}
+			} else {
+				Err(Error::Other("header appears multiple times"))
 			}
-		} else {
-			Err(Error::Other("header appears multiple times"))
-		},
-		None => Ok(None)
+		}
+		None => Ok(None),
 	}
 }
