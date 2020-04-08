@@ -1,8 +1,8 @@
 extern crate discord;
 
-use std::env;
-use discord::{Discord, State};
 use discord::model::Event;
+use discord::{Discord, State};
+use std::env;
 
 // A simple DJ bot example.
 // Use by issuing the command "!dj <youtube-link>" in PM or a visible text channel.
@@ -12,13 +12,16 @@ use discord::model::Event;
 
 pub fn main() {
 	// Log in to Discord using a bot token from the environment
-	let discord = Discord::from_bot_token(
-		&env::var("DISCORD_TOKEN").expect("Expected token"),
-	).expect("login failed");
+	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Expected token"))
+		.expect("login failed");
 
 	// establish websocket and voice connection
 	let (mut connection, ready) = discord.connect().expect("connect failed");
-	println!("[Ready] {} is serving {} servers", ready.user.username, ready.servers.len());
+	println!(
+		"[Ready] {} is serving {} servers",
+		ready.user.username,
+		ready.servers.len()
+	);
 	let mut state = State::new(ready);
 	connection.sync_calls(&state.all_private_channels());
 
@@ -36,10 +39,10 @@ pub fn main() {
 					println!("[Ready] Reconnected successfully.");
 				}
 				if let discord::Error::Closed(..) = err {
-					break
+					break;
 				}
-				continue
-			},
+				continue;
+			}
 		};
 		state.update(&event);
 
@@ -48,7 +51,7 @@ pub fn main() {
 				use std::ascii::AsciiExt;
 				// safeguard: stop if the message is from us
 				if message.author.id == state.user().id {
-					continue
+					continue;
 				}
 
 				// reply to a command if there was one
@@ -71,14 +74,14 @@ pub fn main() {
 									voice.connect(channel_id);
 									voice.play(stream);
 									String::new()
-								},
+								}
 								Err(error) => format!("Error: {}", error),
 							}
 						} else {
 							"You must be in a voice channel to DJ".to_owned()
 						};
 						if !output.is_empty() {
-							warn(discord.send_message(&message.channel_id, &output, "", false));
+							warn(discord.send_message(message.channel_id, &output, "", false));
 						}
 					}
 				}
@@ -88,27 +91,38 @@ pub fn main() {
 				if let Some(cur_channel) = connection.voice(server_id).current_channel() {
 					// and our current voice channel is empty, disconnect from voice
 					match server_id {
-						Some(server_id) => if let Some(srv) = state.servers().iter().find(|srv| srv.id == server_id) {
-							if srv.voice_states.iter().filter(|vs| vs.channel_id == Some(cur_channel)).count() <= 1 {
-								connection.voice(Some(server_id)).disconnect();
+						Some(server_id) => {
+							if let Some(srv) =
+								state.servers().iter().find(|srv| srv.id == server_id)
+							{
+								if srv
+									.voice_states
+									.iter()
+									.filter(|vs| vs.channel_id == Some(cur_channel))
+									.count() <= 1
+								{
+									connection.voice(Some(server_id)).disconnect();
+								}
 							}
-						},
-						None => if let Some(call) = state.calls().get(&cur_channel) {
-							if call.voice_states.len() <= 1 {
-								connection.voice(server_id).disconnect();
+						}
+						None => {
+							if let Some(call) = state.calls().get(&cur_channel) {
+								if call.voice_states.len() <= 1 {
+									connection.voice(server_id).disconnect();
+								}
 							}
 						}
 					}
 				}
 			}
-			_ => {}, // discard other events
+			_ => {} // discard other events
 		}
 	}
 }
 
 fn warn<T, E: ::std::fmt::Debug>(result: Result<T, E>) {
 	match result {
-		Ok(_) => {},
-		Err(err) => println!("[Warning] {:?}", err)
+		Ok(_) => {}
+		Err(err) => println!("[Warning] {:?}", err),
 	}
 }
