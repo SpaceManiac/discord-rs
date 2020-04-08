@@ -1500,26 +1500,26 @@ mod test {
 	use super::*;
 
 	macro_rules! assert_field {
-	($val:expr, $expect:expr, $($field:ident),+) => {
-		{
-			$(assert_eq!($val.$field.clone(), $expect.$field.clone(),
-			 "Field {} mismatch: expected {:?} got {:?}",
-			 stringify!($field), $expect.$field, $val.$field
-			);)*
+		($val:expr, $expect:expr, $($field:ident),+) => {
+			{
+				$(assert_eq!($val.$field.clone(), $expect.$field.clone(),
+				"Field {} mismatch: expected {:?} got {:?}",
+				stringify!($field), $expect.$field, $val.$field
+				);)*
+			}
 		}
 	}
-}
 
 	macro_rules! assert_field_unwrap {
-	($val:expr, $expect:expr, $($field:ident),+) => {
-		{
-			$(assert_eq!($val.$field.clone(), $expect.$field.clone().unwrap(),
-			"Field {} mismatch: expected {:?} got {:?}",
-			 stringify!($field), $expect.$field, $val.$field
-			);)*
+		($val:expr, $expect:expr, $($field:ident),+) => {
+			{
+				$(assert_eq!($val.$field.clone(), $expect.$field.clone().unwrap(),
+				"Field {} mismatch: expected {:?} got {:?}",
+				stringify!($field), $expect.$field, $val.$field
+				);)*
+			}
 		}
 	}
-}
 
 	#[test]
 	fn test_update_user() {
