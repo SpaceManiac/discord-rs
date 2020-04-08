@@ -469,6 +469,8 @@ struct ConnStartInfo {
 struct InternalConnection {
 	sender: Sender<WebSocketStream>,
 	receive_chan: mpsc::Receiver<RecvStatus>,
+	ws_close: mpsc::Sender<()>,
+	udp_close: mpsc::Sender<()>,
 	encryption_key: crypto::Key,
 	udp: UdpSocket,
 	destination: ::std::net::SocketAddr,
@@ -482,6 +484,8 @@ struct InternalConnection {
 	encoder_stereo: bool,
 	keepalive_timer: ::Timer,
 	audio_keepalive_timer: ::Timer,
+	ws_thread: Option<::std::thread::JoinHandle<()>>,
+	udp_thread: Option<::std::thread::JoinHandle<()>>,
 }
 
 const SAMPLE_RATE: u32 = 48000;
@@ -617,39 +621,61 @@ impl InternalConnection {
 		// start two child threads: one for the voice websocket and another for UDP voice packets
 		let thread = ::std::thread::current();
 		let thread_name = thread.name().unwrap_or("discord voice");
-		let receive_chan = {
+
+		let (udp_sender_close, udp_reader_close) = mpsc::channel();
+		let (ws_sender_close, ws_reader_close) = mpsc::channel();
+		let (receive_chan, ws_thread, udp_thread) = {
 			let (tx1, rx) = mpsc::channel();
 			let tx2 = tx1.clone();
 			let udp_clone = udp.try_clone()?;
-			::std::thread::Builder::new()
+			let ws_thread = Some(try!(::std::thread::Builder::new()
 				.name(format!("{} (WS reader)", thread_name))
-				.spawn(
-					move || while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
-						match tx1.send(RecvStatus::Websocket(msg)) {
-							Ok(()) => {}
-							Err(_) => return,
-						}
+				.spawn(move || {
+					{
+						match *receiver.get_mut().get_mut() {
+							WebSocketStream::Tcp(ref inner) => inner.set_nonblocking(true).unwrap(),
+							WebSocketStream::Ssl(ref inner) => inner.lock().unwrap().get_ref().set_nonblocking(true).unwrap(),
+						};
 					}
-				)?;
-			::std::thread::Builder::new()
+					loop {
+						while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
+							match tx1.send(RecvStatus::Websocket(msg)) {
+								Ok(()) => {},
+								Err(_) => return
+							}
+						}
+						if let Ok(_) = ws_reader_close.try_recv() {
+							return;
+						}
+						::std::thread::sleep(::std::time::Duration::from_millis(25));
+					}
+				})));
+			let udp_thread = Some(try!(::std::thread::Builder::new()
 				.name(format!("{} (UDP reader)", thread_name))
 				.spawn(move || {
+					udp_clone.set_read_timeout(Some(::std::time::Duration::from_millis(100))).unwrap();
 					let mut buffer = [0; 512];
 					loop {
-						let (len, _) = udp_clone.recv_from(&mut buffer).unwrap();
-						match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
-							Ok(()) => {}
-							Err(_) => return,
+						if let Ok((len, _)) = udp_clone.recv_from(&mut buffer) {
+							match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
+								Ok(()) => {},
+								Err(_) => return
+							}
+						} else if let Ok(_) = udp_reader_close.try_recv() {
+							return;
 						}
 					}
-				})?;
-			rx
+				})));
+			(rx, ws_thread, udp_thread)
 		};
 
 		info!("Voice connected to {} ({})", endpoint, destination);
 		Ok(InternalConnection {
 			sender: sender,
 			receive_chan: receive_chan,
+			ws_close: ws_sender_close,
+			udp_close: udp_sender_close,
+
 			encryption_key: encryption_key,
 			udp: udp,
 			destination: destination,
@@ -670,6 +696,9 @@ impl InternalConnection {
 			keepalive_timer: ::Timer::new(interval),
 			// after 5 minutes of us sending nothing, Discord will stop sending voice data to us
 			audio_keepalive_timer: ::Timer::new(4 * 60 * 1000),
+
+			ws_thread: ws_thread,
+			udp_thread: udp_thread,
 		})
 	}
 
@@ -848,8 +877,11 @@ impl InternalConnection {
 
 impl Drop for InternalConnection {
 	fn drop(&mut self) {
-		// shutting down the sender like this should also terminate the read threads
-		let _ = self.sender.get_mut().shutdown(::std::net::Shutdown::Both);
+		// Shutdown both internal threads
+		self.udp_close.send(()).ok();
+		self.udp_thread.take().unwrap().join().ok();
+		self.ws_close.send(()).ok();
+		self.ws_thread.take().unwrap().join().ok();
 		info!("Voice disconnected");
 	}
 }
