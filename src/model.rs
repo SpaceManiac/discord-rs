@@ -980,6 +980,29 @@ serial_decode!(VoiceRegion);
 //=================
 // Event model
 
+bitflags! {
+	/// Sets of events a bot desires to receive.
+	///
+	/// See https://discordapp.com/developers/docs/topics/gateway#gateway-intents
+	pub struct Intents: u64 {
+		const GUILDS = 1 << 0;
+		const GUILD_MEMBERS = 1 << 1;
+		const GUILD_BANS = 1 << 2;
+		const GUILD_EMOJIS = 1 << 3;
+		const GUILD_INTEGRATIONS = 1 << 4;
+		const GUILD_WEBHOOKS = 1 << 5;
+		const GUILD_INVITES = 1 << 6;
+		const GUILD_VOICE_STATES = 1 << 7;
+		const GUILD_PRESENCES = 1 << 8;
+		const GUILD_MESSAGES = 1 << 9;
+		const GUILD_MESSAGE_REACTIONS = 1 << 10;
+		const GUILD_MESSAGE_TYPING = 1 << 11;
+		const DIRECT_MESSAGES = 1 << 12;
+		const DIRECT_MESSAGE_REACTIONS = 1 << 13;
+		const DIRECT_MESSAGE_TYPING = 1 << 14;
+	}
+}
+
 /// Summary of messages since last login
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadState {

@@ -36,8 +36,8 @@ pub struct ConnectionBuilder<'a> {
 
 	large_threshold: Option<u32>,
 	shard: Option<[u8; 2]>,
+	intents: Option<Intents>,
 	// TODO: presence
-	// TODO: intents
 }
 
 impl<'a> ConnectionBuilder<'a> {
@@ -47,6 +47,7 @@ impl<'a> ConnectionBuilder<'a> {
 			token,
 			large_threshold: None,
 			shard: None,
+			intents: None,
 		}
 	}
 
@@ -58,30 +59,39 @@ impl<'a> ConnectionBuilder<'a> {
 		self
 	}
 
+	pub fn with_intents(&mut self, intents: Intents) -> &mut Self {
+		self.intents = Some(intents);
+		self
+	}
+
 	/// Establish a websocket connection over which events can be received.
 	///
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
 	/// connection, which contains the initial state as seen by the client.
 	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
-		let mut identify = json! {{
-			"op": 2,
-			"d": {
-				"token": self.token,
-				"properties": {
-					"$os": ::std::env::consts::OS,
-					"$browser": "Discord library for Rust",
-					"$device": "discord-rs",
-					"$referring_domain": "",
-					"$referrer": "",
-				},
-				"large_threshold": 250,
-				"compress": true,
-				"v": GATEWAY_VERSION,
-			}
+		let mut d = json! {{
+			"token": self.token,
+			"properties": {
+				"$os": ::std::env::consts::OS,
+				"$browser": "Discord library for Rust",
+				"$device": "discord-rs",
+				"$referring_domain": "",
+				"$referrer": "",
+			},
+			"large_threshold": 250,
+			"compress": true,
+			"v": GATEWAY_VERSION,
 		}};
 		if let Some(info) = self.shard {
-			identify["d"]["shard"] = json![[info[0], info[1]]];
+			d["shard"] = json![[info[0], info[1]]];
 		}
+		if let Some(intents) = self.intents {
+			d["intents"] = intents.bits().into();
+		}
+		let identify = json! {{
+			"op": 2,
+			"d": d
+		}};
 		Connection::__connect(&self.base_url, self.token.clone(), identify)
 	}
 }
