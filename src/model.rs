@@ -1890,6 +1890,10 @@ pub struct Activity {
 	pub emoji: Option<ActivityEmoji>,
 	/// unix timestamp of when the activity was added to the user's session
 	pub created_at: u64,
+	/// what the player is currently doing
+	pub details: Option<String>,
+	/// stream url, is validated when type is 1
+	pub url: Option<String>,
 }
 serial_decode!(Activity);
 
