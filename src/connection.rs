@@ -29,6 +29,63 @@ macro_rules! finish_connection {
 	}}
 }
 
+#[derive(Clone)]
+pub struct ConnectionBuilder<'a> {
+	base_url: String,
+	token: &'a str,
+
+	large_threshold: Option<u32>,
+	shard: Option<[u8; 2]>,
+	// TODO: presence
+	// TODO: intents
+}
+
+impl<'a> ConnectionBuilder<'a> {
+	pub(crate) fn new(base_url: String, token: &'a str) -> Self {
+		ConnectionBuilder {
+			base_url,
+			token,
+			large_threshold: None,
+			shard: None,
+		}
+	}
+
+	/// Connect to only a specific shard.
+	///
+	/// The `shard_id` is indexed at 0 while `total_shards` is indexed at 1.
+	pub fn with_shard(&mut self, shard_id: u8, total_shards: u8) -> &mut Self {
+		self.shard = Some([shard_id, total_shards]);
+		self
+	}
+
+	/// Establish a websocket connection over which events can be received.
+	///
+	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
+	/// connection, which contains the initial state as seen by the client.
+	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
+		let mut identify = json! {{
+			"op": 2,
+			"d": {
+				"token": self.token,
+				"properties": {
+					"$os": ::std::env::consts::OS,
+					"$browser": "Discord library for Rust",
+					"$device": "discord-rs",
+					"$referring_domain": "",
+					"$referrer": "",
+				},
+				"large_threshold": 250,
+				"compress": true,
+				"v": GATEWAY_VERSION,
+			}
+		}};
+		if let Some(info) = self.shard {
+			identify["d"]["shard"] = json![[info[0], info[1]]];
+		}
+		Connection::__connect(&self.base_url, self.token.clone(), identify)
+	}
+}
+
 /// Websocket connection to the Discord servers.
 pub struct Connection {
 	keepalive_channel: mpsc::Sender<Status>,
@@ -41,7 +98,7 @@ pub struct Connection {
 	token: String,
 	session_id: Option<String>,
 	last_sequence: u64,
-	shard_info: Option<[u8; 2]>,
+	identify: serde_json::Value,
 }
 
 impl Connection {
@@ -56,8 +113,12 @@ impl Connection {
 	pub fn new(
 		base_url: &str,
 		token: &str,
-		shard_info: Option<[u8; 2]>,
+		shard: Option<[u8; 2]>,
 	) -> Result<(Connection, ReadyEvent)> {
+		ConnectionBuilder { shard, .. ConnectionBuilder::new(base_url.to_owned(), token) }.connect()
+	}
+
+	fn __connect(base_url: &str, token: &str, identify: serde_json::Value) -> Result<(Connection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
@@ -66,7 +127,6 @@ impl Connection {
 		let (mut sender, mut receiver) = response.begin().split();
 
 		// send the handshake
-		let identify = identify(token, shard_info);
 		sender.send_json(&identify)?;
 
 		// read the Hello and spawn the keepalive thread
@@ -94,7 +154,7 @@ impl Connection {
 			}
 			GatewayEvent::InvalidateSession => {
 				debug!("Session invalidated, reidentifying");
-				let _ = tx.send(Status::SendMessage(identify));
+				let _ = tx.send(Status::SendMessage(identify.clone()));
 				match receiver.recv_json(GatewayEvent::decode)? {
 					GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
 						sequence = seq;
@@ -136,7 +196,7 @@ impl Connection {
 				token: token.to_owned(),
 				session_id: Some(session_id),
 				last_sequence: sequence,
-				shard_info: shard_info;
+				identify: identify;
 				// voice only
 				user_id: ready.user.id,
 				voice_handles: HashMap::new(),
@@ -284,7 +344,7 @@ impl Connection {
 					self.session_id = None;
 					let _ = self
 						.keepalive_channel
-						.send(Status::SendMessage(identify(&self.token, self.shard_info)));
+						.send(Status::SendMessage(self.identify.clone()));
 				}
 			}
 		}
@@ -299,15 +359,17 @@ impl Connection {
 		trace!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
-			if let Ok((conn, ready)) = Connection::new(&self.ws_url, &self.token, self.shard_info) {
+			if let Ok((conn, ready)) = Connection::__connect(&self.ws_url, &self.token, self.identify.clone()) {
 				::std::mem::replace(self, conn).raw_shutdown();
 				self.session_id = Some(ready.session_id.clone());
 				return Ok(ready);
 			}
 			::sleep_ms(1000);
 		}
+
 		// If those fail, hit REST for a new endpoint
-		let (conn, ready) = ::Discord::from_token_raw(self.token.to_owned()).connect()?;
+		let url = ::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
+		let (conn, ready) = Connection::__connect(&url, &self.token, self.identify.clone())?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
@@ -360,7 +422,7 @@ impl Connection {
 				}
 				GatewayEvent::InvalidateSession => {
 					debug!("Session invalidated in resume, reidentifying");
-					sender.send_json(&identify(&self.token, self.shard_info))?;
+					sender.send_json(&self.identify)?;
 				}
 				other => {
 					debug!("Unexpected event: {:?}", other);
@@ -464,29 +526,6 @@ impl Drop for Connection {
 		// Swallow errors
 		let _ = self.inner_shutdown();
 	}
-}
-
-fn identify(token: &str, shard_info: Option<[u8; 2]>) -> serde_json::Value {
-	let mut result = json! {{
-		"op": 2,
-		"d": {
-			"token": token,
-			"properties": {
-				"$os": ::std::env::consts::OS,
-				"$browser": "Discord library for Rust",
-				"$device": "discord-rs",
-				"$referring_domain": "",
-				"$referrer": "",
-			},
-			"large_threshold": 250,
-			"compress": true,
-			"v": GATEWAY_VERSION,
-		}
-	}};
-	if let Some(info) = shard_info {
-		result["d"]["shard"] = json![[info[0], info[1]]];
-	}
-	result
 }
 
 #[inline]

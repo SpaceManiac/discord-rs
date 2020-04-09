@@ -1451,7 +1451,7 @@ impl Discord {
 	///
 	/// See `connect_sharded` if you want to use guild sharding.
 	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
-		self.__connect(None)
+		self.connection_builder()?.connect()
 	}
 
 	/// Establish a sharded websocket connection over which events can be
@@ -1468,21 +1468,23 @@ impl Discord {
 		shard_id: u8,
 		total_shards: u8,
 	) -> Result<(Connection, ReadyEvent)> {
-		self.__connect(Some([shard_id, total_shards]))
+		self.connection_builder()?.with_shard(shard_id, total_shards).connect()
 	}
 
-	fn __connect(&self, shard_info: Option<[u8; 2]>) -> Result<(Connection, ReadyEvent)> {
+	/// Prepare to establish a websocket connection over which events can be
+	/// received.
+	pub fn connection_builder(&self) -> Result<connection::ConnectionBuilder> {
+		let url = self.get_gateway_url()?;
+		Ok(connection::ConnectionBuilder::new(url, &self.token))
+	}
+
+	fn get_gateway_url(&self) -> Result<String> {
 		let response = request!(self, get, "/gateway");
-		let value: BTreeMap<String, String> = serde_json::from_reader(response)?;
-		let url = match value.get("url") {
-			Some(url) => url,
-			None => {
-				return Err(Error::Protocol(
-					"Response missing \"url\" in Discord::connect()",
-				))
-			}
-		};
-		Connection::new(url, &self.token, shard_info)
+		let mut value: BTreeMap<String, String> = serde_json::from_reader(response)?;
+		match value.remove("url") {
+			Some(url) => Ok(url),
+			None => Err(Error::Protocol("Response missing \"url\" in Discord::get_gateway_url()"))
+		}
 	}
 }
 
