@@ -69,7 +69,6 @@ pub fn main() {
 
 		match event {
 			Event::MessageCreate(message) => {
-				use std::ascii::AsciiExt;
 				// safeguard: stop if the message is from us
 				if message.author.id == state.user().id {
 					continue;
