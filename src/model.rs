@@ -146,6 +146,7 @@ id! {
 impl ServerId {
 	/// Get the `ChannelId` of this server's main text channel.
 	#[inline(always)]
+	#[deprecated(note="No longer guaranteed to exist/be accurate.")]
 	pub fn main(self) -> ChannelId {
 		ChannelId(self.0)
 	}
