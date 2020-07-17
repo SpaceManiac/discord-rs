@@ -1,4 +1,4 @@
-//! Client library for the [Discord](https://discordapp.com) API.
+//! Client library for the [Discord](https://discord.com) API.
 //!
 //! The Discord API can be divided into three main components: the RESTful API
 //! to which calls can be made to take actions, a websocket-based permanent
@@ -1284,14 +1284,14 @@ impl Discord {
 	}
 
 	/// Get information about a user.
-	/// https://discordapp.com/developers/docs/resources/user#get-user
+	/// https://discord.com/developers/docs/resources/user#get-user
 	pub fn get_user(&self, user: UserId) -> Result<User> {
 		let response = request!(self, get, "/users/{}", user);
 		from_reader(response)
 	}
 
 	/// Create a new DM channel with a user.
-	/// https://discordapp.com/developers/docs/resources/user#create-dm
+	/// https://discord.com/developers/docs/resources/user#create-dm
 	pub fn create_dm(&self, recipient_id: UserId) -> Result<PrivateChannel> {
 		let map = json! {{
 			"recipient_id": recipient_id.0,

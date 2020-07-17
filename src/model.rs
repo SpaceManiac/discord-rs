@@ -453,7 +453,7 @@ pub enum Channel {
 impl Channel {
 	pub fn decode(value: Value) -> Result<Channel> {
 		let map = try!(into_map(value));
-		// https://discordapp.com/developers/docs/resources/channel#channel-object-channel-types
+		// https://discord.com/developers/docs/resources/channel#channel-object-channel-types
 		match req!(map.get("type").and_then(|x| x.as_u64())) {
 			0 | 2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
@@ -534,7 +534,7 @@ pub struct Call {
 serial_decode!(Call);
 
 /// Private text channel to another user
-/// https://discordapp.com/developers/docs/resources/channel#channel-object
+/// https://discord.com/developers/docs/resources/channel#channel-object
 #[derive(Debug, Clone)]
 pub struct PrivateChannel {
 	pub id: ChannelId,
@@ -984,7 +984,7 @@ serial_decode!(VoiceRegion);
 bitflags! {
 	/// Sets of events a bot desires to receive.
 	///
-	/// See https://discordapp.com/developers/docs/topics/gateway#gateway-intents
+	/// See https://discord.com/developers/docs/topics/gateway#gateway-intents
 	pub struct Intents: u64 {
 		const GUILDS = 1 << 0;
 		const GUILD_MEMBERS = 1 << 1;
@@ -1051,7 +1051,7 @@ serial_numbers! { GameType;
 }
 
 /// Information about a game being played
-/// https://discordapp.com/developers/docs/topics/gateway#activity-object
+/// https://discord.com/developers/docs/topics/gateway#activity-object
 /// (might merge it with `Activity` in the future)
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -1868,7 +1868,7 @@ pub struct ReadyEvent {
 }
 
 /// the emoji used for a custom status
-/// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-emoji
+/// https://discord.com/developers/docs/topics/gateway#activity-object-activity-emoji
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityEmoji {
 	pub name: String,
@@ -1878,11 +1878,11 @@ pub struct ActivityEmoji {
 serial_decode!(ActivityEmoji);
 
 /// User's activity
-/// https://discordapp.com/developers/docs/topics/gateway#activity-object
+/// https://discord.com/developers/docs/topics/gateway#activity-object
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Activity {
 	/// 0 - Game, 1 - Streaming, 2 - Listening, 4 - Custom
-	/// https://discordapp.com/developers/docs/topics/gateway#activity-object-activity-types
+	/// https://discord.com/developers/docs/topics/gateway#activity-object-activity-types
 	#[serde(rename = "type")]
 	pub kind: i8,
 	/// This is where the custom user status appears
@@ -1965,7 +1965,7 @@ pub enum Event {
 		timestamp: DateTime<Utc>,
 	},
 	/// A member's presence state (or username or avatar) has changed
-	/// https://discordapp.com/developers/docs/topics/gateway#presence-update
+	/// https://discord.com/developers/docs/topics/gateway#presence-update
 	PresenceUpdate {
 		presence: Presence,
 		server_id: Option<ServerId>,

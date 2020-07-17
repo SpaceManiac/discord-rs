@@ -7,7 +7,7 @@ discord-rs [![](https://meritbadge.herokuapp.com/discord)](https://crates.io/cra
 [network graph]: https://github.com/SpaceManiac/discord-rs/network
 
 **discord-rs** is a [Rust](https://www.rust-lang.org) client library for the
-[Discord](https://discordapp.com) chat client's API.
+[Discord](https://discord.com) chat client's API.
 
 The Discord API can be divided into three main components: the RESTful API
 to which calls can be made to take actions, a websocket-based permanent
