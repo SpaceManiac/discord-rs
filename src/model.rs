@@ -61,14 +61,14 @@ macro_rules! string_decode_using_serial_name {
 }
 
 fn update_field<T: Clone>(item: &mut T, patch: &Option<T>) {
-	if patch.is_some() {
-		::std::mem::replace(item, patch.clone().unwrap());
+	if let Some(value) = patch.clone() {
+		*item = value;
 	}
 }
 
 fn update_field_opt<T: Clone>(item: &mut Option<T>, patch: &Option<T>) {
-	if patch.is_some() {
-		::std::mem::replace(item, patch.clone());
+	if let Some(value) = patch.clone() {
+		*item = Some(value);
 	}
 }
 
