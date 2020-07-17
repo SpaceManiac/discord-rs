@@ -64,6 +64,7 @@ pub mod voice;
 
 macro_rules! cdn_concat {
 	($e:expr) => {
+		// Out of everything, only the CDN still uses the old domain.
 		concat!("https://cdn.discordapp.com", $e)
 	};
 }
@@ -87,12 +88,12 @@ const USER_AGENT: &'static str = concat!(
 );
 macro_rules! api_concat {
 	($e:expr) => {
-		concat!("https://discordapp.com/api/v6", $e)
+		concat!("https://discord.com/api/v6", $e)
 	};
 }
 macro_rules! status_concat {
 	($e:expr) => {
-		concat!("https://status.discordapp.com/api/v2", $e)
+		concat!("https://status.discord.com/api/v2", $e)
 	};
 }
 
