@@ -854,6 +854,16 @@ pub enum MessageType {
 	MessagePinned,
 	/// A user joined a server and a welcome message was generated
 	UserJoined,
+
+	UserPremiumGuildSubscription = 8,
+	UserPremiumGuildSubscriptionTier1 = 9,
+	UserPremiumGuildSubscriptionTier2 = 10,
+	UserPremiumGuildSubscriptionTier3 = 11,
+	ChannelFollowAdd = 12,
+	GuildDiscoveryDisqualified = 14,
+	GuildDiscoveryRequalified = 15,
+	// Replies only have type `19` in API v8. In v6, they are still type `0`.
+	Reply = 19,
 }
 
 serial_use_mapping!(MessageType, numeric);
@@ -866,6 +876,14 @@ serial_numbers! { MessageType;
 	GroupIconUpdate, 5;
 	MessagePinned, 6;
 	UserJoined, 7;
+	UserPremiumGuildSubscription, 8;
+	UserPremiumGuildSubscriptionTier1, 9;
+	UserPremiumGuildSubscriptionTier2, 10;
+	UserPremiumGuildSubscriptionTier3, 11;
+	ChannelFollowAdd, 12;
+	GuildDiscoveryDisqualified, 14;
+	GuildDiscoveryRequalified, 15;
+	Reply, 19;
 }
 
 /// Information about an invite
