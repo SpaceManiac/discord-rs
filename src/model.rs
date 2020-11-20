@@ -1060,12 +1060,18 @@ string_decode_using_serial_name!(OnlineStatus);
 pub enum GameType {
 	Playing,
 	Streaming,
+	Listening,
+	Custom = 4,
+	Competing = 5,
 }
 
 serial_use_mapping!(GameType, numeric);
 serial_numbers! { GameType;
 	Playing, 0;
 	Streaming, 1;
+	Listening, 2;
+	Custom, 4;
+	Competing, 5;
 }
 
 /// Information about a game being played
