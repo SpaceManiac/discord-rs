@@ -495,6 +495,9 @@ impl Discord {
 	///
 	/// Requires that either the message was posted by this user, or this user
 	/// has permission to manage other members' messages.
+	///
+	/// Not all fields can be edited; see the [docs] for more.
+	/// [docs]: https://discord.com/developers/docs/resources/channel#edit-message
 	pub fn edit_message_ex<F: FnOnce(SendMessage) -> SendMessage>(
 		&self,
 		channel: ChannelId,
