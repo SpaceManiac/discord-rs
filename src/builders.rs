@@ -68,6 +68,12 @@ builder! {
 	/// Patch content for the `edit_role` call.
 	EditRole(Object);
 
+	/// Content for the `send_message` call.
+	SendMessage(Object);
+
+	/// `allowed_mentions` object for use within `send_message`.
+	AllowedMentions(Object);
+
 	/// Patch content for the `send_embed` call.
 	EmbedBuilder(Object);
 
@@ -247,6 +253,54 @@ impl EditRole {
 	/// Edit the role's mentionability, if the role can be mentioned.
 	pub fn mentionable(self, mentionable: bool) -> Self {
 		set!(self, "mentionable", mentionable)
+	}
+}
+
+impl SendMessage {
+	/// Set the text content of the message.
+	pub fn content(self, content: &str) -> Self {
+		set!(self, "content", content)
+	}
+
+	/// Set a nonce that can be used for optimistic message sending.
+	pub fn nonce(self, nonce: &str) -> Self {
+		set!(self, "nonce", nonce)
+	}
+
+	/// Set to true to use text-to-speech.
+	pub fn tts(self, tts: bool) -> Self {
+		set!(self, "tts", tts)
+	}
+
+	/// Embed rich content.
+	pub fn embed<F: FnOnce(EmbedBuilder) -> EmbedBuilder>(self, f: F) -> Self {
+		set!(self, "embed", EmbedBuilder::__build(f))
+	}
+
+	/// Restrict allowed mentions for this message.
+	pub fn allowed_mentions<F: FnOnce(AllowedMentions) -> AllowedMentions>(self, f: F) -> Self {
+		set!(self, "allowed_mentions", AllowedMentions::__build(f))
+	}
+
+	/// Reply to the given message, optionally mentioning the sender.
+	///
+	/// The given `message_id` must be in the same channel that this message is
+	/// being sent to.
+	pub fn reply(self, message_id: MessageId, mention: bool) -> Self {
+		set!(self, "message_reference", json! {{
+			"message_id": message_id,
+		}}).allowed_mentions(|b| b.replied_user(mention))
+	}
+
+	// TODO: file, payload_json, message_reference
+}
+
+impl AllowedMentions {
+	// TODO: parse, roles, users
+
+	/// Set to `false` to disable mentioning a replied-to user.
+	pub fn replied_user(self, replied_user: bool) -> Self {
+		set!(self, "replied_user", replied_user)
 	}
 }
 
