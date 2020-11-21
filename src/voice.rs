@@ -278,14 +278,20 @@ impl<R: Read + Send> AudioSource for PcmSource<R> {
 		self.0
 	}
 	fn read_frame(&mut self, buffer: &mut [i16]) -> Option<usize> {
-		for (i, val) in buffer.iter_mut().enumerate() {
-			*val = match self.1.read_i16::<LittleEndian>() {
-				Ok(val) => val,
-				Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => return Some(i),
-				Err(_) => return None,
-			}
+		let mut i = 0;
+		for outval in buffer.iter_mut() {
+			match self.1.read_i16::<LittleEndian>() {
+				Ok(val) => *outval = val,
+				Err(_) => break,
+			};
+			i += 1;
 		}
-		Some(buffer.len())
+		// When wrapping `Read`, we consider reading 0 samples to be EOF.
+		if i == 0 {
+			None
+		} else {
+			Some(i)
+		}
 	}
 }
 
