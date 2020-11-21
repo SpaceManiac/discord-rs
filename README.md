@@ -1,4 +1,4 @@
-discord-rs [![](https://meritbadge.herokuapp.com/discord)](https://crates.io/crates/discord) [![](https://img.shields.io/badge/docs-online-2020ff.svg)](http://wombat.platymuus.com/rustdoc/discord_master/)
+discord-rs [![](https://meritbadge.herokuapp.com/discord)](https://crates.io/crates/discord) [![](https://img.shields.io/badge/docs-online-2020ff.svg)](https://docs.rs/discord)
 ==========
 
 > This project is only maintained occasionally. If you're having problems, open
@@ -29,7 +29,7 @@ and use `connect` to join a channel, then `play` and `stop` to control
 playback. Manipulating deaf/mute state and receiving audio are also possible.
 
 For further details, browse the [source](src/) or read
-[the documentation](http://wombat.platymuus.com/rustdoc/discord_master/).
+[the documentation](https://docs.rs/discord).
 For examples, browse the [examples](examples/) directory.
 
 ## Installation
