@@ -805,6 +805,21 @@ impl Attachment {
 	}
 }
 
+bitflags! {
+	/// Sets of flags that may be set on a message.
+	///
+	/// See https://discord.com/developers/docs/resources/channel#message-object-message-flags
+	pub struct MessageFlags: u64 {
+		const CROSSPOSTED = 1 << 0;
+		const IS_CROSSPOST = 1 << 1;
+		const SUPPRESS_EMBEDS = 1 << 2;
+		const SOURCE_MESSAGE_DELETED = 1 << 3;
+		const URGENT = 1 << 4;
+	}
+}
+
+serial_single_field!(MessageFlags as bits: u64);
+
 /// Message transmitted over a text channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -832,6 +847,8 @@ pub struct Message {
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
 	pub embeds: Vec<Value>,
+
+	pub flags: MessageFlags,
 }
 serial_decode!(Message);
 

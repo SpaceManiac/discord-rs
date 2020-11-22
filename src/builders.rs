@@ -292,6 +292,14 @@ impl SendMessage {
 		}}).allowed_mentions(|b| b.replied_user(mention))
 	}
 
+	/// Change the message's flags.
+	///
+	/// Can only be set while editing. Only `SUPPRESS_EMBEDS` can be edited on
+	/// request.
+	pub fn flags(self, flags: MessageFlags) -> Self {
+		set!(self, "flags", flags)
+	}
+
 	// TODO: file, payload_json, message_reference
 }
 
