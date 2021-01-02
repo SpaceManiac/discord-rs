@@ -1,6 +1,13 @@
 discord-rs [![](https://meritbadge.herokuapp.com/discord)](https://crates.io/crates/discord) [![](https://img.shields.io/badge/docs-online-2020ff.svg)](http://wombat.platymuus.com/rustdoc/discord_master/)
 ==========
 
+> **Note**: the current crates.io version of discord-rs requires an old version
+> of OpenSSL and will likely not compile for you. Use a Git dependency instead:
+> ```
+> [dependencies]
+> discord = { git = "https://github.com/SpaceManiac/discord-rs" }
+> ```
+
 **discord-rs** is a [Rust](https://www.rust-lang.org) client library for the
 [Discord](https://discordapp.com) chat client's API.
 
