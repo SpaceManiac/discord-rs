@@ -890,10 +890,10 @@ impl InternalConnection {
 impl Drop for InternalConnection {
 	fn drop(&mut self) {
 		// Shutdown both internal threads
-		self.udp_close.send(()).ok();
-		self.udp_thread.take().unwrap().join().ok();
-		self.ws_close.send(()).ok();
-		self.ws_thread.take().unwrap().join().ok();
+		let _ = self.udp_close.send(());
+		let _ = self.udp_thread.take().unwrap().join();
+		let _ = self.ws_close.send(());
+		let _ = self.ws_thread.take().unwrap().join();
 		info!("Voice disconnected");
 	}
 }
