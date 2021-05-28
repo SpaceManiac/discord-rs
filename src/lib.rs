@@ -649,7 +649,9 @@ impl Discord {
 			)
 		}
 
-		let mut request = hyper::client::Request::new(hyper::method::Method::Post, url)?;
+		let tls = hyper_native_tls::NativeTlsClient::new().expect("Error initializing NativeTlsClient");
+		let connector = hyper::net::HttpsConnector::new(tls);
+		let mut request = hyper::client::Request::with_connector(hyper::method::Method::Post, url, &connector)?;
 		request
 			.headers_mut()
 			.set(hyper::header::Authorization(self.token.clone()));
