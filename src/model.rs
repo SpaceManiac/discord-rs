@@ -847,6 +847,7 @@ pub struct Message {
 	pub attachments: Vec<Attachment>,
 	/// Follows OEmbed standard
 	pub embeds: Vec<Value>,
+	pub referenced_message: Option<Box<Message>>,
 
 	pub flags: MessageFlags,
 }
