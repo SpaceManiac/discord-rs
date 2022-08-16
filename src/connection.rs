@@ -34,7 +34,7 @@ pub struct ConnectionBuilder<'a> {
 	base_url: String,
 	token: &'a str,
 
-	large_threshold: Option<u32>,
+	//large_threshold: Option<u32>,
 	shard: Option<[u8; 2]>,
 	intents: Option<Intents>,
 	// TODO: presence
@@ -45,7 +45,7 @@ impl<'a> ConnectionBuilder<'a> {
 		ConnectionBuilder {
 			base_url,
 			token,
-			large_threshold: None,
+			//large_threshold: None,
 			shard: None,
 			intents: None,
 		}
