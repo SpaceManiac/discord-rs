@@ -18,7 +18,7 @@ macro_rules! req {
 		try!($opt.ok_or(Error::Decode(
 			concat!("Type mismatch in model:", line!(), ": ", stringify!($opt)),
 			Value::Null
-			)))
+		)))
 	};
 }
 
@@ -146,7 +146,7 @@ id! {
 impl ServerId {
 	/// Get the `ChannelId` of this server's main text channel.
 	#[inline(always)]
-	#[deprecated(note="No longer guaranteed to exist/be accurate.")]
+	#[deprecated(note = "No longer guaranteed to exist/be accurate.")]
 	pub fn main(self) -> ChannelId {
 		ChannelId(self.0)
 	}
@@ -879,8 +879,16 @@ pub enum MessageType {
 	ChannelFollowAdd = 12,
 	GuildDiscoveryDisqualified = 14,
 	GuildDiscoveryRequalified = 15,
+	GuildDiscoveryGracePeriodInitialWarning = 16,
+	GuildDiscoveryGracePeriodFinalWarning = 17,
+	ThreadCreated = 18,
 	// Replies only have type `19` in API v8. In v6, they are still type `0`.
 	Reply = 19,
+	ChatInputCommand = 20,
+	ThreadStarterMessage = 21,
+	GuildInviteReminder = 22,
+	ContextMenuCommand = 23,
+	AutoModerationAction = 24,
 }
 
 serial_use_mapping!(MessageType, numeric);
@@ -899,8 +907,16 @@ serial_numbers! { MessageType;
 	UserPremiumGuildSubscriptionTier3, 11;
 	ChannelFollowAdd, 12;
 	GuildDiscoveryDisqualified, 14;
+	GuildDiscoveryGracePeriodInitialWarning, 16;
+	GuildDiscoveryGracePeriodFinalWarning, 17;
+	ThreadCreated, 18;
 	GuildDiscoveryRequalified, 15;
 	Reply, 19;
+	ChatInputCommand, 20;
+	ThreadStarterMessage, 21;
+	GuildInviteReminder, 22;
+	ContextMenuCommand, 23;
+	AutoModerationAction, 24;
 }
 
 /// Information about an invite
