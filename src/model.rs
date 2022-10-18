@@ -247,6 +247,7 @@ pub enum ChannelType {
 	News,
 	///
 	Store,
+	Unknown,
 }
 
 serial_use_mapping!(ChannelType, numeric);
@@ -258,6 +259,7 @@ serial_names! { ChannelType;
 	Category, "category";
 	News, "news";
 	Store, "store";
+	Unknown, "unk";
 }
 string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
@@ -268,6 +270,7 @@ serial_numbers! { ChannelType;
 	Category, 4;
 	News, 5;
 	Store, 6;
+	Unknown, 13;
 }
 
 /// A channel category.
@@ -1903,7 +1906,7 @@ pub struct ReadyEvent {
 	pub tutorial: Option<Tutorial>,
 	/// The trace of servers involved in this connection.
 	pub trace: Vec<Option<String>>,
-	pub notes: Option<BTreeMap<UserId, String>>,
+	pub notes: Option<BTreeMap<UserId, Option<String>>>,
 	/// The shard info for this session; the shard id used and the total number
 	/// of shards.
 	pub shard: Option<[u8; 2]>,
@@ -2628,7 +2631,7 @@ fn opt<T, F: FnOnce(Value) -> Result<T>>(map: &mut Object, key: &str, f: F) -> R
 	}
 }
 
-fn decode_notes(value: Value) -> Result<BTreeMap<UserId, String>> {
+fn decode_notes(value: Value) -> Result<BTreeMap<UserId, Option<String>>> {
 	// turn the String -> Value map into a UserId -> String map
 	try!(into_map(value))
 		.into_iter()
@@ -2638,7 +2641,7 @@ fn decode_notes(value: Value) -> Result<BTreeMap<UserId, String>> {
 				UserId(try!(key
 					.parse::<u64>()
 					.map_err(|_| Error::Other("Invalid user id in notes")))),
-				/* val */ try!(into_string(value)),
+				/* val */ if value != Value::Null {Some(try!(into_string(value)))}else{None},
 			))
 		})
 		.collect()

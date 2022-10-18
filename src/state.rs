@@ -15,7 +15,7 @@ pub struct State {
 	// user accounts only
 	settings: Option<UserSettings>,
 	server_settings: Option<Vec<UserServerSettings>>,
-	notes: Option<BTreeMap<UserId, String>>,
+	notes: Option<BTreeMap<UserId, Option<String>>>,
 }
 
 impl State {
@@ -114,7 +114,7 @@ impl State {
 					if note.is_empty() {
 						notes.remove(&user_id);
 					} else {
-						notes.insert(user_id, note.clone());
+						notes.insert(user_id, Some(note.clone()));
 					}
 				}
 			}
@@ -628,7 +628,7 @@ impl State {
 	///
 	/// Returns `None` on bot accounts.
 	#[inline]
-	pub fn notes(&self) -> Option<&BTreeMap<UserId, String>> {
+	pub fn notes(&self) -> Option<&BTreeMap<UserId, Option<String>>> {
 		self.notes.as_ref()
 	}
 
