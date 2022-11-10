@@ -247,7 +247,18 @@ pub enum ChannelType {
 	News,
 	///
 	Store,
-	Unknown,
+	/// A temporary sub-channel within a news channel
+	NewsThread,
+	/// A temporary sub-channel within a group channel
+	PublicThread,
+	/// A temporary sub-channel within a group channel, limited to those who are invited or have MANAGE_THREADS
+	PrivateThread,
+	/// A voice channel for hosting events
+	StageVoice,
+	/// A channel which contains a list of servers
+	Directory,
+	///	A channel which exclusively contains threads
+	Forum,
 }
 
 serial_use_mapping!(ChannelType, numeric);
@@ -259,7 +270,12 @@ serial_names! { ChannelType;
 	Category, "category";
 	News, "news";
 	Store, "store";
-	Unknown, "unk";
+	NewsThread, "news_thread";
+	PublicThread, "public_thread";
+	PrivateThread, "private_thread";
+	StageVoice, "stage_voice";
+	Directory, "directory";
+	Forum, "forum";
 }
 string_decode_using_serial_name!(ChannelType);
 serial_numbers! { ChannelType;
@@ -270,7 +286,12 @@ serial_numbers! { ChannelType;
 	Category, 4;
 	News, 5;
 	Store, 6;
-	Unknown, 13;
+	NewsThread, 10;
+	PublicThread, 11;
+	PrivateThread, 12;
+	StageVoice, 13;
+	Directory, 14;
+	Forum, 15;
 }
 
 /// A channel category.
