@@ -324,7 +324,7 @@ impl Discord {
 	) -> Result<Channel> {
 		let map = json! {{
 			"name": name,
-			"type": kind.name(),
+			"type": kind.num(),
 		}};
 		let body = serde_json::to_string(&map)?;
 		let response = request!(self, post(body), "/guilds/{}/channels", server);
