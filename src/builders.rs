@@ -56,6 +56,9 @@ builder! {
 	/// Patch content for the `edit_channel` call.
 	EditChannel(Object);
 
+	/// Path content for the 'create_thread' call.
+	EditThread(Object);
+
 	/// Patch content for the `edit_member` call.
 	EditMember(Object);
 
@@ -159,6 +162,13 @@ impl EditChannel {
 	/// Edit the voice channel's user limit. Zero (`0`) means unlimited.
 	pub fn user_limit(self, user_limit: u64) -> Self {
 		set!(self, "user_limit", user_limit)
+	}
+}
+
+impl EditThread {
+	/// Edit the thread's name.
+	pub fn name(self, name: &str) -> Self {
+		set!(self, "name", name)
 	}
 }
 

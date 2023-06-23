@@ -16,8 +16,8 @@
 //! the events received over it.
 //!
 #![cfg_attr(
-	not(feature = "voice"),
-	doc = "*<b>NOTE</b>: The library has been compiled without voice support.*"
+not(feature = "voice"),
+doc = "*<b>NOTE</b>: The library has been compiled without voice support.*"
 )]
 //! To join voice servers, call `Connection::voice` to get a `VoiceConnection` and use `connect`
 //! to join a channel, then `play` and `stop` to control playback. Manipulating deaf/mute state
@@ -82,9 +82,9 @@ use ratelimit::RateLimits;
 pub use state::{ChannelRef, State};
 
 const USER_AGENT: &'static str = concat!(
-	"DiscordBot (https://github.com/SpaceManiac/discord-rs, ",
-	env!("CARGO_PKG_VERSION"),
-	")"
+"DiscordBot (https://github.com/SpaceManiac/discord-rs, ",
+env!("CARGO_PKG_VERSION"),
+")"
 );
 macro_rules! api_concat {
 	($e:expr) => {
@@ -157,7 +157,7 @@ impl Discord {
 			None => {
 				return Err(Error::Protocol(
 					"Response missing \"token\" in Discord::new()",
-				))
+				));
 			}
 		};
 		Ok(Discord {
@@ -220,7 +220,7 @@ impl Discord {
 				None => {
 					return Err(Error::Protocol(
 						"Response missing \"token\" in Discord::new()",
-					))
+					));
 				}
 			};
 			Discord {
@@ -376,7 +376,7 @@ impl Discord {
 						return Err(Error::Other(stringify!(format!(
 							"Unreachable channel type: {:?}",
 							channel.kind
-						))))
+						))));
 					}
 				}
 			}
@@ -396,6 +396,27 @@ impl Discord {
 	/// Delete a channel.
 	pub fn delete_channel(&self, channel: ChannelId) -> Result<Channel> {
 		let response = request!(self, delete, "/channels/{}", channel);
+		Channel::decode(serde_json::from_reader(response)?)
+	}
+
+	/// Create a thread in a given channel from a message.
+	/// f is the thread name
+	pub fn create_thread<F: FnOnce(EditThread) -> EditThread> (
+		&self,
+		channel: ChannelId,
+		message: MessageId,
+		f: F,
+	) -> Result<Channel> {
+		let map = EditThread::__build(f);
+		let body = serde_json::to_string(&map)?;
+
+		let response = request!(
+			self,
+			post(body),
+			"/channels/{}/messages/{}/threads",
+			channel,
+			message
+		);
 		Channel::decode(serde_json::from_reader(response)?)
 	}
 
@@ -706,10 +727,10 @@ impl Discord {
 	/// // Assuming that a `Discord` instance, role, and channel have already
 	/// // been defined previously.
 	/// let target = PermissionOverwrite {
-	///	    kind: PermissionOverwriteType::Role(role.id),
-	///	    allow: permissions::VOICE_CONNECT | permissions::VOICE_SPEAK,
-	///	    deny: permissions::VOICE_MUTE_MEMBERS | permissions::VOICE_MOVE_MEMBERS,
-	///	};
+	///        kind: PermissionOverwriteType::Role(role.id),
+	///        allow: permissions::VOICE_CONNECT | permissions::VOICE_SPEAK,
+	///        deny: permissions::VOICE_MUTE_MEMBERS | permissions::VOICE_MOVE_MEMBERS,
+	///    };
 	/// let result = discord.create_permission(channel.id, target);
 	/// ```
 	pub fn create_permission(&self, channel: ChannelId, target: PermissionOverwrite) -> Result<()> {
@@ -844,7 +865,7 @@ impl Discord {
 	/// use discord::model::ReactionEmoji;
 	///
 	/// let _ = discord.delete_reaction(&channel.id, message.id, None, ReactionEmoji::Custom {
-	///	    name: "ThisIsFine",
+	///        name: "ThisIsFine",
 	///     id: EmojiId(1234)
 	/// });
 	/// ```
@@ -1586,10 +1607,10 @@ fn retry<'a, F: Fn() -> hyper::client::RequestBuilder<'a>>(
 	// retry on a ConnectionAborted, which occurs if it's been a while since the last request
 	match f2() {
 		Err(hyper::error::Error::Io(ref io))
-			if io.kind() == std::io::ErrorKind::ConnectionAborted =>
-		{
-			f2()
-		}
+		if io.kind() == std::io::ErrorKind::ConnectionAborted =>
+			{
+				f2()
+			}
 		other => other,
 	}
 }
@@ -1682,8 +1703,8 @@ impl Timer {
 
 trait ReceiverExt {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
-	where
-		F: FnOnce(serde_json::Value) -> Result<T>;
+		where
+			F: FnOnce(serde_json::Value) -> Result<T>;
 }
 
 trait SenderExt {
@@ -1692,8 +1713,8 @@ trait SenderExt {
 
 impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStream> {
 	fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
-	where
-		F: FnOnce(serde_json::Value) -> Result<T>,
+		where
+			F: FnOnce(serde_json::Value) -> Result<T>,
 	{
 		use websocket::message::{Message, Type};
 		use websocket::ws::receiver::Receiver;
