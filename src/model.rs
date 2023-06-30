@@ -479,7 +479,7 @@ impl Channel {
 		let map = try!(into_map(value));
 		// https://discord.com/developers/docs/resources/channel#channel-object-channel-types
 		match req!(map.get("type").and_then(|x| x.as_u64())) {
-			0 | 2 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
+			0 | 2 | 11 => PublicChannel::decode(Value::Object(map)).map(Channel::Public),
 			1 => PrivateChannel::decode(Value::Object(map)).map(Channel::Private),
 			3 => Group::decode(Value::Object(map)).map(Channel::Group),
 			4 => ChannelCategory::decode(Value::Object(map)).map(Channel::Category),
