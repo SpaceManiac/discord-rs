@@ -933,8 +933,10 @@ impl Discord {
 	}
 
 	/// Gets the list of a specific server's members.
-	pub fn get_server_members(&self, server_id: ServerId) -> Result<Vec<Member>> {
-		let response = request!(self, get, "/guilds/{}/members", server_id);
+	pub fn get_server_members(&self, server_id: ServerId, limit: Option<u32>, after: Option<u32>) -> Result<Vec<Member>> {
+		let limit = limit.unwrap_or(1);
+		let after = after.unwrap_or(0);
+		let response = request!(self, get, "/guilds/{}/members?limit={}&after={}", server_id, limit, after);
 		from_reader(response)
 	}
 
