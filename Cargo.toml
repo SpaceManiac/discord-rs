@@ -2,6 +2,7 @@
 name = "discord"
 version = "0.9.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
+edition = "2021"
 
 description = "Client library for the Discord API"
 readme = "README.md"
@@ -29,6 +30,7 @@ base64-rs = "0.1.1"
 flate2 = "1.0"
 opus = { version = "0.2.1", optional = true }
 multipart = { version = "0.17.0", default-features = false, features = ["client", "mock"] }
+# tokio-tungstenite = "0.20.0"
 
 [dependencies.chrono]
 version = "0.4.11"

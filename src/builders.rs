@@ -8,8 +8,8 @@ use serde_json::Value;
 use chrono::offset::FixedOffset;
 use chrono::DateTime;
 
-use model::*;
-use Object;
+use crate::model::*;
+use crate::Object;
 
 macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
