@@ -9,10 +9,10 @@ use serde_json;
 
 use crate::internal::Status;
 use crate::model::*;
-use crate::Timer;
 use crate::sleep_ms;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
+use crate::Timer;
 use crate::{Error, ReceiverExt, Result, SenderExt};
 
 const GATEWAY_VERSION: u64 = 6;
@@ -127,10 +127,18 @@ impl Connection {
 		token: &str,
 		shard: Option<[u8; 2]>,
 	) -> Result<(Connection, ReadyEvent)> {
-		ConnectionBuilder { shard, .. ConnectionBuilder::new(base_url.to_owned(), token) }.connect()
+		ConnectionBuilder {
+			shard,
+			..ConnectionBuilder::new(base_url.to_owned(), token)
+		}
+		.connect()
 	}
 
-	fn __connect(base_url: &str, token: &str, identify: serde_json::Value) -> Result<(Connection, ReadyEvent)> {
+	fn __connect(
+		base_url: &str,
+		token: &str,
+		identify: serde_json::Value,
+	) -> Result<(Connection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
@@ -371,7 +379,9 @@ impl Connection {
 		trace!("Reconnecting...");
 		// Make two attempts on the current known gateway URL
 		for _ in 0..2 {
-			if let Ok((conn, ready)) = Connection::__connect(&self.ws_url, &self.token, self.identify.clone()) {
+			if let Ok((conn, ready)) =
+				Connection::__connect(&self.ws_url, &self.token, self.identify.clone())
+			{
 				::std::mem::replace(self, conn).raw_shutdown();
 				self.session_id = Some(ready.session_id.clone());
 				return Ok(ready);

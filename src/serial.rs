@@ -61,7 +61,7 @@ pub fn deserialize_discrim_opt<'d, D: Deserializer<'d>>(d: D) -> Result<Option<u
 				Ok(Some($v as u16))
 			} else {
 				Err(E::invalid_value($wrong, &$self))
-				}
+			}
 		};
 	}
 

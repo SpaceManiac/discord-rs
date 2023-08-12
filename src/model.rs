@@ -17,7 +17,7 @@ macro_rules! req {
 	($opt:expr) => {
 		$opt.ok_or(Error::Decode(
 			concat!("Type mismatch in model:", line!(), ": ", stringify!($opt)),
-			Value::Null
+			Value::Null,
 		))?
 	};
 }
@@ -573,10 +573,7 @@ pub struct PrivateChannel {
 impl PrivateChannel {
 	pub fn decode(value: Value) -> Result<PrivateChannel> {
 		let mut value = into_map(value)?;
-		let mut recipients = decode_array(
-			remove(&mut value, "recipients")?,
-			User::decode
-		)?;
+		let mut recipients = decode_array(remove(&mut value, "recipients")?, User::decode)?;
 		if recipients.len() != 1 {
 			warn!(
 				"expected 1 recipient, found {}: {:?}",
@@ -1210,10 +1207,7 @@ impl Presence {
 			let user = User::decode(Value::Object(user_map))?;
 			(user.id, Some(user))
 		} else {
-			(
-				remove(&mut user_map, "id").and_then(UserId::decode)?,
-				None,
-			)
+			(remove(&mut user_map, "id").and_then(UserId::decode)?, None)
 		};
 
 		warn_json!(@"Presence", value, Presence {
@@ -1355,21 +1349,12 @@ impl LiveServer {
 					remove(&mut value, "voice_states")?,
 					VoiceState::decode
 				)?,
-				roles: decode_array(
-					remove(&mut value, "roles")?,
-					Role::decode
-				)?,
+				roles: decode_array(remove(&mut value, "roles")?, Role::decode)?,
 				region: remove(&mut value, "region").and_then(into_string)?,
 				// these presences don't contain a whole User, so discard that
-				presences: decode_array(
-					remove(&mut value, "presences")?,
-					Presence::decode
-				)?,
+				presences: decode_array(remove(&mut value, "presences")?, Presence::decode)?,
 				member_count: req!(remove(&mut value, "member_count")?.as_u64()),
-				members: decode_array(
-					remove(&mut value, "members")?,
-					Member::decode
-				)?,
+				members: decode_array(remove(&mut value, "members")?, Member::decode)?,
 				joined_at: remove(&mut value, "joined_at").and_then(into_string)?,
 				icon: opt(&mut value, "icon", into_string)?,
 				large: req!(remove(&mut value, "large")?.as_bool()),
@@ -1379,13 +1364,12 @@ impl LiveServer {
 				channels: decode_array(get(&mut value, "channels")?, |v| {
 					PublicChannel::decode_server(v, id)
 				})?,
-				categories: decode_array(
-					get(&mut value, "channels")?,
-					ChannelCategory::decode
-				)?,
+				categories: decode_array(get(&mut value, "channels")?, ChannelCategory::decode)?,
 				verification_level: remove(&mut value, "verification_level").and_then(serde)?,
-				emojis: remove(&mut value, "emojis").and_then(|v| decode_array(v, Emoji::decode))?,
-				features: remove(&mut value, "features").and_then(|v| decode_array(v, into_string))?,
+				emojis: remove(&mut value, "emojis")
+					.and_then(|v| decode_array(v, Emoji::decode))?,
+				features: remove(&mut value, "features")
+					.and_then(|v| decode_array(v, into_string))?,
 				splash: opt(&mut value, "splash", into_string)?,
 				default_message_notifications: req!(remove(
 					&mut value,
@@ -1394,7 +1378,8 @@ impl LiveServer {
 				.as_u64()),
 				mfa_level: req!(remove(&mut value, "mfa_level")?.as_u64()),
 				explicit_content_filter: req!(
-					remove(&mut value, "explicit_content_filter")?.as_u64()),
+					remove(&mut value, "explicit_content_filter")?.as_u64()
+				),
 			}
 		)
 	}
@@ -1786,19 +1771,19 @@ impl UserSettings {
 		warn_json!(
 			value,
 			UserSettings {
-				detect_platform_accounts: req!(remove(
-					&mut value,
-					"detect_platform_accounts"
-				)?
-				.as_bool()),
+				detect_platform_accounts: req!(
+					remove(&mut value, "detect_platform_accounts")?.as_bool()
+				),
 				developer_mode: req!(remove(&mut value, "developer_mode")?.as_bool()),
 				enable_tts_command: req!(remove(&mut value, "enable_tts_command")?.as_bool()),
 				inline_attachment_media: req!(
-					remove(&mut value, "inline_attachment_media")?.as_bool()),
+					remove(&mut value, "inline_attachment_media")?.as_bool()
+				),
 				inline_embed_media: req!(remove(&mut value, "inline_embed_media")?.as_bool()),
 				locale: remove(&mut value, "locale").and_then(into_string)?,
 				message_display_compact: req!(
-					remove(&mut value, "message_display_compact")?.as_bool()),
+					remove(&mut value, "message_display_compact")?.as_bool()
+				),
 				render_embeds: req!(remove(&mut value, "render_embeds")?.as_bool()),
 				server_positions: decode_array(
 					remove(&mut value, "guild_positions")?,
@@ -1808,7 +1793,8 @@ impl UserSettings {
 				status: remove(&mut value, "status").and_then(into_string)?,
 				theme: remove(&mut value, "theme").and_then(into_string)?,
 				convert_emoticons: req!(remove(&mut value, "convert_emoticons")?.as_bool()),
-				friend_source_flags: remove(&mut value, "friend_source_flags").and_then(FriendSourceFlags::decode)?,
+				friend_source_flags: remove(&mut value, "friend_source_flags")
+					.and_then(FriendSourceFlags::decode)?,
 				restricted_servers: remove(&mut value, "restricted_guilds")
 					.and_then(|v| decode_array(v, ServerId::decode))?,
 			}
@@ -2243,7 +2229,9 @@ impl Event {
 		} else if kind == "CALL_CREATE" {
 			Ok(Event::CallCreate(Call::decode(Value::Object(value))?))
 		} else if kind == "CALL_DELETE" {
-			Ok(Event::CallDelete(remove(&mut value, "channel_id").and_then(ChannelId::decode)?))
+			Ok(Event::CallDelete(
+				remove(&mut value, "channel_id").and_then(ChannelId::decode)?,
+			))
 		} else if kind == "CALL_UPDATE" {
 			warn_json!(
 				value,
@@ -2251,10 +2239,7 @@ impl Event {
 					channel_id: remove(&mut value, "channel_id").and_then(ChannelId::decode)?,
 					message_id: remove(&mut value, "message_id").and_then(MessageId::decode)?,
 					region: remove(&mut value, "region").and_then(into_string)?,
-					ringing: decode_array(
-						remove(&mut value, "ringing")?,
-						UserId::decode
-					)?,
+					ringing: decode_array(remove(&mut value, "ringing")?, UserId::decode)?,
 				}
 			)
 		} else if kind == "CHANNEL_RECIPIENT_ADD" {
@@ -2271,16 +2256,12 @@ impl Event {
 				Event::TypingStart {
 					channel_id: remove(&mut value, "channel_id").and_then(ChannelId::decode)?,
 					user_id: remove(&mut value, "user_id").and_then(UserId::decode)?,
-					timestamp: Utc
-						.timestamp(req!(remove(&mut value, "timestamp")?.as_i64()), 0),
+					timestamp: Utc.timestamp(req!(remove(&mut value, "timestamp")?.as_i64()), 0),
 				}
 			)
 		} else if kind == "PRESENCE_UPDATE" {
 			let server_id = opt(&mut value, "guild_id", ServerId::decode)?;
-			let roles = opt(&mut value, "roles", |v| decode_array(
-				v,
-				RoleId::decode
-			))?;
+			let roles = opt(&mut value, "roles", |v| decode_array(v, RoleId::decode))?;
 			let presence = Presence::decode(Value::Object(value))?;
 			Ok(Event::PresenceUpdate {
 				server_id,
@@ -2320,10 +2301,7 @@ impl Event {
 					mention_everyone: remove(&mut value, "mention_everyone")
 						.ok()
 						.and_then(|v| v.as_bool()),
-					mentions: opt(&mut value, "mentions", |v| decode_array(
-						v,
-						User::decode
-					))?,
+					mentions: opt(&mut value, "mentions", |v| decode_array(v, User::decode))?,
 					mention_roles: opt(&mut value, "mention_roles", |v| decode_array(
 						v,
 						RoleId::decode
@@ -2356,10 +2334,7 @@ impl Event {
 				value,
 				Event::MessageDeleteBulk {
 					channel_id: remove(&mut value, "channel_id").and_then(ChannelId::decode)?,
-					ids: decode_array(
-						remove(&mut value, "ids")?,
-						MessageId::decode
-					)?,
+					ids: decode_array(remove(&mut value, "ids")?, MessageId::decode)?,
 				}
 			)
 		} else if kind == "GUILD_CREATE" {
@@ -2378,10 +2353,7 @@ impl Event {
 				value,
 				Event::ServerMemberUpdate {
 					server_id: remove(&mut value, "guild_id").and_then(ServerId::decode)?,
-					roles: decode_array(
-						remove(&mut value, "roles")?,
-						RoleId::decode
-					)?,
+					roles: decode_array(remove(&mut value, "roles")?, RoleId::decode)?,
 					user: remove(&mut value, "user").and_then(User::decode)?,
 					nick: opt(&mut value, "nick", into_string)?,
 				}
@@ -2399,9 +2371,7 @@ impl Event {
 				value,
 				Event::ServerMembersChunk(
 					remove(&mut value, "guild_id").and_then(ServerId::decode)?,
-					
-						remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))
-					?,
+					remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))?,
 				)
 			)
 		} else if kind == "GUILD_SYNC" {
@@ -2410,11 +2380,9 @@ impl Event {
 				Event::ServerSync {
 					server_id: remove(&mut value, "id").and_then(ServerId::decode)?,
 					large: req!(remove(&mut value, "large")?.as_bool()),
-					members: remove(&mut value, "members").and_then(|v| decode_array(v, Member::decode))?,
-					presences: decode_array(
-						remove(&mut value, "presences")?,
-						Presence::decode
-					)?,
+					members: remove(&mut value, "members")
+						.and_then(|v| decode_array(v, Member::decode))?,
+					presences: decode_array(remove(&mut value, "presences")?, Presence::decode)?,
 				}
 			)
 		} else if kind == "GUILD_ROLE_CREATE" {
@@ -2461,8 +2429,8 @@ impl Event {
 			warn_json!(
 				value,
 				Event::ServerIntegrationsUpdate(
-					remove(&mut value, "guild_id").and_then(ServerId::decode)
-				?,)
+					remove(&mut value, "guild_id").and_then(ServerId::decode)?,
+				)
 			)
 		} else if kind == "GUILD_EMOJIS_UPDATE" {
 			warn_json!(
@@ -2519,7 +2487,7 @@ impl GatewayEvent {
 				req!(remove(&mut value, "s")?.as_u64()),
 				Event::decode(
 					remove(&mut value, "t").and_then(into_string)?,
-					remove(&mut value, "d")?
+					remove(&mut value, "d")?,
 				)?,
 			),
 			1 => GatewayEvent::Heartbeat(req!(remove(&mut value, "s")?.as_u64())),
@@ -2590,9 +2558,7 @@ impl VoiceEvent {
 			warn_json!(
 				value,
 				VoiceEvent::Handshake {
-					heartbeat_interval: req!(
-						remove(&mut value, "heartbeat_interval")?.as_u64()
-					),
+					heartbeat_interval: req!(remove(&mut value, "heartbeat_interval")?.as_u64()),
 					modes: decode_array(remove(&mut value, "modes")?, into_string)?,
 					port: req!(remove(&mut value, "port")?.as_u64()) as u16,
 					ssrc: req!(remove(&mut value, "ssrc")?.as_u64()) as u32,
@@ -2604,10 +2570,9 @@ impl VoiceEvent {
 				value,
 				VoiceEvent::Ready {
 					mode: remove(&mut value, "mode").and_then(into_string)?,
-					secret_key: decode_array(
-						remove(&mut value, "secret_key")?,
-						|v| Ok(req!(v.as_u64()) as u8)
-					)?,
+					secret_key: decode_array(remove(&mut value, "secret_key")?, |v| Ok(req!(
+						v.as_u64()
+					) as u8))?,
 				}
 			)
 		} else if op == 5 {
@@ -2623,9 +2588,7 @@ impl VoiceEvent {
 			warn_json!(
 				value,
 				VoiceEvent::Heartbeat {
-					heartbeat_interval: req!(
-						remove(&mut value, "heartbeat_interval")?.as_u64()
-					),
+					heartbeat_interval: req!(remove(&mut value, "heartbeat_interval")?.as_u64()),
 				}
 			)
 		} else {
@@ -2662,9 +2625,15 @@ fn decode_notes(value: Value) -> Result<BTreeMap<UserId, Option<String>>> {
 		.map(|(key, value)| {
 			Ok((
 				/* key */
-				UserId(key.parse::<u64>()
-					.map_err(|_| Error::Other("Invalid user id in notes"))?),
-				/* val */ if value != Value::Null {Some(into_string(value)?)}else{None},
+				UserId(
+					key.parse::<u64>()
+						.map_err(|_| Error::Other("Invalid user id in notes"))?,
+				),
+				/* val */ if value != Value::Null {
+					Some(into_string(value)?)
+				} else {
+					None
+				},
 			))
 		})
 		.collect()
@@ -2673,11 +2642,14 @@ fn decode_notes(value: Value) -> Result<BTreeMap<UserId, Option<String>>> {
 fn decode_shards(value: Value) -> Result<[u8; 2]> {
 	let array = into_array(value)?;
 	Ok([
-		req!(array.get(0).ok_or(Error::Other("Expected shard number"))?.as_u64()) as u8,
+		req!(array
+			.get(0)
+			.ok_or(Error::Other("Expected shard number"))?
+			.as_u64()) as u8,
 		req!(array
 			.get(1)
 			.ok_or(Error::Other("Expected total shard number"))?
-		.as_u64()) as u8,
+			.as_u64()) as u8,
 	])
 }
 

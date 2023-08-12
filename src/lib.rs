@@ -649,9 +649,11 @@ impl Discord {
 			)
 		}
 
-		let tls = hyper_native_tls::NativeTlsClient::new().expect("Error initializing NativeTlsClient");
+		let tls =
+			hyper_native_tls::NativeTlsClient::new().expect("Error initializing NativeTlsClient");
 		let connector = hyper::net::HttpsConnector::new(tls);
-		let mut request = hyper::client::Request::with_connector(hyper::method::Method::Post, url, &connector)?;
+		let mut request =
+			hyper::client::Request::with_connector(hyper::method::Method::Post, url, &connector)?;
 		request
 			.headers_mut()
 			.set(hyper::header::Authorization(self.token.clone()));
@@ -933,10 +935,22 @@ impl Discord {
 	}
 
 	/// Gets the list of a specific server's members.
-	pub fn get_server_members(&self, server_id: ServerId, limit: Option<u32>, after: Option<u32>) -> Result<Vec<Member>> {
+	pub fn get_server_members(
+		&self,
+		server_id: ServerId,
+		limit: Option<u32>,
+		after: Option<u32>,
+	) -> Result<Vec<Member>> {
 		let limit = limit.unwrap_or(1);
 		let after = after.unwrap_or(0);
-		let response = request!(self, get, "/guilds/{}/members?limit={}&after={}", server_id, limit, after);
+		let response = request!(
+			self,
+			get,
+			"/guilds/{}/members?limit={}&after={}",
+			server_id,
+			limit,
+			after
+		);
 		from_reader(response)
 	}
 
@@ -1480,7 +1494,9 @@ impl Discord {
 		shard_id: u8,
 		total_shards: u8,
 	) -> Result<(Connection, ReadyEvent)> {
-		self.connection_builder()?.with_shard(shard_id, total_shards).connect()
+		self.connection_builder()?
+			.with_shard(shard_id, total_shards)
+			.connect()
 	}
 
 	/// Prepare to establish a websocket connection over which events can be
@@ -1495,7 +1511,9 @@ impl Discord {
 		let mut value: BTreeMap<String, String> = serde_json::from_reader(response)?;
 		match value.remove("url") {
 			Some(url) => Ok(url),
-			None => Err(Error::Protocol("Response missing \"url\" in Discord::get_gateway_url()"))
+			None => Err(Error::Protocol(
+				"Response missing \"url\" in Discord::get_gateway_url()",
+			)),
 		}
 	}
 }

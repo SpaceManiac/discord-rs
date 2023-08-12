@@ -636,51 +636,57 @@ impl InternalConnection {
 			let (tx1, rx) = mpsc::channel();
 			let tx2 = tx1.clone();
 			let udp_clone = udp.try_clone()?;
-			let ws_thread = Some(::std::thread::Builder::new()
-				.name(format!("{} (WS reader)", thread_name))
-				.spawn(move || {
-					{
-						match *receiver.get_mut().get_mut() {
-							WebSocketStream::Tcp(ref inner) => inner.set_nonblocking(true).unwrap(),
-							WebSocketStream::Ssl(ref inner) => inner
-								.lock()
-								.unwrap()
-								.get_ref()
-								.set_nonblocking(true)
-								.unwrap(),
-						};
-					}
-					loop {
-						while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
-							match tx1.send(RecvStatus::Websocket(msg)) {
-								Ok(()) => {}
-								Err(_) => return,
+			let ws_thread = Some(
+				::std::thread::Builder::new()
+					.name(format!("{} (WS reader)", thread_name))
+					.spawn(move || {
+						{
+							match *receiver.get_mut().get_mut() {
+								WebSocketStream::Tcp(ref inner) => {
+									inner.set_nonblocking(true).unwrap()
+								}
+								WebSocketStream::Ssl(ref inner) => inner
+									.lock()
+									.unwrap()
+									.get_ref()
+									.set_nonblocking(true)
+									.unwrap(),
+							};
+						}
+						loop {
+							while let Ok(msg) = receiver.recv_json(VoiceEvent::decode) {
+								match tx1.send(RecvStatus::Websocket(msg)) {
+									Ok(()) => {}
+									Err(_) => return,
+								}
+							}
+							if let Ok(_) = ws_reader_close.try_recv() {
+								return;
+							}
+							::std::thread::sleep(::std::time::Duration::from_millis(25));
+						}
+					})?,
+			);
+			let udp_thread = Some(
+				::std::thread::Builder::new()
+					.name(format!("{} (UDP reader)", thread_name))
+					.spawn(move || {
+						udp_clone
+							.set_read_timeout(Some(::std::time::Duration::from_millis(100)))
+							.unwrap();
+						let mut buffer = [0; 512];
+						loop {
+							if let Ok((len, _)) = udp_clone.recv_from(&mut buffer) {
+								match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
+									Ok(()) => {}
+									Err(_) => return,
+								}
+							} else if let Ok(_) = udp_reader_close.try_recv() {
+								return;
 							}
 						}
-						if let Ok(_) = ws_reader_close.try_recv() {
-							return;
-						}
-						::std::thread::sleep(::std::time::Duration::from_millis(25));
-					}
-				})?);
-			let udp_thread = Some(::std::thread::Builder::new()
-				.name(format!("{} (UDP reader)", thread_name))
-				.spawn(move || {
-					udp_clone
-						.set_read_timeout(Some(::std::time::Duration::from_millis(100)))
-						.unwrap();
-					let mut buffer = [0; 512];
-					loop {
-						if let Ok((len, _)) = udp_clone.recv_from(&mut buffer) {
-							match tx2.send(RecvStatus::Udp(buffer[..len].to_vec())) {
-								Ok(()) => {}
-								Err(_) => return,
-							}
-						} else if let Ok(_) = udp_reader_close.try_recv() {
-							return;
-						}
-					}
-				})?);
+					})?,
+			);
 			(rx, ws_thread, udp_thread)
 		};
 

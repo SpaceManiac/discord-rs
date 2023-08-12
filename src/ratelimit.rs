@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use chrono::prelude::*;
 use hyper;
 
-use crate::{Error, Result};
 use crate::sleep_ms;
+use crate::{Error, Result};
 
 #[derive(Default)]
 pub struct RateLimits {
