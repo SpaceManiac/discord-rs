@@ -513,7 +513,8 @@ impl InternalConnection {
 			endpoint.truncate(len - 3);
 		}
 		// establish the websocket connection
-		let url = match ::websocket::client::request::Url::parse(&format!("wss://{}", endpoint)) {
+		// v=4 as described at https://discord.com/developers/docs/topics/voice-connections#voice-gateway-versioning-gateway-versions
+		let url = match ::websocket::client::request::Url::parse(&format!("wss://{}?v=4", endpoint)) {
 			Ok(url) => url,
 			Err(_) => return Err(Error::Other("Invalid endpoint URL")),
 		};
@@ -533,30 +534,26 @@ impl InternalConnection {
 		}};
 		sender.send_json(&map)?;
 
-		let stuff;
-		loop {
+		let mut interval = 10_000; // crappy guess in case we fail to receive one
+		let (port, ssrc, modes, ip) = loop {
 			match receiver.recv_json(VoiceEvent::decode)? {
-				VoiceEvent::Heartbeat { .. } => {
-					// TODO: handle this by beginning to heartbeat at the
-					// supplied interval
+				VoiceEvent::Hello { heartbeat_interval } => {
+					interval = heartbeat_interval;
 				}
-				VoiceEvent::Handshake {
-					heartbeat_interval,
+				VoiceEvent::VoiceReady {
 					port,
 					ssrc,
 					modes,
 					ip,
 				} => {
-					stuff = (heartbeat_interval, port, ssrc, modes, ip);
-					break;
+					break (port, ssrc, modes, ip);
 				}
 				other => {
 					debug!("Unexpected voice msg: {:?}", other);
 					return Err(Error::Protocol("Unexpected message setting up voice"));
 				}
 			}
-		}
-		let (interval, port, ssrc, modes, ip) = stuff;
+		};
 		if !modes.iter().any(|s| s == "xsalsa20_poly1305") {
 			return Err(Error::Protocol(
 				"Voice mode \"xsalsa20_poly1305\" unavailable",
@@ -572,11 +569,15 @@ impl InternalConnection {
 				.ok_or(Error::Other("Failed to resolve voice hostname"))?
 		};
 		let udp = UdpSocket::bind("0.0.0.0:0")?;
+		debug!("local addr = {:?}", udp.local_addr());
 		{
-			// the length of this packet can be either 4 or 70; if it is 4, voice send works
-			// fine, but no own_address is sent back to make voice receive possible
-			let mut bytes = [0; 70];
-			(&mut bytes[..]).write_u32::<BigEndian>(ssrc)?;
+			// https://discord.com/developers/docs/topics/voice-connections#ip-discovery
+			let mut bytes = [0; 2 + 2 + 4 + 64 + 2];
+			let mut msg = &mut bytes[..];
+			msg.write_u16::<BigEndian>(0x1)?;
+			msg.write_u16::<BigEndian>(70)?;
+			msg.write_u32::<BigEndian>(ssrc)?;
+			debug!("sending {:x?} to {:?}", bytes, destination);
 			udp.send_to(&bytes, destination)?;
 		}
 
@@ -584,9 +585,13 @@ impl InternalConnection {
 			// receive the response to the identification to get port and address info
 			let mut bytes = [0; 256];
 			let (len, _) = udp.recv_from(&mut bytes)?;
-			let zero_index = bytes.iter().skip(4).position(|&x| x == 0).unwrap();
-			let own_address = &bytes[4..4 + zero_index];
-			let port_number = (&bytes[len - 2..]).read_u16::<LittleEndian>()?;
+			let mut msg = &bytes[..len];
+			assert_eq!(0x2, msg.read_u16::<BigEndian>()?);
+			assert_eq!(70, msg.read_u16::<BigEndian>()?);
+			assert_eq!(ssrc, msg.read_u32::<BigEndian>()?);
+			let (addr, mut msg) = msg.split_at(64);
+			let addr = &addr[..addr.iter().position(|&x| x == 0).unwrap()];
+			let port_number = msg.read_u16::<BigEndian>()?;
 
 			// send the acknowledgement websocket message
 			let map = json! {{
@@ -594,7 +599,7 @@ impl InternalConnection {
 				"d": {
 					"protocol": "udp",
 					"data": {
-						"address": own_address,
+						"address": addr,
 						"port": port_number,
 						"mode": "xsalsa20_poly1305",
 					}
@@ -607,7 +612,11 @@ impl InternalConnection {
 		let encryption_key;
 		loop {
 			match receiver.recv_json(VoiceEvent::decode)? {
-				VoiceEvent::Ready { mode, secret_key } => {
+				VoiceEvent::Hello { heartbeat_interval } => {
+					// Not hit in usual operation; just for coverage.
+					interval = heartbeat_interval;
+				},
+				VoiceEvent::SessionDescription { mode, secret_key } => {
 					encryption_key =
 						crypto::Key::from_slice(&secret_key).expect("failed to create key");
 					if mode != "xsalsa20_poly1305" {
