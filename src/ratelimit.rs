@@ -125,9 +125,12 @@ fn read_header(headers: &hyper::header::Headers, name: &str) -> Result<Option<i6
 		Some(hdr) => {
 			if hdr.len() == 1 {
 				match std::str::from_utf8(&hdr[0]) {
-					Ok(text) => match text.parse() {
+					Ok(text) => match text.parse::<i64>() {
 						Ok(val) => Ok(Some(val)),
-						Err(_) => Err(Error::Other("header is not an i64")),
+						Err(_) => match text.parse::<f64>() {
+							Ok(val) => Ok(Some(val as i64)),
+							Err(_) => Err(Error::Other("header is not an i64 or f64")),
+						},
 					},
 					Err(_) => Err(Error::Other("header is not UTF-8")),
 				}
