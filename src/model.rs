@@ -2495,7 +2495,7 @@ impl GatewayEvent {
 			9 => GatewayEvent::InvalidateSession,
 			10 => {
 				let mut data = remove(&mut value, "d").and_then(into_map)?;
-				let interval = req!(remove(&mut data, "heartbeat_interval")?.as_u64());
+				let interval = req!(remove(&mut data, "heartbeat_interval")?.as_u64()) as u64;
 				GatewayEvent::Hello(interval)
 			}
 			11 => GatewayEvent::HeartbeatAck,
@@ -2521,17 +2521,17 @@ impl GatewayEvent {
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub enum VoiceEvent {
-	Heartbeat {
+	Hello {  // 8
 		heartbeat_interval: u64,
 	},
-	Handshake {
-		heartbeat_interval: u64,
+	VoiceReady {  // 2
 		port: u16,
 		ssrc: u32,
 		modes: Vec<String>,
 		ip: Option<String>,
+		// ignore heartbeat_interval: https://discord.com/developers/docs/topics/voice-connections#establishing-a-voice-websocket-connection-example-voice-ready-payload
 	},
-	Ready {
+	SessionDescription {
 		mode: String,
 		secret_key: Vec<u8>,
 	},
@@ -2541,6 +2541,7 @@ pub enum VoiceEvent {
 		speaking: bool,
 	},
 	KeepAlive,
+	HeartbeatAck,
 	Unknown(u64, Value),
 }
 
@@ -2557,8 +2558,7 @@ impl VoiceEvent {
 		if op == 2 {
 			warn_json!(
 				value,
-				VoiceEvent::Handshake {
-					heartbeat_interval: req!(remove(&mut value, "heartbeat_interval")?.as_u64()),
+				VoiceEvent::VoiceReady {
 					modes: decode_array(remove(&mut value, "modes")?, into_string)?,
 					port: req!(remove(&mut value, "port")?.as_u64()) as u16,
 					ssrc: req!(remove(&mut value, "ssrc")?.as_u64()) as u32,
@@ -2568,11 +2568,12 @@ impl VoiceEvent {
 		} else if op == 4 {
 			warn_json!(
 				value,
-				VoiceEvent::Ready {
+				VoiceEvent::SessionDescription {
 					mode: remove(&mut value, "mode").and_then(into_string)?,
-					secret_key: decode_array(remove(&mut value, "secret_key")?, |v| Ok(req!(
-						v.as_u64()
-					) as u8))?,
+					secret_key: decode_array(
+						remove(&mut value, "secret_key")?,
+						|v| Ok(req!(v.as_u64()) as u8)
+					)?,
 				}
 			)
 		} else if op == 5 {
@@ -2584,11 +2585,15 @@ impl VoiceEvent {
 					speaking: req!(remove(&mut value, "speaking")?.as_bool()),
 				}
 			)
+		} else if op == 6 {
+			Ok(VoiceEvent::HeartbeatAck)
 		} else if op == 8 {
 			warn_json!(
 				value,
-				VoiceEvent::Heartbeat {
-					heartbeat_interval: req!(remove(&mut value, "heartbeat_interval")?.as_u64()),
+				VoiceEvent::Hello {
+					heartbeat_interval: req!(
+						remove(&mut value, "heartbeat_interval")?.as_f64()
+					) as u64,
 				}
 			)
 		} else {
