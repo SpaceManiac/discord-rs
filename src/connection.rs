@@ -2,10 +2,14 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+use futures_util::stream::{SplitStream, SplitSink};
 use websocket::client::{Client, Receiver, Sender};
 use websocket::stream::WebSocketStream;
 
 use serde_json;
+
+use tokio::{ net::TcpStream, runtime::Runtime};
+use tokio_tungstenite::{ connect_async, tungstenite::Message, MaybeTlsStream };
 
 use crate::internal::Status;
 use crate::model::*;
@@ -14,6 +18,7 @@ use crate::sleep_ms;
 use crate::voice::VoiceConnection;
 use crate::Timer;
 use crate::{Error, ReceiverExt, Result, SenderExt};
+use crate::{ WebSocketTX, WebSocketRX };
 
 const GATEWAY_VERSION: u64 = 6;
 
@@ -94,7 +99,7 @@ impl<'a> ConnectionBuilder<'a> {
 			"op": 2,
 			"d": d
 		}};
-		Connection::__connect(&self.base_url, self.token.clone(), identify)
+		Connection::__connect(&self.base_url, self.token, identify)
 	}
 }
 
@@ -140,8 +145,12 @@ impl Connection {
 		identify: serde_json::Value,
 	) -> Result<(Connection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
+		let rt = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()?;
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
+		
 		let response = Client::connect(url)?.send()?;
 		response.validate()?;
 		let (mut sender, mut receiver) = response.begin().split();

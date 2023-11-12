@@ -1706,8 +1706,22 @@ trait ReceiverExt {
 		F: FnOnce(serde_json::Value) -> Result<T>;
 }
 
+use async_trait::async_trait;
+
+#[async_trait]
+trait AsyncRecieverExt {
+	async fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
+	where
+		F: FnOnce(serde_json::Value) -> Result<T> + std::marker::Send;
+}
+
 trait SenderExt {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
+}
+
+#[async_trait]
+trait AsyncSenderExt {
+	async fn send_json(&mut self, value: &serde_json::Value) -> Result<()>;
 }
 
 impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStream> {
@@ -1750,6 +1764,62 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 	}
 }
 
+pub type WebSocketRX = futures_util::stream::SplitStream<
+	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+>;
+
+#[async_trait]
+impl AsyncRecieverExt for WebSocketRX {
+	async fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
+	where
+		F: FnOnce(serde_json::Value) -> Result<T> + std::marker::Send,
+	{
+		use futures_util::StreamExt;
+		use tokio_tungstenite::tungstenite::{self, Message};
+
+		let msg = self
+			.next()
+			.await
+			.ok_or(Error::Tungstenite(tungstenite::Error::AlreadyClosed))??;
+
+		match msg {
+			Message::Close(Some(frame)) => Err(Error::Closed(
+				Some(u16::from(frame.code)),
+				frame.reason.to_string(),
+			)),
+			Message::Text(msg) => serde_json::from_reader(msg.as_bytes())
+				.map_err(From::from)
+				.and_then(decode)
+				.map_err(|e| {
+					warn!("Error decoding: {}", msg);
+					e
+				}),
+			Message::Binary(payload) => {
+				use std::io::Read;
+				let mut payload_vec = Vec::new();
+				let _ = flate2::read::ZlibDecoder::new(payload.as_slice())
+					.read_to_end(&mut payload_vec);
+				serde_json::from_reader(payload_vec.as_slice())
+					.map_err(From::from)
+					.and_then(decode)
+					.map_err(|e| {
+						warn!(
+							"Error decoding: {}",
+							String::from_utf8_lossy(payload_vec.as_slice())
+						);
+						e
+					})
+			}
+			_ => Err(Error::Closed(None, msg.to_string())),
+		}
+	}
+}
+
+pub type WebSocketTX = futures_util::stream::SplitSink<
+	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+	tokio_tungstenite::tungstenite::Message,
+>;
+
 impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream> {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use websocket::message::Message;
@@ -1758,6 +1828,20 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 			.map(Message::text)
 			.map_err(Error::from)
 			.and_then(|m| self.send_message(&m).map_err(Error::from))
+	}
+}
+
+#[async_trait]
+impl AsyncSenderExt for WebSocketTX {
+	async fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
+		use futures_util::SinkExt;
+		use tokio_tungstenite::tungstenite::Message;
+
+		let msg = serde_json::to_string(value)
+			.map(Message::text)
+			.map_err(Error::from)?;
+
+		self.send(msg).await.map_err(Error::from)
 	}
 }
 
