@@ -1764,12 +1764,14 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 	}
 }
 
-pub type WebSocketRX = futures_util::stream::SplitStream<
-	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
->;
-
 #[async_trait]
-impl AsyncRecieverExt for WebSocketRX {
+impl AsyncRecieverExt
+	for futures_util::stream::SplitStream<
+		tokio_tungstenite::WebSocketStream<
+			tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+		>,
+	>
+{
 	async fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
 	where
 		F: FnOnce(serde_json::Value) -> Result<T> + std::marker::Send,
@@ -1815,11 +1817,6 @@ impl AsyncRecieverExt for WebSocketRX {
 	}
 }
 
-pub type WebSocketTX = futures_util::stream::SplitSink<
-	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-	tokio_tungstenite::tungstenite::Message,
->;
-
 impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream> {
 	fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use websocket::message::Message;
@@ -1832,7 +1829,14 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 }
 
 #[async_trait]
-impl AsyncSenderExt for WebSocketTX {
+impl AsyncSenderExt
+	for futures_util::stream::SplitSink<
+		tokio_tungstenite::WebSocketStream<
+			tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+		>,
+		tokio_tungstenite::tungstenite::Message,
+	>
+{
 	async fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use futures_util::SinkExt;
 		use tokio_tungstenite::tungstenite::Message;
