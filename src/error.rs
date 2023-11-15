@@ -151,6 +151,7 @@ impl StdError for Error {
 			Error::Chrono(ref inner) => Some(inner),
 			Error::Json(ref inner) => Some(inner),
 			Error::WebSocket(ref inner) => Some(inner),
+			Error::Tungstenite(ref inner) => Some(inner),
 			Error::Io(ref inner) => Some(inner),
 			#[cfg(feature = "voice")]
 			Error::Opus(ref inner) => Some(inner),
