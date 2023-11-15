@@ -239,6 +239,47 @@ impl AsyncConnection {
 			ready,
 		))
 	}
+
+	/// Change the game information that this client reports as playing.
+	pub async fn set_game(&self, game: Option<Game>) {
+		self.set_presence(game, OnlineStatus::Online, false).await;
+	}
+
+	/// Set the client to be playing this game, with defaults used for any
+	/// extended information.
+	pub async fn set_game_name(&self, name: String) {
+		self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false).await;
+	}
+
+	/// Sets the active presence of the client, including game and/or status
+	/// information.
+	///
+	/// `afk` will help Discord determine where to send notifications.
+	pub async fn set_presence(&self, game: Option<Game>, status: OnlineStatus, afk: bool) {
+		let status = match status {
+			OnlineStatus::Offline => OnlineStatus::Invisible,
+			other => other,
+		};
+		let game = match game {
+			Some(Game {
+				kind: GameType::Streaming,
+				url: Some(url),
+				name,
+			}) => json! {{ "type": GameType::Streaming, "url": url, "name": name }},
+			Some(game) => json! {{ "name": game.name, "type": GameType::Playing }},
+			None => json!(null),
+		};
+		let msg = json! {{
+			"op": 3,
+			"d": {
+				"afk": afk,
+				"since": 0,
+				"status": status,
+				"game": game,
+			}
+		}};
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
+	}
 }
 
 /// Websocket connection to the Discord servers.
