@@ -2,14 +2,15 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
-use futures_util::stream::{SplitStream, SplitSink};
+use futures_util::stream::StreamExt;
+use rand::Rng;
 use websocket::client::{Client, Receiver, Sender};
 use websocket::stream::WebSocketStream;
 
 use serde_json;
 
-use tokio::{ net::TcpStream, runtime::Runtime};
-use tokio_tungstenite::{ connect_async, tungstenite::Message, MaybeTlsStream };
+use tokio::runtime::Runtime;
+use tokio_tungstenite::connect_async;
 
 use crate::internal::Status;
 use crate::model::*;
@@ -17,8 +18,7 @@ use crate::sleep_ms;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
 use crate::Timer;
-use crate::{Error, ReceiverExt, Result, SenderExt};
-use crate::{ WebSocketTX, WebSocketRX };
+use crate::{AsyncRecieverExt, AsyncSenderExt, Error, ReceiverExt, Result, SenderExt};
 
 const GATEWAY_VERSION: u64 = 6;
 
@@ -565,6 +565,12 @@ fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
 		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
 
+#[inline]
+fn build_gateway_url_v2(base: &str) -> Result<url::Url> {
+	url::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
+		.map_err(|_| Error::Other("Invalid gateway URL"))
+}
+
 fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::Receiver<Status>) {
 	let mut timer = Timer::new(interval);
 	let mut last_sequence = 0;
@@ -587,6 +593,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 				Ok(Status::ChangeSender(new_sender)) => {
 					sender = new_sender;
 				}
+				Ok(Status::ChangeSenderV2(new_sender)) => unimplemented!(),
 				Ok(Status::Aborted) => break 'outer,
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
@@ -605,4 +612,66 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 		}
 	}
 	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
+}
+
+async fn keepalive_v2(
+	interval: u64,
+	mut sender: crate::WebSocketTX,
+	mut channel: tokio::sync::mpsc::Receiver<Status>,
+) {
+	use futures_util::SinkExt;
+	let jitter = rand::thread_rng().gen_range(0.0..1.0);
+	sleep_ms((interval as f64 * jitter) as u64);
+
+	match sender.send_json(&json! {{ "op": 1, "d": null }}).await {
+		Ok(()) => {}
+		Err(e) => warn!(
+			"Error sending first heartbeat, Interval: {}, Error: {:?}",
+			interval, e
+		),
+	}
+
+	let mut timer = Timer::new(interval);
+	let mut last_sequence = 0;
+
+	'outer: loop {
+		sleep_ms(100);
+
+		loop {
+			match channel.try_recv() {
+				Ok(Status::SendMessage(val)) => match sender.send_json(&val).await {
+					Ok(()) => {}
+					Err(e) => warn!("Error sending gateway message: {:?}", e),
+				},
+				Ok(Status::Sequence(seq)) => {
+					last_sequence = seq;
+				}
+				Ok(Status::ChangeInterval(interval)) => {
+					timer = Timer::new(interval);
+				}
+				Ok(Status::ChangeSender(_)) => unimplemented!(),
+				Ok(Status::ChangeSenderV2(new_sender)) => {
+					sender = new_sender;
+				}
+				Ok(Status::Aborted) => break 'outer,
+				Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+				Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break 'outer,
+			}
+		}
+
+		if timer.check_tick() {
+			let map = json! {{
+				"op" : 1,
+				"d" : last_sequence
+			}};
+			match sender.send_json(&map).await {
+				Ok(()) => {}
+				Err(e) => warn!("Error sending gateway keepalive: {:?}", e),
+			}
+		}
+	}
+	debug!("Why the hell are we here");
+	let _ = sender
+		.send(tokio_tungstenite::tungstenite::Message::Close(None))
+		.await;
 }
