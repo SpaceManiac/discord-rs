@@ -1708,6 +1708,14 @@ trait ReceiverExt {
 
 use async_trait::async_trait;
 
+type WebSocketTX = futures_util::stream::SplitSink<
+	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+	tokio_tungstenite::tungstenite::Message,
+>;
+type WebSocketRX = futures_util::stream::SplitStream<
+	tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+>;
+
 #[async_trait]
 trait AsyncRecieverExt {
 	async fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
@@ -1765,13 +1773,7 @@ impl ReceiverExt for websocket::client::Receiver<websocket::stream::WebSocketStr
 }
 
 #[async_trait]
-impl AsyncRecieverExt
-	for futures_util::stream::SplitStream<
-		tokio_tungstenite::WebSocketStream<
-			tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-		>,
-	>
-{
+impl AsyncRecieverExt for WebSocketRX {
 	async fn recv_json<F, T>(&mut self, decode: F) -> Result<T>
 	where
 		F: FnOnce(serde_json::Value) -> Result<T> + std::marker::Send,
@@ -1829,18 +1831,12 @@ impl SenderExt for websocket::client::Sender<websocket::stream::WebSocketStream>
 }
 
 #[async_trait]
-impl AsyncSenderExt
-	for futures_util::stream::SplitSink<
-		tokio_tungstenite::WebSocketStream<
-			tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-		>,
-		tokio_tungstenite::tungstenite::Message,
-	>
-{
+impl AsyncSenderExt for WebSocketTX {
 	async fn send_json(&mut self, value: &serde_json::Value) -> Result<()> {
 		use futures_util::SinkExt;
 		use tokio_tungstenite::tungstenite::Message;
 
+		debug!("Outbound Message: {:?}", &value);
 		let msg = serde_json::to_string(value)
 			.map(Message::text)
 			.map_err(Error::from)?;
@@ -1850,11 +1846,14 @@ impl AsyncSenderExt
 }
 
 mod internal {
+    use crate::WebSocketTX;
+
 	pub enum Status {
 		SendMessage(::serde_json::Value),
 		Sequence(u64),
 		ChangeInterval(u64),
 		ChangeSender(::websocket::client::Sender<::websocket::stream::WebSocketStream>),
+		ChangeSenderV2(WebSocketTX),
 		Aborted,
 	}
 }
