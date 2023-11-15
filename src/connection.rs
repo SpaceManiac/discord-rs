@@ -138,16 +138,16 @@ impl AsyncConnection {
 	/// Usually called internally by `Discord::connect`, which provides both
 	/// the token and URL and an optional user-given shard ID and total shard
 	/// count.
-	pub fn new(
+	pub async fn new(
 		base_url: &str,
 		token: &str,
 		shard: Option<[u8; 2]>,
-	) -> Result<(Connection, ReadyEvent)> {
+	) -> Result<(AsyncConnection, ReadyEvent)> {
 		ConnectionBuilder {
 			shard,
 			..ConnectionBuilder::new(base_url.to_owned(), token)
 		}
-		.connect()
+		.connect_async().await
 	}
 
 	async fn __connect(
@@ -172,7 +172,7 @@ impl AsyncConnection {
 
 		socket_tx.send_json(&identify).await?;
 		let (keepalive_channel, rx) = tokio::sync::mpsc::channel(10);
-		tokio::spawn(keepalive_v2(heartbeat_interval, socket_tx, rx));
+		tokio::spawn(keepalive_async(heartbeat_interval, socket_tx, rx));
 
 		let sequence;
 		let ready;
@@ -749,7 +749,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 	let _ = sender.get_mut().shutdown(::std::net::Shutdown::Both);
 }
 
-async fn keepalive_v2(
+async fn keepalive_async(
 	interval: u64,
 	mut sender: crate::WebSocketTX,
 	mut channel: tokio::sync::mpsc::Receiver<Status>,
