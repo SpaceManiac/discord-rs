@@ -9,7 +9,6 @@ use websocket::stream::WebSocketStream;
 
 use serde_json;
 
-use tokio::runtime::Runtime;
 use tokio_tungstenite::connect_async;
 
 use crate::internal::Status;
@@ -18,6 +17,7 @@ use crate::sleep_ms;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceConnection;
 use crate::Timer;
+use crate::WebSocketRX;
 use crate::{AsyncRecieverExt, AsyncSenderExt, Error, ReceiverExt, Result, SenderExt};
 
 const GATEWAY_VERSION: u64 = 6;
@@ -76,6 +76,16 @@ impl<'a> ConnectionBuilder<'a> {
 	/// Also returns the `ReadyEvent` sent by Discord upon establishing the
 	/// connection, which contains the initial state as seen by the client.
 	pub fn connect(&self) -> Result<(Connection, ReadyEvent)> {
+		let identify = self.build_idenity();
+		Connection::__connect(&self.base_url, self.token, identify)
+	}
+
+	pub async fn connect_async(&self) -> Result<(AsyncConnection, ReadyEvent)> {
+		let identify = self.build_idenity();
+		AsyncConnection::__connect(&self.base_url, self.token, identify).await
+	}
+
+	fn build_idenity(&self) -> serde_json::Value {
 		let mut d = json! {{
 			"token": self.token,
 			"properties": {
@@ -99,7 +109,135 @@ impl<'a> ConnectionBuilder<'a> {
 			"op": 2,
 			"d": d
 		}};
-		Connection::__connect(&self.base_url, self.token, identify)
+		identify
+	}
+}
+
+/// Asynchronous Websocket connection
+#[allow(dead_code)]
+pub struct AsyncConnection {
+	keepalive_channel: tokio::sync::mpsc::Sender<Status>,
+	receiver: WebSocketRX,
+	#[cfg(feature = "voice")]
+	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
+	#[cfg(feature = "voice")]
+	user_id: UserId,
+	ws_url: String,
+	token: String,
+	session_id: Option<String>,
+	last_sequence: u64,
+	identify: serde_json::Value,
+}
+
+impl AsyncConnection {
+	/// Establish a connection to the Discord websocket servers.
+	///
+	/// Returns both the `Connection` and the `ReadyEvent` which is always the
+	/// first event received and contains initial state information.
+	///
+	/// Usually called internally by `Discord::connect`, which provides both
+	/// the token and URL and an optional user-given shard ID and total shard
+	/// count.
+	pub fn new(
+		base_url: &str,
+		token: &str,
+		shard: Option<[u8; 2]>,
+	) -> Result<(Connection, ReadyEvent)> {
+		ConnectionBuilder {
+			shard,
+			..ConnectionBuilder::new(base_url.to_owned(), token)
+		}
+		.connect()
+	}
+
+	async fn __connect(
+		base_url: &str,
+		token: &str,
+		identify: serde_json::Value,
+	) -> Result<(AsyncConnection, ReadyEvent)> {
+		trace!("Gateway: {}", base_url);
+		// establish the websocket connection
+		let url = build_gateway_url_v2(base_url)?;
+
+		let (socket, _res) = connect_async(url).await?;
+		let (mut socket_tx, mut socket_rx) = socket.split();
+
+		let heartbeat_interval = match socket_rx.recv_json(GatewayEvent::decode).await? {
+			GatewayEvent::Hello(interval) => Ok(interval),
+			other => {
+				debug!("Unexpected event: {:?}", other);
+				Err(Error::Protocol("Expected Hello during handshake"))
+			}
+		}?;
+
+		socket_tx.send_json(&identify).await?;
+		let (keepalive_channel, rx) = tokio::sync::mpsc::channel(10);
+		tokio::spawn(keepalive_v2(heartbeat_interval, socket_tx, rx));
+
+		let sequence;
+		let ready;
+		match socket_rx.recv_json(GatewayEvent::decode).await? {
+			GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
+				sequence = seq;
+				ready = event;
+			}
+			GatewayEvent::InvalidateSession => {
+				debug!("Session invalidated, reidentifying");
+				let _ = keepalive_channel
+					.send(Status::SendMessage(identify.clone()))
+					.await
+					.map_err(|e| {
+						debug!("Error sending Message down keepalive channel: {:?}", e);
+						Error::Other("Error sending message down keepalive channel")
+					})?;
+				match socket_rx.recv_json(GatewayEvent::decode).await? {
+                    GatewayEvent::Dispatch(seq, Event::Ready(event)) => {
+                        sequence = seq;
+                        ready = event;
+                    }
+                    GatewayEvent::InvalidateSession => {
+                        return Err(Error::Protocol(
+                                "Invalid session during handshake. \
+                                Double-check your token or consider waiting 5 seconds between starting shards.",
+                                ))
+                    }
+                    other => {
+                        debug!("Unexpected event: {:?}", other);
+                        return Err(Error::Protocol("Expected Ready during handshake"));
+                    }
+                }
+			}
+			other => {
+				debug!("Unexpected event: {:?}", other);
+				return Err(Error::Protocol(
+					"Expected Ready or InvalidateSession during handshake",
+				));
+			}
+		}
+		if ready.version != GATEWAY_VERSION {
+			warn!(
+				"Got protocol version {} instead of {}",
+				ready.version, GATEWAY_VERSION
+			);
+		}
+		let session_id = ready.session_id.clone();
+		Ok((
+			AsyncConnection {
+				keepalive_channel,
+				receiver: socket_rx,
+				ws_url: base_url.to_owned(),
+				token: token.to_owned(),
+				session_id: Some(session_id),
+				last_sequence: sequence,
+				identify,
+				// voice only
+				#[cfg(feature = "voice")]
+				user_id: ready.user.id,
+				#[cfg(feature = "voice")]
+				voice_handles: HashMap::new(),
+			},
+			ready,
+		))
 	}
 }
 
@@ -145,12 +283,9 @@ impl Connection {
 		identify: serde_json::Value,
 	) -> Result<(Connection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
-		let rt = tokio::runtime::Builder::new_current_thread()
-			.enable_all()
-			.build()?;
 		// establish the websocket connection
 		let url = build_gateway_url(base_url)?;
-		
+
 		let response = Client::connect(url)?.send()?;
 		response.validate()?;
 		let (mut sender, mut receiver) = response.begin().split();
@@ -593,7 +728,7 @@ fn keepalive(interval: u64, mut sender: Sender<WebSocketStream>, channel: mpsc::
 				Ok(Status::ChangeSender(new_sender)) => {
 					sender = new_sender;
 				}
-				Ok(Status::ChangeSenderV2(new_sender)) => unimplemented!(),
+				Ok(Status::ChangeSenderV2(_)) => unimplemented!(),
 				Ok(Status::Aborted) => break 'outer,
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => break 'outer,
