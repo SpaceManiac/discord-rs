@@ -4,6 +4,8 @@ use discord::model::Event;
 use discord::{Discord, State};
 use std::env;
 
+use simplelog::{CombinedLogger, self};
+
 // A simple DJ bot example.
 // Use by issuing the command "!dj <youtube-link>" in PM or a visible text channel.
 // The bot will join the voice channel of the person issuing the command.
@@ -11,6 +13,20 @@ use std::env;
 // The bot will quit any voice channel it is the last user in.
 
 pub fn main() {
+	let _ = CombinedLogger::init(vec![
+		simplelog::TermLogger::new(
+			simplelog::LevelFilter::Debug,
+			simplelog::Config::default(),
+			simplelog::TerminalMode::Mixed,
+			simplelog::ColorChoice::Auto,
+		),
+		//simplelog::WriteLogger::new(
+		//    simplelog::LevelFilter::Trace,
+		//    simplelog::Config::default(),
+		//    File::create("discord_log_tungstenite.log").unwrap(),
+		//),
+	])
+	.unwrap();
 	// Log in to Discord using a bot token from the environment
 	let discord = Discord::from_bot_token(&env::var("DISCORD_TOKEN").expect("Expected token"))
 		.expect("login failed");
