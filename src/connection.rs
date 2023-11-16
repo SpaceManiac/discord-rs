@@ -122,6 +122,7 @@ pub struct AsyncConnection {
 	voice_handles: HashMap<Option<ServerId>, VoiceConnection>,
 	#[cfg(feature = "voice")]
 	user_id: UserId,
+	gateway_resume_url: String,
 	ws_url: String,
 	token: String,
 	session_id: Option<String>,
@@ -147,7 +148,8 @@ impl AsyncConnection {
 			shard,
 			..ConnectionBuilder::new(base_url.to_owned(), token)
 		}
-		.connect_async().await
+		.connect_async()
+		.await
 	}
 
 	async fn __connect(
@@ -221,10 +223,12 @@ impl AsyncConnection {
 			);
 		}
 		let session_id = ready.session_id.clone();
+		let resume_url = ready.resume_url.clone();
 		Ok((
 			AsyncConnection {
 				keepalive_channel,
 				receiver: socket_rx,
+				gateway_resume_url: resume_url,
 				ws_url: base_url.to_owned(),
 				token: token.to_owned(),
 				session_id: Some(session_id),
@@ -248,7 +252,8 @@ impl AsyncConnection {
 	/// Set the client to be playing this game, with defaults used for any
 	/// extended information.
 	pub async fn set_game_name(&self, name: String) {
-		self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false).await;
+		self.set_presence(Some(Game::playing(name)), OnlineStatus::Online, false)
+			.await;
 	}
 
 	/// Sets the active presence of the client, including game and/or status
@@ -280,10 +285,68 @@ impl AsyncConnection {
 		}};
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
 	}
+
+	/// Resume using our existing session
+	async fn resume(&mut self, session_id: String) -> Result<Event> {
+		sleep_ms(1000);
+		trace!("Resuming...");
+
+		let url = build_gateway_url_v2(&self.gateway_resume_url)?;
+		let (socket, _res) = connect_async(url).await?;
+		let (mut socket_tx, mut socket_rx) = socket.split();
+		
+		// send the resume request
+		let resume = json! {{
+			"op": 6,
+			"d": {
+				"seq": self.last_sequence,
+				"token": self.token,
+				"session_id": session_id,
+			}
+		}};
+		let _ = socket_tx.send_json(&resume).await;
+
+		// TODO: when Discord has implemented it, observe the RESUMING event here
+		let first_event;
+		loop {
+			match socket_rx.recv_json(GatewayEvent::decode).await? {
+				GatewayEvent::Hello(interval) => {
+					let _ = self
+						.keepalive_channel
+						.send(Status::ChangeInterval(interval));
+				}
+				GatewayEvent::Dispatch(seq, event) => {
+					if let Event::Resumed { .. } = event {
+						trace!("Resumed successfully");
+					}
+					if let Event::Ready(ReadyEvent { ref session_id, .. }) = event {
+						self.session_id = Some(session_id.clone());
+					}
+					self.last_sequence = seq;
+					first_event = event;
+					break;
+				}
+				GatewayEvent::InvalidateSession => {
+					debug!("Session invalidated in resume, reidentifying");
+					socket_tx.send_json(&self.identify).await?;
+				}
+				other => {
+					debug!("Unexpected event: {:?}", other);
+					return Err(Error::Protocol("Unexpected event during resume"));
+				}
+			}
+		}
+
+		// switch everything to the new connection
+		self.receiver = socket_rx;
+		let _ = self.keepalive_channel.send(Status::ChangeSenderV2(socket_tx)).await;
+		Ok(first_event)
+	}
 }
 
 /// Websocket connection to the Discord servers.
 pub struct Connection {
+	async_connection: AsyncConnection,
 	keepalive_channel: mpsc::Sender<Status>,
 	receiver: Receiver<WebSocketStream>,
 	#[cfg(feature = "voice")]
