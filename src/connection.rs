@@ -1,11 +1,8 @@
 #[cfg(feature = "voice")]
 use std::collections::HashMap;
-use std::sync::mpsc;
 
 use futures_util::stream::StreamExt;
 use rand::Rng;
-use websocket::client::{Client, Receiver, Sender};
-use websocket::stream::WebSocketStream;
 
 use serde_json;
 
@@ -18,23 +15,9 @@ use crate::sleep_ms;
 use crate::voice::VoiceConnection;
 use crate::Timer;
 use crate::WebSocketRX;
-use crate::{AsyncRecieverExt, AsyncSenderExt, Error, ReceiverExt, Result, SenderExt};
+use crate::{AsyncRecieverExt, AsyncSenderExt, Error, Result};
 
 const GATEWAY_VERSION: u64 = 6;
-
-#[cfg(feature = "voice")]
-macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-		$($name1: $val1,)*
-		$($name2: $val2,)*
-	}}
-}
-#[cfg(not(feature = "voice"))]
-macro_rules! finish_connection {
-	($($name1:ident: $val1:expr),*; $($name2:ident: $val2:expr,)*) => { Connection {
-		$($name1: $val1,)*
-	}}
-}
 
 #[derive(Clone)]
 pub struct ConnectionBuilder<'a> {
@@ -159,7 +142,7 @@ impl AsyncConnection {
 	) -> Result<(AsyncConnection, ReadyEvent)> {
 		trace!("Gateway: {}", base_url);
 		// establish the websocket connection
-		let url = build_gateway_url_v2(base_url)?;
+		let url = build_gateway_url(base_url)?;
 
 		let (socket, _res) = connect_async(url).await?;
 		let (mut socket_tx, mut socket_rx) = socket.split();
@@ -289,6 +272,7 @@ impl AsyncConnection {
 	/// Get a handle to the voice connection for a server.
 	///
 	/// Pass `None` to get the handle for group and one-on-one calls.
+	#[allow(unused_variables)]
 	#[cfg(feature = "voice")]
 	pub fn voice(&mut self, server_id: Option<ServerId>) -> &mut VoiceConnection {
 		let AsyncConnection {
@@ -317,7 +301,9 @@ impl AsyncConnection {
 	/// Receive an event over the websocket, blocking until one is available.
 	pub async fn recv_event(&mut self) -> Result<Event> {
 		loop {
-			match self.receiver.recv_json(GatewayEvent::decode).await {
+			let event = self.receiver.recv_json(GatewayEvent::decode).await;
+			debug!("Recieved Event: {:?}", event);
+			match event {
 				Err(Error::Tungstenite(err)) => {
 					warn!("Websocket error, reconnecting: {:?}", err);
 					// Try resuming if we haven't received an InvalidateSession
@@ -426,7 +412,7 @@ impl AsyncConnection {
 		sleep_ms(1000);
 		trace!("Resuming...");
 
-		let url = build_gateway_url_v2(&self.gateway_resume_url)?;
+		let url = build_gateway_url(&self.gateway_resume_url)?;
 		let (socket, _res) = connect_async(url).await?;
 		let (mut socket_tx, mut socket_rx) = socket.split();
 
@@ -498,7 +484,7 @@ impl AsyncConnection {
 	}
 
 	// called when we want to drop the connection with no fanfare
-	fn raw_shutdown(mut self) {
+	fn raw_shutdown(self) {
 		::std::mem::forget(self); // don't call inner_shutdown()
 	}
 
@@ -588,9 +574,9 @@ impl Connection {
 	fn __connect(
 		base_url: &str,
 		token: &str,
-		identify: serde_json::Value,
+		_identify: serde_json::Value,
 	) -> Result<(Connection, ReadyEvent)> {
-		let rt = tokio::runtime::Builder::new_current_thread()
+		let rt = tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
 			.build()
 			.unwrap();
@@ -613,7 +599,8 @@ impl Connection {
 	/// Set the client to be playing this game, with defaults used for any
 	/// extended information.
 	pub fn set_game_name(&self, name: String) {
-		self.runtime.block_on(self.async_connection.set_game_name(name))
+		self.runtime
+			.block_on(self.async_connection.set_game_name(name))
 	}
 
 	/// Sets the active presence of the client, including game and/or status
@@ -621,7 +608,8 @@ impl Connection {
 	///
 	/// `afk` will help Discord determine where to send notifications.
 	pub fn set_presence(&self, game: Option<Game>, status: OnlineStatus, afk: bool) {
-		self.runtime.block_on(self.async_connection.set_presence(game, status, afk))
+		self.runtime
+			.block_on(self.async_connection.set_presence(game, status, afk))
 	}
 
 	/// Get a handle to the voice connection for a server.
@@ -649,8 +637,8 @@ impl Connection {
 	}
 
 	/// Cleanly shut down the websocket connection. Optional.
-	pub fn shutdown(mut self) -> Result<()> {
-		self.runtime.block_on(self.async_connection.shutdown());
+	pub fn shutdown(self) -> Result<()> {
+		// Not shutting down the inner socket because that is part of it's drop function
 		::std::mem::forget(self); // don't call a second time
 		Ok(())
 	}
@@ -663,14 +651,16 @@ impl Connection {
 	///
 	/// Can be used with `State::all_servers`.
 	pub fn sync_servers(&self, servers: &[ServerId]) {
-		self.runtime.block_on(self.async_connection.sync_servers(servers))
+		self.runtime
+			.block_on(self.async_connection.sync_servers(servers))
 	}
 
 	/// Request a synchronize of active calls for the specified channels.
 	///
 	/// Can be used with `State::all_private_channels`.
 	pub fn sync_calls(&self, channels: &[ChannelId]) {
-		self.runtime.block_on(self.async_connection.sync_calls(channels))
+		self.runtime
+			.block_on(self.async_connection.sync_calls(channels))
 	}
 
 	/// Requests a download of all member information for large servers.
@@ -678,25 +668,20 @@ impl Connection {
 	/// The members lists are cleared on call, and then refilled as chunks are received. When
 	/// `unknown_members()` returns 0, the download has completed.
 	pub fn download_all_members(&mut self, state: &mut crate::State) {
-		self.runtime.block_on(self.async_connection.download_all_members(state))
+		self.runtime
+			.block_on(self.async_connection.download_all_members(state))
 	}
 }
 
 impl Drop for Connection {
 	fn drop(&mut self) {
 		// Swallow errors
-		let _ = self.inner_shutdown();
+		let _ = self.async_connection.inner_shutdown();
 	}
 }
 
 #[inline]
-fn build_gateway_url(base: &str) -> Result<::websocket::client::request::Url> {
-	::websocket::client::request::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
-		.map_err(|_| Error::Other("Invalid gateway URL"))
-}
-
-#[inline]
-fn build_gateway_url_v2(base: &str) -> Result<url::Url> {
+fn build_gateway_url(base: &str) -> Result<url::Url> {
 	url::Url::parse(&format!("{}?v={}", base, GATEWAY_VERSION))
 		.map_err(|_| Error::Other("Invalid gateway URL"))
 }
