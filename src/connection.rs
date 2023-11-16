@@ -286,6 +286,111 @@ impl AsyncConnection {
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
 	}
 
+	/// Get a handle to the voice connection for a server.
+	///
+	/// Pass `None` to get the handle for group and one-on-one calls.
+	#[cfg(feature = "voice")]
+	pub fn voice(&mut self, server_id: Option<ServerId>) -> &mut VoiceConnection {
+		let AsyncConnection {
+			ref mut voice_handles,
+			user_id,
+			ref keepalive_channel,
+			..
+		} = *self;
+		voice_handles.entry(server_id).or_insert_with(|| {
+			unimplemented!()
+			//VoiceConnection::__new(server_id, user_id, keepalive_channel.clone())
+		})
+	}
+
+	/// Drop the voice connection for a server, forgetting all settings.
+	///
+	/// Calling `.voice(server_id).disconnect()` will disconnect from voice but retain the mute
+	/// and deaf status, audio source, and audio receiver.
+	///
+	/// Pass `None` to drop the connection for group and one-on-one calls.
+	#[cfg(feature = "voice")]
+	pub fn drop_voice(&mut self, server_id: Option<ServerId>) {
+		self.voice_handles.remove(&server_id);
+	}
+
+	/// Receive an event over the websocket, blocking until one is available.
+	pub async fn recv_event(&mut self) -> Result<Event> {
+		loop {
+			match self.receiver.recv_json(GatewayEvent::decode).await {
+				Err(Error::Tungstenite(err)) => {
+					warn!("Websocket error, reconnecting: {:?}", err);
+					// Try resuming if we haven't received an InvalidateSession
+					if let Some(session_id) = self.session_id.clone() {
+						match self.resume(session_id).await {
+							Ok(event) => return Ok(event),
+							Err(e) => debug!("Failed to resume: {:?}", e),
+						}
+					}
+					// If resuming didn't work, reconnect
+					return self.reconnect().await.map(Event::Ready);
+				}
+				Err(Error::Closed(num, message)) => {
+					debug!("Closure, reconnecting: {:?}: {}", num, message);
+					// Try resuming if we haven't received a 4006 or an InvalidateSession
+					if num != Some(4006) {
+						if let Some(session_id) = self.session_id.clone() {
+							match self.resume(session_id).await {
+								Ok(event) => return Ok(event),
+								Err(e) => debug!("Failed to resume: {:?}", e),
+							}
+						}
+					}
+					// If resuming didn't work, reconnect
+					return self.reconnect().await.map(Event::Ready);
+				}
+				Err(error) => return Err(error),
+				Ok(GatewayEvent::Hello(interval)) => {
+					debug!("Mysterious late-game hello: {}", interval);
+				}
+				Ok(GatewayEvent::Dispatch(sequence, event)) => {
+					self.last_sequence = sequence;
+					let _ = self.keepalive_channel.send(Status::Sequence(sequence));
+					#[cfg(feature = "voice")]
+					{
+						if let Event::VoiceStateUpdate(server_id, ref voice_state) = event {
+							self.voice(server_id).__update_state(voice_state);
+						}
+						if let Event::VoiceServerUpdate {
+							server_id,
+							ref endpoint,
+							ref token,
+							..
+						} = event
+						{
+							self.voice(server_id).__update_server(endpoint, token);
+						}
+					}
+					return Ok(event);
+				}
+				Ok(GatewayEvent::Heartbeat(sequence)) => {
+					debug!("Heartbeat received with seq {}", sequence);
+					let map = json! {{
+						"op": 1,
+						"d": sequence,
+					}};
+					let _ = self.keepalive_channel.send(Status::SendMessage(map)).await;
+				}
+				Ok(GatewayEvent::HeartbeatAck) => {}
+				Ok(GatewayEvent::Reconnect) => {
+					return self.reconnect().await.map(Event::Ready);
+				}
+				Ok(GatewayEvent::InvalidateSession) => {
+					debug!("Session invalidated, reidentifying");
+					self.session_id = None;
+					let _ = self
+						.keepalive_channel
+						.send(Status::SendMessage(self.identify.clone())).await;
+				}
+			}
+		}
+	}
+
 	/// Reconnect after receiving an OP7 RECONNECT
 	async fn reconnect(&mut self) -> Result<ReadyEvent> {
 		sleep_ms(1000);
