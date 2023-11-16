@@ -286,6 +286,34 @@ impl AsyncConnection {
 		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
 	}
 
+	/// Reconnect after receiving an OP7 RECONNECT
+	async fn reconnect(&mut self) -> Result<ReadyEvent> {
+		sleep_ms(1000);
+		self.keepalive_channel
+			.send(Status::Aborted)
+			.await
+			.expect("Could not stop the keepalive thread, there will be a thread leak.");
+		trace!("Reconnecting...");
+		// Make two attempts on the current known gateway URL
+		for _ in 0..2 {
+			if let Ok((conn, ready)) =
+				AsyncConnection::__connect(&self.ws_url, &self.token, self.identify.clone()).await
+			{
+				::std::mem::replace(self, conn).raw_shutdown();
+				self.session_id = Some(ready.session_id.clone());
+				return Ok(ready);
+			}
+			sleep_ms(1000);
+		}
+
+		// If those fail, hit REST for a new endpoint
+		let url = crate::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
+		let (conn, ready) = AsyncConnection::__connect(&url, &self.token, self.identify.clone()).await?;
+		::std::mem::replace(self, conn).raw_shutdown();
+		self.session_id = Some(ready.session_id.clone());
+		Ok(ready)
+	}
+
 	/// Resume using our existing session
 	async fn resume(&mut self, session_id: String) -> Result<Event> {
 		sleep_ms(1000);
@@ -294,7 +322,7 @@ impl AsyncConnection {
 		let url = build_gateway_url_v2(&self.gateway_resume_url)?;
 		let (socket, _res) = connect_async(url).await?;
 		let (mut socket_tx, mut socket_rx) = socket.split();
-		
+
 		// send the resume request
 		let resume = json! {{
 			"op": 6,
@@ -339,8 +367,31 @@ impl AsyncConnection {
 
 		// switch everything to the new connection
 		self.receiver = socket_rx;
-		let _ = self.keepalive_channel.send(Status::ChangeSenderV2(socket_tx)).await;
+		let _ = self
+			.keepalive_channel
+			.send(Status::ChangeSenderV2(socket_tx))
+			.await;
 		Ok(first_event)
+	}
+
+	/// Cleanly shut down the websocket connection. Optional.
+	pub async fn shutdown(mut self) -> Result<()> {
+		self.inner_shutdown().await?;
+		::std::mem::forget(self); // don't call a second time
+		Ok(())
+	}
+
+	// called from shutdown() and drop()
+	async fn inner_shutdown(&mut self) -> Result<()> {
+		self.keepalive_channel
+			.send(Status::Aborted).await
+			.expect("Could not stop the keepalive thread, there will be a thread leak.");
+		Ok(())
+	}
+
+	// called when we want to drop the connection with no fanfare
+	fn raw_shutdown(mut self) {
+		::std::mem::forget(self); // don't call inner_shutdown()
 	}
 }
 
