@@ -308,7 +308,8 @@ impl AsyncConnection {
 
 		// If those fail, hit REST for a new endpoint
 		let url = crate::Discord::from_token_raw(self.token.to_owned()).get_gateway_url()?;
-		let (conn, ready) = AsyncConnection::__connect(&url, &self.token, self.identify.clone()).await?;
+		let (conn, ready) =
+			AsyncConnection::__connect(&url, &self.token, self.identify.clone()).await?;
 		::std::mem::replace(self, conn).raw_shutdown();
 		self.session_id = Some(ready.session_id.clone());
 		Ok(ready)
@@ -384,7 +385,8 @@ impl AsyncConnection {
 	// called from shutdown() and drop()
 	async fn inner_shutdown(&mut self) -> Result<()> {
 		self.keepalive_channel
-			.send(Status::Aborted).await
+			.send(Status::Aborted)
+			.await
 			.expect("Could not stop the keepalive thread, there will be a thread leak.");
 		Ok(())
 	}
@@ -392,6 +394,54 @@ impl AsyncConnection {
 	// called when we want to drop the connection with no fanfare
 	fn raw_shutdown(mut self) {
 		::std::mem::forget(self); // don't call inner_shutdown()
+	}
+
+	/// Requests a download of online member lists.
+	///
+	/// It is recommended to avoid calling this method until the online member list
+	/// is actually needed, especially for large servers, in order to save bandwidth
+	/// and memory.
+	///
+	/// Can be used with `State::all_servers`.
+	pub async fn sync_servers(&self, servers: &[ServerId]) {
+		let msg = json! {{
+			"op": 12,
+			"d": servers,
+		}};
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
+	}
+
+	/// Request a synchronize of active calls for the specified channels.
+	///
+	/// Can be used with `State::all_private_channels`.
+	pub async fn sync_calls(&self, channels: &[ChannelId]) {
+		for &channel in channels {
+			let msg = json! {{
+				"op": 13,
+				"d": { "channel_id": channel }
+			}};
+			let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
+		}
+	}
+
+	/// Requests a download of all member information for large servers.
+	///
+	/// The members lists are cleared on call, and then refilled as chunks are received. When
+	/// `unknown_members()` returns 0, the download has completed.
+	pub async fn download_all_members(&mut self, state: &mut crate::State) {
+		if state.unknown_members() == 0 {
+			return;
+		}
+		let servers = state.__download_members();
+		let msg = json! {{
+			"op": 8,
+			"d": {
+				"guild_id": servers,
+				"query": "",
+				"limit": 0,
+			}
+		}};
+		let _ = self.keepalive_channel.send(Status::SendMessage(msg)).await;
 	}
 }
 
