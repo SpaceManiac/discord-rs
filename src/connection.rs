@@ -675,8 +675,9 @@ impl Connection {
 
 impl Drop for Connection {
 	fn drop(&mut self) {
+		println!("inside of drop");
 		// Swallow errors
-		let _ = self.async_connection.inner_shutdown();
+		let _ = self.runtime.block_on(self.async_connection.inner_shutdown());
 	}
 }
 
