@@ -2,6 +2,7 @@
 name = "discord"
 version = "0.9.0"
 authors = ["Tad Hardesty <tad@platymuus.com>"]
+edition = "2021"
 
 description = "Client library for the Discord API"
 readme = "README.md"
@@ -29,6 +30,15 @@ base64-rs = "0.1.1"
 flate2 = "1.0"
 opus = { version = "0.2.1", optional = true }
 multipart = { version = "0.17.0", default-features = false, features = ["client", "mock"] }
+tokio = { version = "1.32.0", features = ["full"] }
+tokio-tungstenite = { version = "0.20.1", features = ["native-tls"] }
+futures-util = "0.3.29"
+async-trait = "0.1.74"
+url = "2.4.1"
+rand = "0.8.5"
+
+[dev-dependencies]
+simplelog = "0.12.1"
 
 [dependencies.chrono]
 version = "0.4.11"
@@ -39,3 +49,6 @@ version = "0.2.5"
 default-features = false
 features = ["std"]
 optional = true
+
+[[example]]
+name = "dj"

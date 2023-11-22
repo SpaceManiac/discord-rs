@@ -61,7 +61,7 @@ pub fn deserialize_discrim_opt<'d, D: Deserializer<'d>>(d: D) -> Result<Option<u
 				Ok(Some($v as u16))
 			} else {
 				Err(E::invalid_value($wrong, &$self))
-				}
+			}
 		};
 	}
 
@@ -124,7 +124,7 @@ macro_rules! serial_single_field {
 /// Special support for the oddly complex `ReactionEmoji`.
 pub mod reaction_emoji {
 	use super::*;
-	use model::{EmojiId, ReactionEmoji};
+	use crate::model::{EmojiId, ReactionEmoji};
 
 	#[derive(Serialize)]
 	struct EmojiSer<'s> {
@@ -208,7 +208,7 @@ macro_rules! serial_names {
 			}
 		}
 
-		impl ::serial::named::NamedEnum for $typ {
+		impl crate::serial::named::NamedEnum for $typ {
 			fn name(&self) -> &'static str {
 				self.name()
 			}
@@ -275,7 +275,7 @@ macro_rules! serial_numbers {
 				}
 			}
 		}
-		impl ::serial::numeric::NumericEnum for $typ {
+		impl crate::serial::numeric::NumericEnum for $typ {
 			fn num(&self) -> u64 {
 				self.num()
 			}
@@ -300,7 +300,7 @@ macro_rules! serial_use_mapping {
 				&self,
 				s: S,
 			) -> ::std::result::Result<S::Ok, S::Error> {
-				::serial::$which::serialize(self, s)
+				crate::serial::$which::serialize(self, s)
 			}
 		}
 
@@ -309,7 +309,7 @@ macro_rules! serial_use_mapping {
 			fn deserialize<D: ::serde::de::Deserializer<'d>>(
 				d: D,
 			) -> ::std::result::Result<$typ, D::Error> {
-				::serial::$which::deserialize(d)
+				crate::serial::$which::deserialize(d)
 			}
 		}
 	};

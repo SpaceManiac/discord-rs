@@ -8,8 +8,8 @@ use serde_json::Value;
 use chrono::offset::FixedOffset;
 use chrono::DateTime;
 
-use model::*;
-use Object;
+use crate::model::*;
+use crate::Object;
 
 macro_rules! builder {
 	($(#[$attr:meta] $name:ident($inner:ty);)*) => {
@@ -287,9 +287,14 @@ impl SendMessage {
 	/// The given `message_id` must be in the same channel that this message is
 	/// being sent to.
 	pub fn reply(self, message_id: MessageId, mention: bool) -> Self {
-		set!(self, "message_reference", json! {{
-			"message_id": message_id,
-		}}).allowed_mentions(|b| b.replied_user(mention))
+		set!(
+			self,
+			"message_reference",
+			json! {{
+				"message_id": message_id,
+			}}
+		)
+		.allowed_mentions(|b| b.replied_user(mention))
 	}
 
 	/// Change the message's flags.
